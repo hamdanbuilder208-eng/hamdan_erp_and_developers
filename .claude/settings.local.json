@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command 'Get-CimInstance Win32_Process -Filter \"name='\\\\''python.exe'\\\\''\" | Where-Object { $_.CommandLine -like '\\\\''*uvicorn*'\\\\'' } | Select-Object -ExpandProperty ProcessId')",
+      "Bash(powershell -Command \"Test-NetConnection -ComputerName localhost -Port 8000 -WarningAction SilentlyContinue | Select-Object TcpTestSucceeded\")",
+      "Bash(powershell -Command \"Test-NetConnection -ComputerName localhost -Port 8000 -WarningAction SilentlyContinue | Select-Object -ExpandProperty TcpTestSucceeded\")",
+      "Bash(powershell -Command \"Test-NetConnection -ComputerName localhost -Port 5173 -WarningAction SilentlyContinue | Select-Object -ExpandProperty TcpTestSucceeded\")",
+      "Bash(powershell -Command \"Test-NetConnection -ComputerName localhost -Port 3306 -WarningAction SilentlyContinue | Select-Object -ExpandProperty TcpTestSucceeded\")",
+      "Bash(powershell -Command \"Stop-Process -Id 10208,1672 -Force -ErrorAction SilentlyContinue\")",
+      "Bash(\"/c/Program Files/MySQL/MySQL Server 8.4/bin/mysqladmin.exe\" -h localhost -u root -p\"HamdanErp2026Secure\" shutdown)",
+      "Bash(node -e \"console.log\\(require.resolve\\('docx'\\)\\)\")",
+      "Bash(npm install *)",
+      "Bash(node build_resume.js)",
+      "Bash(python \"C:\\\\Users\\\\AY\\\\AppData\\\\Roaming\\\\Claude\\\\local-agent-mode-sessions\\\\skills-plugin\\\\7d324526-341d-4e0c-b0dd-0752e0ced742\\\\8dc4f8cc-0614-4584-a6b5-ffd2d9abfd25\\\\skills\\\\docx\\\\scripts\\\\office\\\\soffice.py\" --headless --convert-to pdf Syed_Rafay_Ali_Resume_SoftwareEngineer.docx)",
+      "Bash(where python *)",
+      "Bash(where python3 *)",
+      "Bash(where py *)",
+      "Bash(\"C:\\\\Users\\\\AY\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\" \"C:\\\\Users\\\\AY\\\\AppData\\\\Roaming\\\\Claude\\\\local-agent-mode-sessions\\\\skills-plugin\\\\7d324526-341d-4e0c-b0dd-0752e0ced742\\\\8dc4f8cc-0614-4584-a6b5-ffd2d9abfd25\\\\skills\\\\docx\\\\scripts\\\\office\\\\soffice.py\" --headless --convert-to pdf Syed_Rafay_Ali_Resume_SoftwareEngineer.docx)",
+      "Bash(where soffice *)",
+      "Bash(where soffice.exe)",
+      "Read(//c/Program Files/LibreOffice/program/**)",
+      "Read(//c/Program Files \\\\\\(x86\\\\\\)/LibreOffice/program/**)"
+    ]
+  }
+}

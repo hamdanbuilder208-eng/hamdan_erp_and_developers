@@ -1,0 +1,37 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.crud import receipt as receipt_crud
+from app.db.session import get_db
+from app.schemas.receipt import ReceiptCreate, ReceiptWithBookingOut
+
+router = APIRouter()
+
+
+@router.get("/", response_model=list[ReceiptWithBookingOut])
+def list_receipts(booking_id: int | None = None, db: Session = Depends(get_db)):
+    return receipt_crud.list_receipts(db, booking_id=booking_id)
+
+
+@router.post("/", response_model=ReceiptWithBookingOut, status_code=status.HTTP_201_CREATED)
+def create_receipt(receipt_in: ReceiptCreate, db: Session = Depends(get_db)):
+    try:
+        return receipt_crud.create_receipt(db, receipt_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/{receipt_id}", response_model=ReceiptWithBookingOut)
+def get_receipt(receipt_id: int, db: Session = Depends(get_db)):
+    db_receipt = receipt_crud.get_receipt(db, receipt_id)
+    if not db_receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    return db_receipt
+
+
+@router.delete("/{receipt_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_receipt(receipt_id: int, db: Session = Depends(get_db)):
+    db_receipt = receipt_crud.get_receipt(db, receipt_id)
+    if not db_receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    receipt_crud.delete_receipt(db, db_receipt)

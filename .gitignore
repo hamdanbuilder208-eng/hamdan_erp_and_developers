@@ -1,0 +1,20 @@
+# Backend (Python)
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/.env
+
+# Frontend (Node)
+frontend/node_modules/
+frontend/dist/
+
+# Database backups / dumps
+*.sql
+
+# Logs
+*.log
+
+# OS / editor clutter
+.DS_Store
+Thumbs.db

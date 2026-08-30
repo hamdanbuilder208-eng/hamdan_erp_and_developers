@@ -1,0 +1,70 @@
+from datetime import date
+
+from pydantic import BaseModel, ConfigDict
+
+from app.models.booking import BookingStatus, PaymentMode, ScheduleFrequency
+from app.schemas.allottee import AllotteeOut
+from app.schemas.booking_agent import BookingAgentOut
+from app.schemas.project import ProjectOut
+from app.schemas.unit import UnitOut
+
+
+class PaymentScheduleLineOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    installment_no: int
+    label: str
+    due_date: date
+    mode_of_payment: PaymentMode
+    amount: float
+    discount: float
+    paid_amount: float
+
+
+class PaymentScheduleLineUpdate(BaseModel):
+    due_date: date | None = None
+    mode_of_payment: PaymentMode | None = None
+    amount: float | None = None
+    discount: float | None = None
+
+
+class BookingBase(BaseModel):
+    booking_date: date
+    project_id: int
+    unit_id: int
+    allottee_id: int
+    status_date: date
+    discount: float = 0
+    remarks: str | None = None
+    booking_agent_id: int | None = None
+    agent_commission_percent: float | None = None
+    down_payment_amount: float = 0
+    no_of_installments: int = 0
+    frequency: ScheduleFrequency = ScheduleFrequency.MONTHLY
+
+
+class BookingCreate(BookingBase):
+    pass
+
+
+class BookingStatusUpdate(BaseModel):
+    status: BookingStatus
+    status_date: date
+
+
+class BookingAgentAssign(BaseModel):
+    booking_agent_id: int | None = None
+    agent_commission_percent: float | None = None
+
+
+class BookingOut(BookingBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    booking_ref_no: str
+    status: BookingStatus
+    total_price: float
+    project: ProjectOut
+    unit: UnitOut
+    allottee: AllotteeOut
+    booking_agent: BookingAgentOut | None = None
+    schedule_lines: list[PaymentScheduleLineOut]
