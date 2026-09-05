@@ -515,6 +515,10 @@ def get_all_partner_summaries(db: Session) -> list[PartnerSummaryRow]:
                 total_share_amount=summary.total_share_amount,
                 total_drawn=summary.total_drawn,
                 total_balance=summary.total_balance,
+                total_contributed=summary.total_contributed,
+                total_distributable_share=summary.total_distributable_share,
+                total_partner_expense=summary.total_partner_expense,
+                total_current_account_balance=summary.total_current_account_balance,
             )
         )
     rows.sort(key=lambda r: -r.total_balance)

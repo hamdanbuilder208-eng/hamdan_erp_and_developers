@@ -1,7 +1,8 @@
-import { LogOut, Moon, Search, Sun } from "lucide-react";
+import { LogOut, Moon, Sun } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
 import { useThemeStore } from "../../store/themeStore";
+import { GlobalSearch } from "./GlobalSearch";
 
 export function Topbar({ title }: { title: string }) {
   const user = useAuthStore((s) => s.user);
@@ -23,19 +24,13 @@ export function Topbar({ title }: { title: string }) {
     .toUpperCase();
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6 dark:border-navy-800 dark:bg-navy-900">
-      <div>
+    <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 dark:border-navy-800 dark:bg-navy-900">
+      <div className="flex items-center gap-3">
         <h1 className="text-lg font-semibold text-navy-900 dark:text-white">{title}</h1>
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="relative hidden sm:block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
-          <input
-            placeholder="Search..."
-            className="h-9 w-64 rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-navy-950 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-navy-700 dark:bg-navy-800 dark:text-slate-100 dark:placeholder:text-slate-500"
-          />
-        </div>
+        <GlobalSearch />
 
         <button
           onClick={toggleTheme}

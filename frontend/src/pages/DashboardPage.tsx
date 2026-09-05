@@ -1,6 +1,7 @@
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   Boxes,
   Building2,
   CheckCircle2,
@@ -15,6 +16,9 @@ import {
   Wallet2,
 } from "lucide-react";
 import { api } from "../lib/api";
+import { toast, apiErrorMessage } from "../lib/toast";
+import { confirm } from "../lib/confirm";
+import { Button } from "../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card";
 import { Select } from "../components/ui/Input";
 import { DonutChart } from "../components/charts/DonutChart";
@@ -22,6 +26,7 @@ import { ColumnChart } from "../components/charts/ColumnChart";
 import { RankedBarChart } from "../components/charts/RankedBarChart";
 import { LineChart } from "../components/charts/LineChart";
 import { FunnelChart } from "../components/charts/FunnelChart";
+import { StatCardSkeleton, ChartSkeleton, BarsSkeleton } from "../components/ui/Skeleton";
 import type {
   Booking,
   BrokerSummaryRow,
@@ -118,67 +123,93 @@ function sumByMonth(entries: { date: string; amount: number }[], year: number): 
 }
 
 export default function DashboardPage() {
-  const { data: projects } = useQuery({
+  const queryClient = useQueryClient();
+
+  const { data: pendingCheques, isLoading: chequesLoading } = useQuery({
+    queryKey: ["pending-cheques"],
+    queryFn: async () => (await api.get<Receipt[]>("/receipts/cheques/pending")).data,
+  });
+
+  const updateChequeStatus = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: "Cleared" | "Bounced" }) =>
+      (await api.patch<Receipt>(`/receipts/${id}/cheque-status`, { status })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pending-cheques"] });
+      queryClient.invalidateQueries({ queryKey: ["receipts"] });
+      queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(apiErrorMessage(err, "Failed to update cheque status."));
+    },
+  });
+
+  const { data: projects, isLoading: projectsLoading } = useQuery({
     queryKey: ["projects"],
     queryFn: async () => (await api.get<Project[]>("/projects/")).data,
   });
 
-  const { data: units } = useQuery({
+  const { data: units, isLoading: unitsLoading } = useQuery({
     queryKey: ["units", "all"],
     queryFn: async () => (await api.get<Unit[]>("/units/")).data,
   });
 
-  const { data: landProperties } = useQuery({
+  const { data: landProperties, isLoading: landLoading } = useQuery({
     queryKey: ["land-properties", "all"],
     queryFn: async () => (await api.get<LandProperty[]>("/land-properties/")).data,
   });
 
-  const { data: stock } = useQuery({
+  const { data: stock, isLoading: stockLoading } = useQuery({
     queryKey: ["stock", "all"],
     queryFn: async () => (await api.get<StockBalance[]>("/inventory/stock")).data,
   });
 
-  const { data: officeExpenses } = useQuery({
+  const { data: officeExpenses, isLoading: officeLoading } = useQuery({
     queryKey: ["office-expenses"],
     queryFn: async () => (await api.get<OfficeExpense[]>("/expenses/office")).data,
   });
 
-  const { data: wagePayments } = useQuery({
+  const { data: wagePayments, isLoading: wagesLoading } = useQuery({
     queryKey: ["wage-payments"],
     queryFn: async () => (await api.get<WagePayment[]>("/expenses/wages")).data,
   });
 
-  const { data: ownerExpenses } = useQuery({
+  const { data: ownerExpenses, isLoading: ownerLoading } = useQuery({
     queryKey: ["owner-expenses"],
     queryFn: async () => (await api.get<OwnerPersonalExpense[]>("/expenses/owner-personal")).data,
   });
 
-  const { data: bookings } = useQuery({
+  const { data: bookings, isLoading: bookingsLoading } = useQuery({
     queryKey: ["bookings"],
     queryFn: async () => (await api.get<Booking[]>("/bookings/")).data,
   });
 
-  const { data: receipts } = useQuery({
+  const { data: receipts, isLoading: receiptsLoading } = useQuery({
     queryKey: ["receipts"],
     queryFn: async () => (await api.get<Receipt[]>("/receipts/")).data,
   });
 
   const [trendYear, setTrendYear] = React.useState(new Date().getFullYear());
 
-  const { data: brokers } = useQuery({
+  const { data: brokers, isLoading: brokersLoading } = useQuery({
     queryKey: ["reports", "brokers"],
     queryFn: async () => (await api.get<BrokerSummaryRow[]>("/reports/brokers")).data,
   });
 
-  const { data: partnersSummary } = useQuery({
+  const { data: partnersSummary, isLoading: partnersLoading } = useQuery({
     queryKey: ["reports", "partners"],
     queryFn: async () => (await api.get<PartnerSummaryRow[]>("/reports/partners")).data,
   });
 
-  const { data: customerWiseReport } = useQuery({
+  const { data: customerWiseReport, isLoading: customerWiseLoading } = useQuery({
     queryKey: ["reports", "customer-wise"],
     queryFn: async () => (await api.get<CustomerWiseReport>("/reports/customer-wise")).data,
   });
+
+  const statsLoading = projectsLoading || unitsLoading;
+  const expenseLoading = officeLoading || wagesLoading || ownerLoading;
+  const trendLoading = bookingsLoading || receiptsLoading || expenseLoading;
+  const projectRevenueLoading = bookingsLoading || projectsLoading;
 
   const activeProjects = projects?.filter((p) => p.status === "Active").length ?? 0;
   const totalUnits = units?.length ?? 0;
@@ -325,6 +356,15 @@ export default function DashboardPage() {
     }));
   const hasPartnerData = partnerChartData.length > 0;
 
+  const partnerDistributableChartData = (partnersSummary ?? [])
+    .filter((p) => p.total_distributable_share > 0)
+    .map((p, i) => ({
+      label: p.name,
+      value: p.total_distributable_share,
+      colorVar: materialColorPalette[i % materialColorPalette.length],
+    }));
+  const hasPartnerDistributableData = partnerDistributableChartData.length > 0;
+
   const customerChartData = (customerWiseReport?.rows ?? [])
     .filter((r) => r.total_booked > 0)
     .slice(0, 8)
@@ -338,11 +378,98 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Active Projects" value={activeProjects} icon={Building2} tone="brand" />
-        <StatCard label="Total Units" value={totalUnits} icon={Home} tone="info" />
-        <StatCard label="Available Units" value={availableUnits} icon={CheckCircle2} tone="success" />
-        <StatCard label="Booked / Sold" value={bookedUnits} icon={Clock} tone="warning" />
+        {statsLoading ? (
+          <>
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+          </>
+        ) : (
+          <>
+            <StatCard label="Active Projects" value={activeProjects} icon={Building2} tone="brand" />
+            <StatCard label="Total Units" value={totalUnits} icon={Home} tone="info" />
+            <StatCard label="Available Units" value={availableUnits} icon={CheckCircle2} tone="success" />
+            <StatCard label="Booked / Sold" value={bookedUnits} icon={Clock} tone="warning" />
+          </>
+        )}
       </div>
+
+      {!chequesLoading && pendingCheques && pendingCheques.length > 0 && (
+        <Card className="border-warning-200 bg-warning-50/40 dark:border-warning-900/40 dark:bg-warning-900/10">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 text-warning-600" />
+              Cheque Reminders — Confirm Cleared or Bounced
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {pendingCheques.map((r) => {
+              const today = new Date().toISOString().slice(0, 10);
+              const isToday = r.cheque_clearing_date === today;
+              const overdue = !!r.cheque_clearing_date && r.cheque_clearing_date < today;
+              const daysOverdue = overdue
+                ? Math.round(
+                    (new Date(today).getTime() - new Date(r.cheque_clearing_date!).getTime()) /
+                      86400000,
+                  )
+                : 0;
+              const statusLine = isToday
+                ? "This cheque was due to be cashed today — was it?"
+                : overdue
+                  ? `This cheque was due to be cashed ${daysOverdue} day${daysOverdue > 1 ? "s" : ""} ago — still pending!`
+                  : `Due to be cashed on ${r.cheque_clearing_date}`;
+              return (
+                <div
+                  key={r.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 bg-white px-4 py-2.5 dark:border-navy-800 dark:bg-navy-900"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-navy-900 dark:text-slate-100">
+                      {r.booking.allottee.name}{" "}
+                      <span className="font-normal text-slate-400 dark:text-slate-500">
+                        · {r.booking.booking_ref_no}
+                        {r.cheque_no ? ` · Cheque #${r.cheque_no}` : ""}
+                      </span>
+                    </p>
+                    <p
+                      className={`text-xs ${
+                        overdue || isToday
+                          ? "font-medium text-danger-600"
+                          : "text-slate-500 dark:text-slate-400"
+                      }`}
+                    >
+                      {statusLine} — PKR {Number(r.amount).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => updateChequeStatus.mutate({ id: r.id, status: "Cleared" })}
+                    >
+                      Mark Cleared
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={async () => {
+                        const ok = await confirm(
+                          `Mark cheque ${r.cheque_no ?? ""} as bounced? This will reverse the payment.`,
+                          { danger: true, confirmLabel: "Mark Bounced" },
+                        );
+                        if (ok) updateChequeStatus.mutate({ id: r.id, status: "Bounced" });
+                      }}
+                    >
+                      Mark Bounced
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
@@ -350,7 +477,9 @@ export default function DashboardPage() {
             <CardTitle>Units by Status</CardTitle>
           </CardHeader>
           <CardContent>
-            {hasUnits ? (
+            {unitsLoading ? (
+              <ChartSkeleton />
+            ) : hasUnits ? (
               <DonutChart data={unitChartData} total={totalUnits} centerLabel="Units" />
             ) : (
               <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">
@@ -368,7 +497,9 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {hasLand ? (
+            {landLoading ? (
+              <BarsSkeleton />
+            ) : hasLand ? (
               <ColumnChart data={landChartData} />
             ) : (
               <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">
@@ -388,7 +519,9 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {hasStock ? (
+            {stockLoading ? (
+              <ChartSkeleton />
+            ) : hasStock ? (
               <DonutChart
                 data={materialChartData}
                 total={totalStockValue}
@@ -411,7 +544,9 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {hasExpense ? (
+            {expenseLoading ? (
+              <ChartSkeleton />
+            ) : hasExpense ? (
               <DonutChart
                 data={expenseChartData}
                 total={totalExpense}
@@ -447,7 +582,9 @@ export default function DashboardPage() {
             </Select>
           </CardHeader>
           <CardContent>
-            {hasTrendData ? (
+            {trendLoading ? (
+              <BarsSkeleton />
+            ) : hasTrendData ? (
               <LineChart
                 series={trendSeries}
                 xLabels={monthLabels}
@@ -469,7 +606,9 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {hasProjectRevenue ? (
+            {projectRevenueLoading ? (
+              <BarsSkeleton />
+            ) : hasProjectRevenue ? (
               <RankedBarChart data={projectChartData} formatValue={(v) => `PKR ${v.toLocaleString()}`} />
             ) : (
               <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">
@@ -489,7 +628,9 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {hasUnits ? (
+            {unitsLoading ? (
+              <BarsSkeleton />
+            ) : hasUnits ? (
               <FunnelChart stages={funnelStages} />
             ) : (
               <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">
@@ -507,7 +648,9 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {hasBrokerData ? (
+            {brokersLoading ? (
+              <BarsSkeleton />
+            ) : hasBrokerData ? (
               <RankedBarChart data={brokerChartData} formatValue={(v) => `PKR ${v.toLocaleString()}`} />
             ) : (
               <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">
@@ -527,7 +670,9 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {hasPartnerData ? (
+            {partnersLoading ? (
+              <BarsSkeleton />
+            ) : hasPartnerData ? (
               <RankedBarChart data={partnerChartData} formatValue={(v) => `PKR ${v.toLocaleString()}`} />
             ) : (
               <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">
@@ -540,12 +685,40 @@ export default function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-1.5">
+              <Landmark className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
+              Partner Pool — Available to Distribute Now
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {partnersLoading ? (
+              <BarsSkeleton />
+            ) : hasPartnerDistributableData ? (
+              <RankedBarChart
+                data={partnerDistributableChartData}
+                formatValue={(v) => `PKR ${v.toLocaleString()}`}
+              />
+            ) : (
+              <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">
+                Nothing safe to distribute yet — revenue collected hasn't crossed the
+                construction reserve for any project.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
               <Users className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
               Top Customers
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {hasCustomerData ? (
+            {customerWiseLoading ? (
+              <BarsSkeleton />
+            ) : hasCustomerData ? (
               <RankedBarChart data={customerChartData} formatValue={(v) => `PKR ${v.toLocaleString()}`} />
             ) : (
               <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">

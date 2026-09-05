@@ -9,6 +9,8 @@ import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Badge } from "../components/ui/Badge";
 import { AccessDenied } from "../components/ui/AccessDenied";
+import { toast, apiErrorMessage } from "../lib/toast";
+import { confirm } from "../lib/confirm";
 import type { ModuleInfo, Role, User } from "../types";
 
 type Tab = "users" | "roles";
@@ -118,8 +120,7 @@ export default function UsersRolesPage() {
     mutationFn: async (id: number) => api.delete(`/users/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["staff-users"] }),
     onError: (err: unknown) => {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(detail ?? "Failed to delete user.");
+      toast.error(apiErrorMessage(err, "Failed to delete user."));
     },
   });
 
@@ -184,8 +185,7 @@ export default function UsersRolesPage() {
     mutationFn: async (id: number) => api.delete(`/users/roles/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["staff-roles"] }),
     onError: (err: unknown) => {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(detail ?? "Failed to delete role.");
+      toast.error(apiErrorMessage(err, "Failed to delete role."));
     },
   });
 
@@ -251,7 +251,7 @@ export default function UsersRolesPage() {
                 </tr>
               )}
               {users?.map((u) => (
-                <tr key={u.id} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-navy-800/40" onClick={() => openEditUser(u)}>
+                <tr key={u.id} className="cursor-pointer hover:bg-slate-100 dark:hover:bg-navy-800" onClick={() => openEditUser(u)}>
                   <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{u.username}</td>
                   <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{u.full_name ?? "—"}</td>
                   <td className="px-5 py-3">
@@ -265,11 +265,13 @@ export default function UsersRolesPage() {
                   <td className="px-5 py-3 text-right">
                     {u.id !== currentUserId && (
                       <button
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
-                          if (window.confirm(`Delete user "${u.username}"? This cannot be undone.`)) {
-                            deleteUser.mutate(u.id);
-                          }
+                          const ok = await confirm(`Delete user "${u.username}"? This cannot be undone.`, {
+                            danger: true,
+                            confirmLabel: "Delete",
+                          });
+                          if (ok) deleteUser.mutate(u.id);
                         }}
                         className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
                       >
@@ -304,7 +306,7 @@ export default function UsersRolesPage() {
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
               {roles?.map((r) => (
-                <tr key={r.id}>
+                <tr key={r.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                   <td className="px-5 py-3 cursor-pointer text-navy-900 dark:text-slate-100" onClick={() => openEditRole(r)}>
                     {r.name}
                   </td>
@@ -323,8 +325,9 @@ export default function UsersRolesPage() {
                   </td>
                   <td className="px-5 py-3 text-right">
                     <button
-                      onClick={() => {
-                        if (window.confirm(`Delete role "${r.name}"?`)) deleteRole.mutate(r.id);
+                      onClick={async () => {
+                        const ok = await confirm(`Delete role "${r.name}"?`, { danger: true, confirmLabel: "Delete" });
+                        if (ok) deleteRole.mutate(r.id);
                       }}
                       className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
                     >

@@ -12,6 +12,10 @@ frontend/dist/
 # Database backups / dumps
 *.sql
 
+# Locally uploaded files (customer/nominee photos etc.) — not committed;
+# on a real deployment these should live in S3, not on disk.
+backend/uploads/
+
 # Logs
 *.log
 

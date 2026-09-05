@@ -12,6 +12,7 @@ from app.models.inventory import (
     MaterialIssue,
     MaterialIssueLine,
     MaterialIssueReason,
+    MaterialIssueStatus,
     PurchaseOrder,
     PurchaseOrderLine,
     PurchaseOrderStatus,
@@ -19,6 +20,7 @@ from app.models.inventory import (
     StockMovementType,
     StockRefType,
     Vendor,
+    Warehouse,
 )
 from app.models.project import Project
 from app.models.voucher import Voucher, VoucherLine, VoucherType
@@ -31,6 +33,8 @@ from app.schemas.inventory import (
     PurchaseOrderUpdate,
     VendorCreate,
     VendorUpdate,
+    WarehouseCreate,
+    WarehouseUpdate,
 )
 
 MATERIAL_STOCK_ACCOUNT_CODE = "1040"
@@ -100,6 +104,52 @@ def update_vendor(db: Session, db_vendor: Vendor, vendor_in: VendorUpdate) -> Ve
 
 def delete_vendor(db: Session, db_vendor: Vendor) -> None:
     db.delete(db_vendor)
+    db.commit()
+
+
+# Warehouse
+
+
+def list_warehouses(db: Session, is_active: bool | None = None) -> list[Warehouse]:
+    query = db.query(Warehouse)
+    if is_active is not None:
+        query = query.filter(Warehouse.is_active == is_active)
+    return query.order_by(Warehouse.id.desc()).all()
+
+
+def get_warehouse(db: Session, warehouse_id: int) -> Warehouse | None:
+    return db.query(Warehouse).filter(Warehouse.id == warehouse_id).first()
+
+
+def create_warehouse(db: Session, warehouse_in: WarehouseCreate) -> Warehouse:
+    db_warehouse = Warehouse(
+        warehouse_code=next_sequence_number(db, Warehouse.warehouse_code, "WH-", 4),
+        **warehouse_in.model_dump(),
+    )
+    db.add(db_warehouse)
+    db.commit()
+    db.refresh(db_warehouse)
+    return db_warehouse
+
+
+def update_warehouse(db: Session, db_warehouse: Warehouse, warehouse_in: WarehouseUpdate) -> Warehouse:
+    for field, value in warehouse_in.model_dump(exclude_unset=True).items():
+        setattr(db_warehouse, field, value)
+    db.commit()
+    db.refresh(db_warehouse)
+    return db_warehouse
+
+
+def delete_warehouse(db: Session, db_warehouse: Warehouse) -> None:
+    movement_count = (
+        db.query(StockLedger).filter(StockLedger.warehouse_id == db_warehouse.id).count()
+    )
+    if movement_count:
+        raise ValueError(
+            f"{db_warehouse.name} has {movement_count} stock movement(s) recorded against it "
+            "and cannot be deleted."
+        )
+    db.delete(db_warehouse)
     db.commit()
 
 
@@ -217,10 +267,10 @@ def delete_purchase_order(db: Session, db_po: PurchaseOrder) -> None:
 # Stock ledger helpers
 
 
-def _get_current_balance(db: Session, material_id: int, project_id: int | None) -> tuple[float, float]:
+def _get_current_balance(db: Session, material_id: int, warehouse_id: int | None) -> tuple[float, float]:
     last = (
         db.query(StockLedger)
-        .filter(StockLedger.material_id == material_id, StockLedger.project_id == project_id)
+        .filter(StockLedger.material_id == material_id, StockLedger.warehouse_id == warehouse_id)
         .order_by(StockLedger.id.desc())
         .first()
     )
@@ -233,7 +283,8 @@ def _post_stock_movement(
     db: Session,
     *,
     material_id: int,
-    project_id: int | None,
+    warehouse_id: int | None,
+    project_id: int | None = None,
     movement_date,
     movement_type: StockMovementType,
     ref_type: StockRefType,
@@ -241,7 +292,7 @@ def _post_stock_movement(
     quantity: float,
     rate: float,
 ) -> StockLedger:
-    prev_qty, prev_value = _get_current_balance(db, material_id, project_id)
+    prev_qty, prev_value = _get_current_balance(db, material_id, warehouse_id)
     amount = round(quantity * rate, 2)
 
     if movement_type == StockMovementType.IN:
@@ -253,6 +304,7 @@ def _post_stock_movement(
 
     entry = StockLedger(
         material_id=material_id,
+        warehouse_id=warehouse_id,
         project_id=project_id,
         movement_date=movement_date,
         movement_type=movement_type,
@@ -269,14 +321,14 @@ def _post_stock_movement(
 
 
 def _assert_latest_movement(
-    db: Session, material_id: int, project_id: int | None, ref_type: StockRefType, ref_id: int, doc_label: str
+    db: Session, material_id: int, warehouse_id: int | None, ref_type: StockRefType, ref_id: int, doc_label: str
 ) -> None:
-    """Only the most recent stock-affecting document per material/project can be
+    """Only the most recent stock-affecting document per material/warehouse can be
     deleted, since balance_qty/balance_value are computed incrementally from the
     prior row rather than recalculated on every change."""
     latest = (
         db.query(StockLedger)
-        .filter(StockLedger.material_id == material_id, StockLedger.project_id == project_id)
+        .filter(StockLedger.material_id == material_id, StockLedger.warehouse_id == warehouse_id)
         .order_by(StockLedger.id.desc())
         .first()
     )
@@ -332,6 +384,7 @@ def create_grn(db: Session, grn_in: GRNCreate) -> GRN:
         grn_no=next_sequence_number(db, GRN.grn_no, "GRN-", 5),
         grn_date=grn_in.grn_date,
         vendor_id=grn_in.vendor_id,
+        warehouse_id=grn_in.warehouse_id,
         project_id=grn_in.project_id,
         po_id=grn_in.po_id,
         payment_account_id=grn_in.payment_account_id,
@@ -354,6 +407,7 @@ def create_grn(db: Session, grn_in: GRNCreate) -> GRN:
         _post_stock_movement(
             db,
             material_id=line.material_id,
+            warehouse_id=grn_in.warehouse_id,
             project_id=grn_in.project_id,
             movement_date=grn_in.grn_date,
             movement_type=StockMovementType.IN,
@@ -406,7 +460,7 @@ def create_grn(db: Session, grn_in: GRNCreate) -> GRN:
 def delete_grn(db: Session, db_grn: GRN) -> None:
     for line in db_grn.lines:
         _assert_latest_movement(
-            db, line.material_id, db_grn.project_id, StockRefType.GRN, db_grn.id, f"GRN {db_grn.grn_no}"
+            db, line.material_id, db_grn.warehouse_id, StockRefType.GRN, db_grn.id, f"GRN {db_grn.grn_no}"
         )
 
     db.query(StockLedger).filter(
@@ -465,7 +519,7 @@ def create_material_issue(db: Session, issue_in: MaterialIssueCreate) -> Materia
     total_amount = 0.0
     line_data = []
     for line in issue_in.lines:
-        balance_qty, balance_value = _get_current_balance(db, line.material_id, issue_in.project_id)
+        balance_qty, balance_value = _get_current_balance(db, line.material_id, issue_in.warehouse_id)
         if line.quantity > balance_qty:
             material = db.query(Material).filter(Material.id == line.material_id).first()
             name = material.name if material else f"material #{line.material_id}"
@@ -481,6 +535,7 @@ def create_material_issue(db: Session, issue_in: MaterialIssueCreate) -> Materia
         issue_no=next_sequence_number(db, MaterialIssue.issue_no, "MIS-", 5),
         issue_date=issue_in.issue_date,
         project_id=issue_in.project_id,
+        warehouse_id=issue_in.warehouse_id,
         reason=issue_in.reason,
         issued_to=issue_in.issued_to,
         narration=issue_in.narration,
@@ -501,6 +556,7 @@ def create_material_issue(db: Session, issue_in: MaterialIssueCreate) -> Materia
         _post_stock_movement(
             db,
             material_id=line.material_id,
+            warehouse_id=issue_in.warehouse_id,
             project_id=issue_in.project_id,
             movement_date=issue_in.issue_date,
             movement_type=StockMovementType.OUT,
@@ -552,7 +608,7 @@ def delete_material_issue(db: Session, db_issue: MaterialIssue) -> None:
         _assert_latest_movement(
             db,
             line.material_id,
-            db_issue.project_id,
+            db_issue.warehouse_id,
             StockRefType.ISSUE,
             db_issue.id,
             f"Material Issue {db_issue.issue_no}",
@@ -592,6 +648,7 @@ def resolve_material_issue(
             _post_stock_movement(
                 db,
                 material_id=line.material_id,
+                warehouse_id=db_issue.warehouse_id,
                 project_id=db_issue.project_id,
                 movement_date=today,
                 movement_type=StockMovementType.IN,
@@ -640,30 +697,43 @@ def resolve_material_issue(
     return get_material_issue(db, db_issue.id)
 
 
+def mark_material_issue_received(
+    db: Session, db_issue: MaterialIssue, received_by: str
+) -> MaterialIssue:
+    if db_issue.status == MaterialIssueStatus.RECEIVED:
+        raise ValueError(f"{db_issue.issue_no} has already been marked received")
+
+    db_issue.status = MaterialIssueStatus.RECEIVED
+    db_issue.received_date = date.today()
+    db_issue.received_by = received_by
+    db.commit()
+    return get_material_issue(db, db_issue.id)
+
+
 # Stock balance summary
 
 
 def get_stock_balances(
-    db: Session, project_id: int | None = None, material_id: int | None = None
+    db: Session, warehouse_id: int | None = None, material_id: int | None = None
 ) -> list[dict]:
     latest_subq = db.query(
         StockLedger.material_id,
-        StockLedger.project_id,
+        StockLedger.warehouse_id,
         func.max(StockLedger.id).label("latest_id"),
-    ).group_by(StockLedger.material_id, StockLedger.project_id)
+    ).group_by(StockLedger.material_id, StockLedger.warehouse_id)
 
-    if project_id is not None:
-        latest_subq = latest_subq.filter(StockLedger.project_id == project_id)
+    if warehouse_id is not None:
+        latest_subq = latest_subq.filter(StockLedger.warehouse_id == warehouse_id)
     if material_id is not None:
         latest_subq = latest_subq.filter(StockLedger.material_id == material_id)
 
     latest_subq = latest_subq.subquery()
 
     rows = (
-        db.query(StockLedger, Material, Project)
+        db.query(StockLedger, Material, Warehouse)
         .join(latest_subq, StockLedger.id == latest_subq.c.latest_id)
         .join(Material, Material.id == StockLedger.material_id)
-        .outerjoin(Project, Project.id == StockLedger.project_id)
+        .outerjoin(Warehouse, Warehouse.id == StockLedger.warehouse_id)
         .order_by(Material.name)
         .all()
     )
@@ -674,19 +744,19 @@ def get_stock_balances(
             "material_code": material.material_code,
             "material_name": material.name,
             "unit_of_measure": material.unit_of_measure,
-            "project_id": ledger.project_id,
-            "project_name": project.project_name if project else None,
+            "warehouse_id": ledger.warehouse_id,
+            "warehouse_name": warehouse.name if warehouse else None,
             "balance_qty": float(ledger.balance_qty),
             "balance_value": float(ledger.balance_value),
         }
-        for ledger, material, project in rows
+        for ledger, material, warehouse in rows
     ]
 
     # A material with no GRN/Issue yet has no stock_ledger row at all, so the join
-    # above silently omits it. Without a project filter, list it anyway at zero —
+    # above silently omits it. Without a warehouse filter, list it anyway at zero —
     # otherwise a freshly-added material just looks "missing" from the balance
     # sheet instead of reading as not-yet-received.
-    if project_id is None:
+    if warehouse_id is None:
         touched_material_ids = {r["material_id"] for r in result}
         materials_query = db.query(Material)
         if material_id is not None:
@@ -699,12 +769,66 @@ def get_stock_balances(
                         "material_code": material.material_code,
                         "material_name": material.name,
                         "unit_of_measure": material.unit_of_measure,
-                        "project_id": None,
-                        "project_name": None,
+                        "warehouse_id": None,
+                        "warehouse_name": None,
                         "balance_qty": 0.0,
                         "balance_value": 0.0,
                     }
                 )
         result.sort(key=lambda r: r["material_name"])
 
+    return result
+
+
+def get_project_stock(
+    db: Session, project_id: int | None = None, material_id: int | None = None
+) -> list[dict]:
+    """Material confirmed received at each project/site — summed from Material
+    Issue lines whose delivery has been marked Received. Unlike warehouse stock
+    this isn't a live perpetual balance (there's no "consumed on site" event
+    yet), just a running total of what's arrived at each project so far."""
+    query = (
+        db.query(
+            MaterialIssueLine.material_id,
+            MaterialIssue.project_id,
+            func.sum(MaterialIssueLine.quantity).label("qty"),
+            func.sum(MaterialIssueLine.amount).label("value"),
+        )
+        .join(MaterialIssue, MaterialIssue.id == MaterialIssueLine.issue_id)
+        .filter(MaterialIssue.status == MaterialIssueStatus.RECEIVED)
+        .group_by(MaterialIssueLine.material_id, MaterialIssue.project_id)
+    )
+    if project_id is not None:
+        query = query.filter(MaterialIssue.project_id == project_id)
+    if material_id is not None:
+        query = query.filter(MaterialIssueLine.material_id == material_id)
+
+    rows = query.all()
+
+    material_ids = {r[0] for r in rows}
+    project_ids = {r[1] for r in rows}
+    materials = {
+        m.id: m for m in db.query(Material).filter(Material.id.in_(material_ids)).all()
+    } if material_ids else {}
+    projects = {
+        p.id: p for p in db.query(Project).filter(Project.id.in_(project_ids)).all()
+    } if project_ids else {}
+
+    result = []
+    for row_material_id, row_project_id, qty, value in rows:
+        material = materials.get(row_material_id)
+        project = projects.get(row_project_id)
+        result.append(
+            {
+                "material_id": row_material_id,
+                "material_code": material.material_code if material else "",
+                "material_name": material.name if material else "",
+                "unit_of_measure": material.unit_of_measure if material else "",
+                "project_id": row_project_id,
+                "project_name": project.project_name if project else None,
+                "balance_qty": float(qty),
+                "balance_value": float(value),
+            }
+        )
+    result.sort(key=lambda r: r["material_name"])
     return result

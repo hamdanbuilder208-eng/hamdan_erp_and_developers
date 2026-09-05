@@ -6,6 +6,9 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import { TableRowsSkeleton } from "../components/ui/Skeleton";
+import { toast, apiErrorMessage } from "../lib/toast";
+import { confirm } from "../lib/confirm";
 import type { LandProperty, LandPropertyStatus, PropertyType, SizeUnit } from "../types";
 
 const propertyTypes: PropertyType[] = ["Plot", "Land", "Commercial Shop", "SR", "Other"];
@@ -74,8 +77,7 @@ export default function LandPlotsPage() {
     mutationFn: async (id: number) => api.delete(`/land-properties/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["land-properties"] }),
     onError: (err: unknown) => {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(message ?? "Failed to delete property.");
+      toast.error(apiErrorMessage(err, "Failed to delete property."));
     },
   });
 
@@ -127,13 +129,7 @@ export default function LandPlotsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-            {isLoading && (
-              <tr>
-                <td colSpan={7} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
-                  Loading...
-                </td>
-              </tr>
-            )}
+            {isLoading && <TableRowsSkeleton rows={4} cols={7} />}
             {!isLoading && properties?.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
@@ -142,7 +138,7 @@ export default function LandPlotsPage() {
               </tr>
             )}
             {properties?.map((p) => (
-              <tr key={p.id}>
+              <tr key={p.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                 <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{p.property_ref_no}</td>
                 <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{p.property_type}</td>
                 <td className="px-5 py-3 text-navy-900 dark:text-slate-100">
@@ -174,10 +170,12 @@ export default function LandPlotsPage() {
                 </td>
                 <td className="px-5 py-3 text-right">
                   <button
-                    onClick={() => {
-                      if (window.confirm(`Delete property "${p.property_ref_no}"?`)) {
-                        deleteProperty.mutate(p.id);
-                      }
+                    onClick={async () => {
+                      const ok = await confirm(`Delete property "${p.property_ref_no}"?`, {
+                        danger: true,
+                        confirmLabel: "Delete",
+                      });
+                      if (ok) deleteProperty.mutate(p.id);
                     }}
                     className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
                   >

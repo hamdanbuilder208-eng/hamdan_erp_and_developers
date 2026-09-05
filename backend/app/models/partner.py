@@ -32,6 +32,59 @@ class ProjectPartnerShare(Base, TimestampMixin):
     partner: Mapped["Partner"] = relationship()
 
 
+class PartnerContribution(Base, TimestampMixin):
+    """Money the partner actually pays into a project, logged against their
+    pledged `ProjectPartnerShare.investment_amount` over time — the initial
+    payment, a start-of-work installment, later top-ups when site recovery
+    runs slow, etc. Each entry is dated and tagged with a purpose so the
+    partner can see exactly when/why every rupee went in."""
+
+    __tablename__ = "partner_contributions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contribution_no: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    contribution_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    partner_id: Mapped[int] = mapped_column(ForeignKey("partners.id"), nullable=False)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    debit_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
+
+    amount: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
+    purpose: Mapped[str | None] = mapped_column(String(150))
+    narration: Mapped[str | None] = mapped_column(Text)
+
+    partner: Mapped["Partner"] = relationship()
+    project: Mapped["Project"] = relationship()
+    debit_account: Mapped["Account"] = relationship()
+
+
+class PartnerExpense(Base, TimestampMixin):
+    """An expense the partner personally paid out of pocket on the project's
+    behalf (e.g. cement bought with their own cash). This is a real project
+    expense — it posts to the normal expense account and reduces profit like
+    any other expense — but it *also* creates a payable: the business owes
+    this back to the partner, on top of their equity and profit share."""
+
+    __tablename__ = "partner_expenses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    expense_no: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    expense_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    partner_id: Mapped[int] = mapped_column(ForeignKey("partners.id"), nullable=False)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    expense_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
+
+    amount: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
+    narration: Mapped[str | None] = mapped_column(Text)
+
+    partner: Mapped["Partner"] = relationship()
+    project: Mapped["Project"] = relationship()
+    expense_account: Mapped["Account"] = relationship()
+
+
 class PartnerDrawing(Base, TimestampMixin):
     __tablename__ = "partner_drawings"
 

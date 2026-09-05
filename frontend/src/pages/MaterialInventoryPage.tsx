@@ -1,12 +1,16 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { History, Plus, Printer, Trash2 } from "lucide-react";
+import { History, Plus, Printer, QrCode, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
-import { Badge, PurchaseOrderStatusBadge } from "../components/ui/Badge";
+import { Badge, PurchaseOrderStatusBadge, MaterialIssueStatusBadge } from "../components/ui/Badge";
+import { TableRowsSkeleton } from "../components/ui/Skeleton";
+import { QrImage } from "../components/ui/QrImage";
+import { toast } from "../lib/toast";
+import { confirm } from "../lib/confirm";
 import type {
   Account,
   GRN,
@@ -14,12 +18,21 @@ import type {
   MaterialIssue,
   MaterialIssueReason,
   Project,
+  ProjectStock,
   PurchaseOrder,
   StockBalance,
   Vendor,
+  Warehouse,
 } from "../types";
 
-type InventoryTab = "vendors" | "materials" | "purchase-orders" | "grn" | "issues" | "stock";
+type InventoryTab =
+  | "vendors"
+  | "warehouses"
+  | "materials"
+  | "purchase-orders"
+  | "grn"
+  | "issues"
+  | "stock";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -52,6 +65,10 @@ export default function MaterialInventoryPage() {
   const { data: vendors } = useQuery({
     queryKey: ["vendors"],
     queryFn: async () => (await api.get<Vendor[]>("/inventory/vendors")).data,
+  });
+  const { data: warehouses } = useQuery({
+    queryKey: ["warehouses"],
+    queryFn: async () => (await api.get<Warehouse[]>("/inventory/warehouses")).data,
   });
   const { data: materials } = useQuery({
     queryKey: ["materials"],
@@ -89,8 +106,35 @@ export default function MaterialInventoryPage() {
   const deleteVendor = useMutation({
     mutationFn: async (id: number) => api.delete(`/inventory/vendors/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["vendors"] }),
-    onError: (err: unknown) => window.alert(errorMessage(err, "Failed to delete vendor.")),
+    onError: (err: unknown) => toast.error(errorMessage(err, "Failed to delete vendor.")),
   });
+
+  // ---- Warehouses ----
+  const [warehouseModalOpen, setWarehouseModalOpen] = React.useState(false);
+  const [warehouseForm, setWarehouseForm] = React.useState({ name: "", location: "" });
+
+  const createWarehouse = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post<Warehouse>("/inventory/warehouses", {
+          name: warehouseForm.name,
+          location: warehouseForm.location || null,
+        })
+      ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["warehouses"] });
+      setWarehouseModalOpen(false);
+      setWarehouseForm({ name: "", location: "" });
+    },
+  });
+
+  const deleteWarehouse = useMutation({
+    mutationFn: async (id: number) => api.delete(`/inventory/warehouses/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["warehouses"] }),
+    onError: (err: unknown) => toast.error(errorMessage(err, "Failed to delete warehouse.")),
+  });
+
+  const [qrWarehouse, setQrWarehouse] = React.useState<Warehouse | null>(null);
 
   // ---- Materials ----
   const [materialModalOpen, setMaterialModalOpen] = React.useState(false);
@@ -115,7 +159,7 @@ export default function MaterialInventoryPage() {
   const deleteMaterial = useMutation({
     mutationFn: async (id: number) => api.delete(`/inventory/materials/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["materials"] }),
-    onError: (err: unknown) => window.alert(errorMessage(err, "Failed to delete material.")),
+    onError: (err: unknown) => toast.error(errorMessage(err, "Failed to delete material.")),
   });
 
   const [historyMaterial, setHistoryMaterial] = React.useState<Material | null>(null);
@@ -168,13 +212,14 @@ export default function MaterialInventoryPage() {
   const deletePo = useMutation({
     mutationFn: async (id: number) => api.delete(`/inventory/purchase-orders/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["purchase-orders"] }),
-    onError: (err: unknown) => window.alert(errorMessage(err, "Failed to delete purchase order.")),
+    onError: (err: unknown) => toast.error(errorMessage(err, "Failed to delete purchase order.")),
   });
 
   // ---- GRN ----
   const [grnModalOpen, setGrnModalOpen] = React.useState(false);
   const [grnForm, setGrnForm] = React.useState({
     vendor_id: "",
+    warehouse_id: "",
     project_id: "",
     payment_account_id: "",
     narration: "",
@@ -191,7 +236,14 @@ export default function MaterialInventoryPage() {
   const grnTotal = grnLines.reduce((sum, l) => sum + (Number(l.quantity) || 0) * (Number(l.rate) || 0), 0);
 
   const resetGrnForm = () => {
-    setGrnForm({ vendor_id: "", project_id: "", payment_account_id: "", narration: "", po_id: "" });
+    setGrnForm({
+      vendor_id: "",
+      warehouse_id: "",
+      project_id: "",
+      payment_account_id: "",
+      narration: "",
+      po_id: "",
+    });
     setGrnLines([emptyLine()]);
     setGrnError(null);
   };
@@ -230,6 +282,7 @@ export default function MaterialInventoryPage() {
         await api.post<GRN>("/inventory/grn", {
           grn_date: todayIso(),
           vendor_id: Number(grnForm.vendor_id),
+          warehouse_id: Number(grnForm.warehouse_id),
           project_id: grnForm.project_id ? Number(grnForm.project_id) : null,
           po_id: grnForm.po_id ? Number(grnForm.po_id) : null,
           payment_account_id: Number(grnForm.payment_account_id),
@@ -262,13 +315,14 @@ export default function MaterialInventoryPage() {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["stock"] });
     },
-    onError: (err: unknown) => window.alert(errorMessage(err, "Failed to delete GRN.")),
+    onError: (err: unknown) => toast.error(errorMessage(err, "Failed to delete GRN.")),
   });
 
   // ---- Material Issues ----
   const [issueModalOpen, setIssueModalOpen] = React.useState(false);
   const [issueForm, setIssueForm] = React.useState({
     project_id: "",
+    warehouse_id: "",
     reason: "Site Consumption" as MaterialIssueReason,
     issued_to: "",
     narration: "",
@@ -285,7 +339,13 @@ export default function MaterialInventoryPage() {
   });
 
   const resetIssueForm = () => {
-    setIssueForm({ project_id: "", reason: "Site Consumption", issued_to: "", narration: "" });
+    setIssueForm({
+      project_id: "",
+      warehouse_id: "",
+      reason: "Site Consumption",
+      issued_to: "",
+      narration: "",
+    });
     setIssueLines([{ material_id: "", quantity: "" }]);
     setIssueError(null);
   };
@@ -296,6 +356,7 @@ export default function MaterialInventoryPage() {
         await api.post<MaterialIssue>("/inventory/issues", {
           issue_date: todayIso(),
           project_id: Number(issueForm.project_id),
+          warehouse_id: Number(issueForm.warehouse_id),
           reason: issueForm.reason,
           issued_to: issueForm.issued_to || null,
           narration: issueForm.narration || null,
@@ -324,7 +385,7 @@ export default function MaterialInventoryPage() {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["stock"] });
     },
-    onError: (err: unknown) => window.alert(errorMessage(err, "Failed to delete material issue.")),
+    onError: (err: unknown) => toast.error(errorMessage(err, "Failed to delete material issue.")),
   });
 
   const [resolveIssue, setResolveIssue] = React.useState<MaterialIssue | null>(null);
@@ -352,17 +413,50 @@ export default function MaterialInventoryPage() {
     onError: (err: unknown) => setResolveError(errorMessage(err, "Failed to resolve issue")),
   });
 
+  const [receiveIssue, setReceiveIssue] = React.useState<MaterialIssue | null>(null);
+  const [receivedByInput, setReceivedByInput] = React.useState("");
+  const [receiveError, setReceiveError] = React.useState<string | null>(null);
+
+  const receiveMutation = useMutation({
+    mutationFn: async () =>
+      (
+        await api.put<MaterialIssue>(`/inventory/issues/${receiveIssue!.id}/receive`, {
+          received_by: receivedByInput,
+        })
+      ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["material-issues"] });
+      setReceiveIssue(null);
+      setReceivedByInput("");
+      setReceiveError(null);
+    },
+    onError: (err: unknown) => setReceiveError(errorMessage(err, "Failed to confirm receipt")),
+  });
+
   // ---- Stock ----
-  const [stockProjectFilter, setStockProjectFilter] = React.useState("");
+  const [stockView, setStockView] = React.useState<"warehouse" | "project">("warehouse");
+  const [stockWarehouseFilter, setStockWarehouseFilter] = React.useState("");
   const { data: stock, isLoading: stockLoading } = useQuery({
-    queryKey: ["stock", stockProjectFilter],
+    queryKey: ["stock", stockWarehouseFilter],
     queryFn: async () =>
       (
         await api.get<StockBalance[]>("/inventory/stock", {
+          params: { warehouse_id: stockWarehouseFilter || undefined },
+        })
+      ).data,
+    enabled: tab === "stock" && stockView === "warehouse",
+  });
+
+  const [stockProjectFilter, setStockProjectFilter] = React.useState("");
+  const { data: projectStock, isLoading: projectStockLoading } = useQuery({
+    queryKey: ["stock-by-project", stockProjectFilter],
+    queryFn: async () =>
+      (
+        await api.get<ProjectStock[]>("/inventory/stock/by-project", {
           params: { project_id: stockProjectFilter || undefined },
         })
       ).data,
-    enabled: tab === "stock",
+    enabled: tab === "stock" && stockView === "project",
   });
 
   return (
@@ -370,8 +464,8 @@ export default function MaterialInventoryPage() {
       <div>
         <h2 className="text-lg font-semibold text-navy-950 dark:text-white">Material &amp; Inventory</h2>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Vendors, materials, purchase orders, goods receipt and site consumption — with running
-          per-project stock.
+          Vendors, warehouses, materials, purchase orders, goods receipt and site consumption — with
+          running per-warehouse stock.
         </p>
       </div>
 
@@ -379,6 +473,7 @@ export default function MaterialInventoryPage() {
         {(
           [
             { key: "vendors", label: "Vendors" },
+            { key: "warehouses", label: "Warehouses" },
             { key: "materials", label: "Materials" },
             { key: "purchase-orders", label: "Purchase Orders" },
             { key: "grn", label: "GRN" },
@@ -409,6 +504,7 @@ export default function MaterialInventoryPage() {
               New Vendor
             </Button>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
               <tr>
@@ -429,7 +525,7 @@ export default function MaterialInventoryPage() {
                 </tr>
               )}
               {vendors?.map((v) => (
-                <tr key={v.id}>
+                <tr key={v.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                   <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">
                     {v.vendor_code}
                   </td>
@@ -441,8 +537,9 @@ export default function MaterialInventoryPage() {
                   <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{v.address ?? "—"}</td>
                   <td className="px-5 py-3 text-right">
                     <button
-                      onClick={() => {
-                        if (window.confirm(`Delete vendor "${v.name}"?`)) deleteVendor.mutate(v.id);
+                      onClick={async () => {
+                        const ok = await confirm(`Delete vendor "${v.name}"?`, { danger: true, confirmLabel: "Delete" });
+                        if (ok) deleteVendor.mutate(v.id);
                       }}
                       className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
                     >
@@ -453,6 +550,72 @@ export default function MaterialInventoryPage() {
               ))}
             </tbody>
           </table>
+          </div>
+        </Card>
+      )}
+
+      {tab === "warehouses" && (
+        <Card>
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-navy-800 px-5 py-4">
+            <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">Warehouses</h3>
+            <Button size="sm" onClick={() => setWarehouseModalOpen(true)}>
+              <Plus className="h-4 w-4" />
+              New Warehouse
+            </Button>
+          </div>
+          <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <tr>
+                <th className="px-5 py-3 font-medium">Warehouse #</th>
+                <th className="px-5 py-3 font-medium">Name</th>
+                <th className="px-5 py-3 font-medium">Location</th>
+                <th className="px-5 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
+              {warehouses?.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                    No warehouses yet. Click "New Warehouse" to add your first storage location.
+                  </td>
+                </tr>
+              )}
+              {warehouses?.map((w) => (
+                <tr key={w.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
+                  <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">
+                    {w.warehouse_code}
+                  </td>
+                  <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{w.name}</td>
+                  <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{w.location ?? "—"}</td>
+                  <td className="px-5 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => setQrWarehouse(w)}
+                        title="Dispatch QR"
+                        className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
+                      >
+                        <QrCode className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const ok = await confirm(`Delete warehouse "${w.name}"?`, {
+                            danger: true,
+                            confirmLabel: "Delete",
+                          });
+                          if (ok) deleteWarehouse.mutate(w.id);
+                        }}
+                        className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
         </Card>
       )}
 
@@ -465,6 +628,7 @@ export default function MaterialInventoryPage() {
               New Material
             </Button>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
               <tr>
@@ -494,7 +658,7 @@ export default function MaterialInventoryPage() {
                 }
                 const vendorRows = Array.from(vendorQtyMap.entries());
                 return (
-                  <tr key={m.id}>
+                  <tr key={m.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                     <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">
                       {m.material_code}
                     </td>
@@ -524,8 +688,9 @@ export default function MaterialInventoryPage() {
                           <History className="h-3.5 w-3.5" />
                         </button>
                         <button
-                          onClick={() => {
-                            if (window.confirm(`Delete material "${m.name}"?`)) deleteMaterial.mutate(m.id);
+                          onClick={async () => {
+                            const ok = await confirm(`Delete material "${m.name}"?`, { danger: true, confirmLabel: "Delete" });
+                            if (ok) deleteMaterial.mutate(m.id);
                           }}
                           className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
                         >
@@ -538,6 +703,7 @@ export default function MaterialInventoryPage() {
               })}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
 
@@ -550,6 +716,7 @@ export default function MaterialInventoryPage() {
               New Purchase Order
             </Button>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
               <tr>
@@ -580,7 +747,7 @@ export default function MaterialInventoryPage() {
               {purchaseOrders?.map((po) => {
                 const total = po.lines.reduce((s, l) => s + l.amount, 0);
                 return (
-                  <tr key={po.id}>
+                  <tr key={po.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                     <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">
                       {po.po_no}
                     </td>
@@ -609,8 +776,12 @@ export default function MaterialInventoryPage() {
                           <Printer className="h-3.5 w-3.5" />
                         </button>
                         <button
-                          onClick={() => {
-                            if (window.confirm(`Delete purchase order "${po.po_no}"?`)) deletePo.mutate(po.id);
+                          onClick={async () => {
+                            const ok = await confirm(`Delete purchase order "${po.po_no}"?`, {
+                              danger: true,
+                              confirmLabel: "Delete",
+                            });
+                            if (ok) deletePo.mutate(po.id);
                           }}
                           className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
                         >
@@ -623,6 +794,7 @@ export default function MaterialInventoryPage() {
               })}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
 
@@ -637,13 +809,14 @@ export default function MaterialInventoryPage() {
               New GRN
             </Button>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
               <tr>
                 <th className="px-5 py-3 font-medium">GRN #</th>
                 <th className="px-5 py-3 font-medium">Date</th>
                 <th className="px-5 py-3 font-medium">Vendor</th>
-                <th className="px-5 py-3 font-medium">Project</th>
+                <th className="px-5 py-3 font-medium">Warehouse</th>
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 text-right font-medium">Amount</th>
                 <th className="px-5 py-3" />
@@ -665,14 +838,14 @@ export default function MaterialInventoryPage() {
                 </tr>
               )}
               {grns?.map((g) => (
-                <tr key={g.id}>
+                <tr key={g.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                   <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">
                     {g.grn_no}
                   </td>
                   <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{g.grn_date}</td>
                   <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{g.vendor.name}</td>
                   <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
-                    {g.project?.project_name ?? "—"}
+                    {g.warehouse?.name ?? "—"}
                   </td>
                   <td className="px-5 py-3">
                     <Badge tone={g.voucher_id ? "success" : "warning"}>
@@ -691,8 +864,9 @@ export default function MaterialInventoryPage() {
                         <Printer className="h-3.5 w-3.5" />
                       </button>
                       <button
-                        onClick={() => {
-                          if (window.confirm(`Delete GRN "${g.grn_no}"?`)) deleteGrn.mutate(g.id);
+                        onClick={async () => {
+                          const ok = await confirm(`Delete GRN "${g.grn_no}"?`, { danger: true, confirmLabel: "Delete" });
+                          if (ok) deleteGrn.mutate(g.id);
                         }}
                         className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
                       >
@@ -704,6 +878,7 @@ export default function MaterialInventoryPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
 
@@ -716,30 +891,27 @@ export default function MaterialInventoryPage() {
               New Issue
             </Button>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
               <tr>
                 <th className="px-5 py-3 font-medium">Issue #</th>
                 <th className="px-5 py-3 font-medium">Date</th>
+                <th className="px-5 py-3 font-medium">Warehouse</th>
                 <th className="px-5 py-3 font-medium">Project</th>
                 <th className="px-5 py-3 font-medium">Reason</th>
                 <th className="px-5 py-3 font-medium">Issued To</th>
+                <th className="px-5 py-3 font-medium">Delivery</th>
                 <th className="px-5 py-3 font-medium">Resolution</th>
                 <th className="px-5 py-3 text-right font-medium">Amount</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-              {issuesLoading && (
-                <tr>
-                  <td colSpan={8} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
-                    Loading...
-                  </td>
-                </tr>
-              )}
+              {issuesLoading && <TableRowsSkeleton rows={4} cols={10} />}
               {!issuesLoading && issues?.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={10} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
                     No material issues yet.
                   </td>
                 </tr>
@@ -748,11 +920,14 @@ export default function MaterialInventoryPage() {
                 const total = iss.lines.reduce((s, l) => s + l.amount, 0);
                 const isDamaged = iss.reason === "Damaged / Wastage";
                 return (
-                  <tr key={iss.id}>
+                  <tr key={iss.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                     <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">
                       {iss.issue_no}
                     </td>
                     <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{iss.issue_date}</td>
+                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
+                      {iss.warehouse?.name ?? "—"}
+                    </td>
                     <td className="px-5 py-3 text-navy-900 dark:text-slate-100">
                       {iss.project.project_name}
                     </td>
@@ -761,6 +936,23 @@ export default function MaterialInventoryPage() {
                     </td>
                     <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
                       {iss.issued_to ?? "—"}
+                    </td>
+                    <td className="px-5 py-3">
+                      {isDamaged ? (
+                        <span className="text-slate-300 dark:text-slate-600">—</span>
+                      ) : (
+                        <button
+                          disabled={iss.status === "Received"}
+                          onClick={() => iss.status === "Dispatched" && setReceiveIssue(iss)}
+                          title={
+                            iss.status === "Received"
+                              ? `Received by ${iss.received_by ?? "—"} on ${iss.received_date ?? ""}`
+                              : "Mark as received at site"
+                          }
+                        >
+                          <MaterialIssueStatusBadge status={iss.status} />
+                        </button>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       {isDamaged ? (
@@ -791,9 +983,12 @@ export default function MaterialInventoryPage() {
                           <Printer className="h-3.5 w-3.5" />
                         </button>
                         <button
-                          onClick={() => {
-                            if (window.confirm(`Delete material issue "${iss.issue_no}"?`))
-                              deleteIssue.mutate(iss.id);
+                          onClick={async () => {
+                            const ok = await confirm(`Delete material issue "${iss.issue_no}"?`, {
+                              danger: true,
+                              confirmLabel: "Delete",
+                            });
+                            if (ok) deleteIssue.mutate(iss.id);
                           }}
                           className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
                         >
@@ -806,66 +1001,153 @@ export default function MaterialInventoryPage() {
               })}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
 
       {tab === "stock" && (
         <Card>
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-navy-800 px-5 py-4">
-            <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">Stock Balance</h3>
-            <Select
-              value={stockProjectFilter}
-              onChange={(e) => setStockProjectFilter(e.target.value)}
-              className="w-56"
-            >
-              <option value="">All Projects</option>
-              {projects?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.project_name}
-                </option>
-              ))}
-            </Select>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-navy-800 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">Stock Balance</h3>
+              <div className="flex rounded-lg border border-slate-200 p-0.5 dark:border-navy-700">
+                <button
+                  onClick={() => setStockView("warehouse")}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                    stockView === "warehouse"
+                      ? "bg-brand-600 text-white"
+                      : "text-slate-500 dark:text-slate-400"
+                  }`}
+                >
+                  By Warehouse
+                </button>
+                <button
+                  onClick={() => setStockView("project")}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                    stockView === "project"
+                      ? "bg-brand-600 text-white"
+                      : "text-slate-500 dark:text-slate-400"
+                  }`}
+                >
+                  By Project
+                </button>
+              </div>
+            </div>
+            {stockView === "warehouse" ? (
+              <Select
+                value={stockWarehouseFilter}
+                onChange={(e) => setStockWarehouseFilter(e.target.value)}
+                className="w-56"
+              >
+                <option value="">All Warehouses</option>
+                {warehouses?.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.warehouse_code} — {w.name}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <Select
+                value={stockProjectFilter}
+                onChange={(e) => setStockProjectFilter(e.target.value)}
+                className="w-56"
+              >
+                <option value="">All Projects</option>
+                {projects?.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.project_name}
+                  </option>
+                ))}
+              </Select>
+            )}
           </div>
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              <tr>
-                <th className="px-5 py-3 font-medium">Material</th>
-                <th className="px-5 py-3 font-medium">Project</th>
-                <th className="px-5 py-3 text-right font-medium">Quantity</th>
-                <th className="px-5 py-3 text-right font-medium">Value</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-              {stockLoading && (
+          {stockView === "warehouse" ? (
+            <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 <tr>
-                  <td colSpan={4} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
-                    Loading...
-                  </td>
+                  <th className="px-5 py-3 font-medium">Material</th>
+                  <th className="px-5 py-3 font-medium">Warehouse</th>
+                  <th className="px-5 py-3 text-right font-medium">Quantity</th>
+                  <th className="px-5 py-3 text-right font-medium">Value</th>
                 </tr>
-              )}
-              {!stockLoading && stock?.length === 0 && (
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
+                {stockLoading && (
+                  <tr>
+                    <td colSpan={4} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
+                      Loading...
+                    </td>
+                  </tr>
+                )}
+                {!stockLoading && stock?.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                      No stock movements recorded yet.
+                    </td>
+                  </tr>
+                )}
+                {stock?.map((s) => (
+                  <tr key={`${s.material_id}-${s.warehouse_id}`} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
+                    <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{s.material_name}</td>
+                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
+                      {s.warehouse_name ?? "—"}
+                    </td>
+                    <td className="px-5 py-3 text-right text-navy-900 dark:text-slate-100">
+                      {s.balance_qty.toLocaleString()} {s.unit_of_measure}
+                    </td>
+                    <td className="px-5 py-3 text-right text-navy-900 dark:text-slate-100">
+                      PKR {s.balance_value.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 <tr>
-                  <td colSpan={4} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
-                    No stock movements recorded yet.
-                  </td>
+                  <th className="px-5 py-3 font-medium">Material</th>
+                  <th className="px-5 py-3 font-medium">Project</th>
+                  <th className="px-5 py-3 text-right font-medium">Received Qty</th>
+                  <th className="px-5 py-3 text-right font-medium">Value</th>
                 </tr>
-              )}
-              {stock?.map((s) => (
-                <tr key={`${s.material_id}-${s.project_id}`}>
-                  <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{s.material_name}</td>
-                  <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
-                    {s.project_name ?? "—"}
-                  </td>
-                  <td className="px-5 py-3 text-right text-navy-900 dark:text-slate-100">
-                    {s.balance_qty.toLocaleString()} {s.unit_of_measure}
-                  </td>
-                  <td className="px-5 py-3 text-right text-navy-900 dark:text-slate-100">
-                    PKR {s.balance_value.toLocaleString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
+                {projectStockLoading && (
+                  <tr>
+                    <td colSpan={4} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
+                      Loading...
+                    </td>
+                  </tr>
+                )}
+                {!projectStockLoading && projectStock?.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                      No confirmed deliveries yet — quantities appear here once a site marks a delivery as received.
+                    </td>
+                  </tr>
+                )}
+                {projectStock?.map((s) => (
+                  <tr key={`${s.material_id}-${s.project_id}`} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
+                    <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{s.material_name}</td>
+                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
+                      {s.project_name ?? "—"}
+                    </td>
+                    <td className="px-5 py-3 text-right text-navy-900 dark:text-slate-100">
+                      {s.balance_qty.toLocaleString()} {s.unit_of_measure}
+                    </td>
+                    <td className="px-5 py-3 text-right text-navy-900 dark:text-slate-100">
+                      PKR {s.balance_value.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
+          )}
         </Card>
       )}
 
@@ -924,6 +1206,50 @@ export default function MaterialInventoryPage() {
             </Button>
             <Button type="submit" disabled={createVendor.isPending}>
               Add Vendor
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ---- Warehouse Modal ---- */}
+      <Modal
+        open={warehouseModalOpen}
+        onClose={() => setWarehouseModalOpen(false)}
+        title="New Warehouse"
+        description="Add a physical storage location — material lands here via GRN and is issued out to sites from here."
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            createWarehouse.mutate();
+          }}
+          className="space-y-4"
+        >
+          <div>
+            <Label htmlFor="warehouse_name">Name</Label>
+            <Input
+              id="warehouse_name"
+              required
+              value={warehouseForm.name}
+              onChange={(e) => setWarehouseForm({ ...warehouseForm, name: e.target.value })}
+              placeholder="e.g. Main Godown — Orangi Town"
+            />
+          </div>
+          <div>
+            <Label htmlFor="warehouse_location">Location</Label>
+            <Input
+              id="warehouse_location"
+              value={warehouseForm.location}
+              onChange={(e) => setWarehouseForm({ ...warehouseForm, location: e.target.value })}
+              placeholder="Address / area"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setWarehouseModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={createWarehouse.isPending}>
+              Add Warehouse
             </Button>
           </div>
         </form>
@@ -1195,20 +1521,40 @@ export default function MaterialInventoryPage() {
               </Select>
             </div>
             <div>
-              <Label htmlFor="grn_project">Project</Label>
+              <Label htmlFor="grn_warehouse">Received Into</Label>
               <Select
-                id="grn_project"
-                value={grnForm.project_id}
-                onChange={(e) => setGrnForm({ ...grnForm, project_id: e.target.value })}
+                id="grn_warehouse"
+                required
+                value={grnForm.warehouse_id}
+                onChange={(e) => setGrnForm({ ...grnForm, warehouse_id: e.target.value })}
               >
-                <option value="">— None —</option>
-                {projects?.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.project_name}
+                <option value="">Select warehouse</option>
+                {warehouses?.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.warehouse_code} — {w.name}
                   </option>
                 ))}
               </Select>
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor="grn_project">Project (optional)</Label>
+            <Select
+              id="grn_project"
+              value={grnForm.project_id}
+              onChange={(e) => setGrnForm({ ...grnForm, project_id: e.target.value })}
+            >
+              <option value="">— None —</option>
+              {projects?.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.project_name}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              Just for reporting which project this purchase was for — stock lands in the warehouse above either way.
+            </p>
           </div>
 
           <div>
@@ -1274,7 +1620,23 @@ export default function MaterialInventoryPage() {
           )}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="issue_project">Project</Label>
+              <Label htmlFor="issue_warehouse">From Warehouse</Label>
+              <Select
+                id="issue_warehouse"
+                required
+                value={issueForm.warehouse_id}
+                onChange={(e) => setIssueForm({ ...issueForm, warehouse_id: e.target.value })}
+              >
+                <option value="">Select warehouse</option>
+                {warehouses?.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.warehouse_code} — {w.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="issue_project">Project / Site</Label>
               <Select
                 id="issue_project"
                 required
@@ -1289,19 +1651,20 @@ export default function MaterialInventoryPage() {
                 ))}
               </Select>
             </div>
-            <div>
-              <Label htmlFor="issue_reason">Reason</Label>
-              <Select
-                id="issue_reason"
-                value={issueForm.reason}
-                onChange={(e) =>
-                  setIssueForm({ ...issueForm, reason: e.target.value as MaterialIssueReason })
-                }
-              >
-                <option value="Site Consumption">Site Consumption</option>
-                <option value="Damaged / Wastage">Damaged / Wastage</option>
-              </Select>
-            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="issue_reason">Reason</Label>
+            <Select
+              id="issue_reason"
+              value={issueForm.reason}
+              onChange={(e) =>
+                setIssueForm({ ...issueForm, reason: e.target.value as MaterialIssueReason })
+              }
+            >
+              <option value="Site Consumption">Site Consumption</option>
+              <option value="Damaged / Wastage">Damaged / Wastage</option>
+            </Select>
           </div>
 
           <div>
@@ -1455,6 +1818,74 @@ export default function MaterialInventoryPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* ---- Mark Received Modal ---- */}
+      <Modal
+        open={!!receiveIssue}
+        onClose={() => {
+          setReceiveIssue(null);
+          setReceivedByInput("");
+          setReceiveError(null);
+        }}
+        title={receiveIssue ? `Confirm receipt — ${receiveIssue.issue_no}` : "Confirm receipt"}
+        description="Record that this delivery has arrived at site."
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            receiveMutation.mutate();
+          }}
+          className="space-y-4"
+        >
+          {receiveError && (
+            <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{receiveError}</p>
+          )}
+          <div>
+            <Label htmlFor="received_by">Received by</Label>
+            <Input
+              id="received_by"
+              required
+              value={receivedByInput}
+              onChange={(e) => setReceivedByInput(e.target.value)}
+              placeholder="Name of the person confirming receipt"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setReceiveIssue(null);
+                setReceivedByInput("");
+                setReceiveError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={receiveMutation.isPending}>
+              Confirm Receipt
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ---- Warehouse Dispatch QR Modal ---- */}
+      <Modal
+        open={!!qrWarehouse}
+        onClose={() => setQrWarehouse(null)}
+        title={qrWarehouse ? `Dispatch QR — ${qrWarehouse.name}` : "Dispatch QR"}
+        description="Print and stick this at the warehouse gate. Scanning it opens a form to log what's leaving — no need to create the issue from the office first."
+      >
+        {qrWarehouse && (
+          <div className="space-y-4 text-center">
+            <QrImage url={`${window.location.origin}/warehouses/${qrWarehouse.id}/dispatch`} />
+            <Button variant="secondary" className="w-full" onClick={() => window.print()}>
+              <Printer className="h-4 w-4" />
+              Print
+            </Button>
+          </div>
+        )}
       </Modal>
     </div>
   );

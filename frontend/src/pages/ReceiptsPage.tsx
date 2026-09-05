@@ -1,12 +1,24 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageCircle, Plus, Printer, Receipt as ReceiptIcon, Trash2 } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock,
+  MessageCircle,
+  Plus,
+  Printer,
+  Receipt as ReceiptIcon,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { SendMessageModal } from "../components/communication/SendMessageModal";
+import { TableRowsSkeleton } from "../components/ui/Skeleton";
+import { toast, apiErrorMessage } from "../lib/toast";
+import { confirm } from "../lib/confirm";
 import type { Account, Booking, Receipt, ReceiptPaymentType } from "../types";
 
 const paymentTypes: ReceiptPaymentType[] = [
@@ -24,6 +36,7 @@ const emptyForm = {
   mode_of_payment: "Cash",
   cheque_no: "",
   cheque_date: "",
+  cheque_clearing_date: "",
   credit_account_id: "",
   narration: "",
 };
@@ -95,6 +108,8 @@ export default function ReceiptsPage() {
           mode_of_payment: form.mode_of_payment,
           cheque_no: form.mode_of_payment === "Cheque" ? form.cheque_no || null : null,
           cheque_date: form.mode_of_payment === "Cheque" ? form.cheque_date || null : null,
+          cheque_clearing_date:
+            form.mode_of_payment === "Cheque" ? form.cheque_clearing_date || null : null,
           narration: form.narration || null,
         })
       ).data,
@@ -120,8 +135,21 @@ export default function ReceiptsPage() {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
     },
     onError: (err: unknown) => {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(message ?? "Failed to delete receipt.");
+      toast.error(apiErrorMessage(err, "Failed to delete receipt."));
+    },
+  });
+
+  const updateChequeStatus = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: "Cleared" | "Bounced" }) =>
+      (await api.patch<Receipt>(`/receipts/${id}/cheque-status`, { status })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["receipts"] });
+      queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-cheques"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(apiErrorMessage(err, "Failed to update cheque status."));
     },
   });
 
@@ -154,13 +182,7 @@ export default function ReceiptsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-            {isLoading && (
-              <tr>
-                <td colSpan={7} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
-                  Loading...
-                </td>
-              </tr>
-            )}
+            {isLoading && <TableRowsSkeleton rows={4} cols={7} />}
             {!isLoading && receipts?.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
@@ -169,14 +191,98 @@ export default function ReceiptsPage() {
               </tr>
             )}
             {receipts?.map((r) => (
-              <tr key={r.id}>
+              <tr key={r.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                 <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{r.receipt_no}</td>
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{r.receipt_date}</td>
                 <td className="px-5 py-3 text-navy-900 dark:text-slate-100">
                   {r.booking.booking_ref_no} · {r.booking.unit.unit_number}
                 </td>
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{r.booking.allottee.name}</td>
-                <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{r.mode_of_payment}</td>
+                <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
+                  {r.mode_of_payment}
+                  {r.mode_of_payment === "Cheque" && r.cheque_status && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      {r.cheque_status === "Pending" && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-warning-50 px-2 py-0.5 text-[11px] font-medium text-warning-700">
+                          <Clock className="h-3 w-3" />
+                          Pending{r.cheque_clearing_date ? ` · ${r.cheque_clearing_date}` : ""}
+                        </span>
+                      )}
+                      {r.cheque_status === "Cleared" && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-success-50 px-2 py-0.5 text-[11px] font-medium text-success-700">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Cleared{r.cheque_clearing_date ? ` · ${r.cheque_clearing_date}` : ""}
+                        </span>
+                      )}
+                      {r.cheque_status === "Bounced" && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-danger-50 px-2 py-0.5 text-[11px] font-medium text-danger-700">
+                          <XCircle className="h-3 w-3" />
+                          Bounced{r.cheque_clearing_date ? ` · ${r.cheque_clearing_date}` : ""}
+                        </span>
+                      )}
+                      {r.cheque_status === "Pending" && (
+                        <div className="flex w-full gap-1.5">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => updateChequeStatus.mutate({ id: r.id, status: "Cleared" })}
+                          >
+                            Mark Cleared
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="danger"
+                            onClick={async () => {
+                              const ok = await confirm(
+                                `Mark cheque ${r.cheque_no ?? ""} as bounced? This will reverse the payment.`,
+                                { danger: true, confirmLabel: "Mark Bounced" },
+                              );
+                              if (ok) updateChequeStatus.mutate({ id: r.id, status: "Bounced" });
+                            }}
+                          >
+                            Mark Bounced
+                          </Button>
+                        </div>
+                      )}
+                      {r.cheque_status === "Bounced" && (
+                        <div className="flex w-full gap-1.5">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={async () => {
+                              const ok = await confirm(
+                                `Mark cheque ${r.cheque_no ?? ""} as cleared? Use this if it was re-presented and this time went through — the payment will be re-applied.`,
+                              );
+                              if (ok) updateChequeStatus.mutate({ id: r.id, status: "Cleared" });
+                            }}
+                          >
+                            Mark Cleared (Re-presented)
+                          </Button>
+                        </div>
+                      )}
+                      {r.cheque_status === "Cleared" && (
+                        <div className="flex w-full gap-1.5">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const ok = await confirm(
+                                `Mark cheque ${r.cheque_no ?? ""} as bounced? This will reverse the payment.`,
+                                { danger: true, confirmLabel: "Mark Bounced" },
+                              );
+                              if (ok) updateChequeStatus.mutate({ id: r.id, status: "Bounced" });
+                            }}
+                            className="text-[11px] font-medium text-danger-600 hover:underline"
+                          >
+                            Marked cleared by mistake? Mark Bounced instead
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </td>
                 <td className="px-5 py-3 text-right font-medium text-navy-900 dark:text-slate-100">
                   PKR {Number(r.amount).toLocaleString()}
                 </td>
@@ -199,10 +305,12 @@ export default function ReceiptsPage() {
                       <Printer className="h-3.5 w-3.5" />
                     </button>
                     <button
-                      onClick={() => {
-                        if (window.confirm(`Delete receipt "${r.receipt_no}"? This cannot be undone.`)) {
-                          deleteReceipt.mutate(r.id);
-                        }
+                      onClick={async () => {
+                        const ok = await confirm(`Delete receipt "${r.receipt_no}"? This cannot be undone.`, {
+                          danger: true,
+                          confirmLabel: "Delete",
+                        });
+                        if (ok) deleteReceipt.mutate(r.id);
                       }}
                       title="Delete receipt"
                       className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
@@ -353,6 +461,19 @@ export default function ReceiptsPage() {
                   value={form.cheque_date}
                   onChange={(e) => setForm({ ...form, cheque_date: e.target.value })}
                 />
+              </div>
+              <div className="col-span-2">
+                <Label htmlFor="r_cheque_clearing_date">Cash Date</Label>
+                <Input
+                  id="r_cheque_clearing_date"
+                  type="date"
+                  value={form.cheque_clearing_date}
+                  onChange={(e) => setForm({ ...form, cheque_clearing_date: e.target.value })}
+                />
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                  When this cheque is due to be presented at the bank — you'll get a dashboard
+                  reminder on this date to confirm it cleared or bounced.
+                </p>
               </div>
             </div>
           )}

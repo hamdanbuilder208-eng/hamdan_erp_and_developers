@@ -620,7 +620,7 @@ export default function ReportsPage() {
               <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 <tr>
                   <th className="px-5 py-3 font-medium">Material</th>
-                  <th className="px-5 py-3 font-medium">Project</th>
+                  <th className="px-5 py-3 font-medium">Warehouse</th>
                   <th className="px-5 py-3 text-right font-medium">Quantity</th>
                   <th className="px-5 py-3 text-right font-medium">Value</th>
                 </tr>
@@ -634,9 +634,9 @@ export default function ReportsPage() {
                   </tr>
                 )}
                 {stock?.map((s) => (
-                  <tr key={`${s.material_id}-${s.project_id}`}>
+                  <tr key={`${s.material_id}-${s.warehouse_id}`}>
                     <td className="px-5 py-2.5 text-navy-900 dark:text-slate-100">{s.material_name}</td>
-                    <td className="px-5 py-2.5 text-slate-500 dark:text-slate-400">{s.project_name ?? "—"}</td>
+                    <td className="px-5 py-2.5 text-slate-500 dark:text-slate-400">{s.warehouse_name ?? "—"}</td>
                     <td className="px-5 py-2.5 text-right tabular-nums text-navy-900 dark:text-slate-100">
                       {s.balance_qty.toLocaleString()} {s.unit_of_measure}
                     </td>

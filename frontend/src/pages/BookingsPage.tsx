@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, MessageCircle, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, MessageCircle, Plus, Printer, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -8,6 +8,9 @@ import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { BookingStatusBadge } from "../components/ui/Badge";
 import { SendMessageModal } from "../components/communication/SendMessageModal";
+import { TableRowsSkeleton } from "../components/ui/Skeleton";
+import { toast, apiErrorMessage } from "../lib/toast";
+import { confirm } from "../lib/confirm";
 import type {
   Allottee,
   Booking,
@@ -178,8 +181,7 @@ export default function BookingsPage() {
       setDetailBooking(null);
     },
     onError: (err: unknown) => {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(message ?? "Failed to delete booking.");
+      toast.error(apiErrorMessage(err, "Failed to delete booking."));
     },
   });
 
@@ -219,13 +221,7 @@ export default function BookingsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-            {isLoading && (
-              <tr>
-                <td colSpan={5} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
-                  Loading...
-                </td>
-              </tr>
-            )}
+            {isLoading && <TableRowsSkeleton rows={4} cols={5} />}
             {!isLoading && bookings?.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
@@ -571,18 +567,42 @@ export default function BookingsPage() {
                       <th className="px-3 py-2 font-medium">Label</th>
                       <th className="px-3 py-2 font-medium">Due Date</th>
                       <th className="px-3 py-2 text-right font-medium">Amount</th>
+                      <th className="px-3 py-2 text-right font-medium">Balance</th>
+                      <th className="px-3 py-2" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-                    {detailBooking.schedule_lines.map((line) => (
-                      <tr key={line.id}>
-                        <td className="px-3 py-2 text-navy-800 dark:text-slate-200">{line.label}</td>
-                        <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{line.due_date}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-navy-900 dark:text-slate-100">
-                          {Number(line.amount).toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
+                    {detailBooking.schedule_lines.map((line) => {
+                      const balance = Number(line.amount) - Number(line.paid_amount);
+                      return (
+                        <tr key={line.id}>
+                          <td className="px-3 py-2 text-navy-800 dark:text-slate-200">{line.label}</td>
+                          <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{line.due_date}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-navy-900 dark:text-slate-100">
+                            {Number(line.amount).toLocaleString()}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium text-warning-700">
+                            {balance > 0 ? balance.toLocaleString() : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {balance > 0 && (
+                              <button
+                                onClick={() =>
+                                  window.open(
+                                    `/bookings/${detailBooking.id}/schedule-lines/${line.id}/invoice/print`,
+                                    "_blank",
+                                  )
+                                }
+                                title="Print Invoice"
+                                className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
+                              >
+                                <Printer className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -614,10 +634,12 @@ export default function BookingsPage() {
                   <Button
                     size="sm"
                     variant="danger"
-                    onClick={() => {
-                      if (window.confirm("Cancel this booking? The unit will become Available again.")) {
-                        updateStatus.mutate({ id: detailBooking.id, status: "Cancelled" });
-                      }
+                    onClick={async () => {
+                      const ok = await confirm(
+                        "Cancel this booking? The unit will become Available again.",
+                        { danger: true, confirmLabel: "Cancel booking" },
+                      );
+                      if (ok) updateStatus.mutate({ id: detailBooking.id, status: "Cancelled" });
                     }}
                   >
                     Cancel Booking
@@ -631,10 +653,12 @@ export default function BookingsPage() {
                 )}
               </div>
               <button
-                onClick={() => {
-                  if (window.confirm("Permanently delete this booking?")) {
-                    deleteBooking.mutate(detailBooking.id);
-                  }
+                onClick={async () => {
+                  const ok = await confirm("Permanently delete this booking?", {
+                    danger: true,
+                    confirmLabel: "Delete",
+                  });
+                  if (ok) deleteBooking.mutate(detailBooking.id);
                 }}
                 title="Delete booking"
                 className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"

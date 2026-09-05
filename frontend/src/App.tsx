@@ -1,5 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "./components/ui/Toaster";
+import { ConfirmDialog } from "./components/ui/ConfirmDialog";
 import { AppShell } from "./components/layout/AppShell";
 import { ProtectedRoute } from "./routes/ProtectedRoute";
 import LoginPage from "./pages/LoginPage";
@@ -14,8 +16,10 @@ import VoucherPrintPage from "./pages/VoucherPrintPage";
 import BookingsPage from "./pages/BookingsPage";
 import ReceiptsPage from "./pages/ReceiptsPage";
 import ReceiptPrintPage from "./pages/ReceiptPrintPage";
+import InvoicePrintPage from "./pages/InvoicePrintPage";
 import BrokersPage from "./pages/BrokersPage";
 import PartnersPage from "./pages/PartnersPage";
+import PartnerStatementPrintPage from "./pages/PartnerStatementPrintPage";
 import ReportsPage from "./pages/ReportsPage";
 import ReportPrintPage from "./pages/ReportPrintPage";
 import GeneralLedgerPrintPage from "./pages/GeneralLedgerPrintPage";
@@ -25,6 +29,8 @@ import ExpensesPage from "./pages/ExpensesPage";
 import ExpensePrintPage from "./pages/ExpensePrintPage";
 import MaterialInventoryPage from "./pages/MaterialInventoryPage";
 import InventoryPrintPage from "./pages/InventoryPrintPage";
+import WarehouseDispatchPage from "./pages/WarehouseDispatchPage";
+import ProjectDeliveriesPage from "./pages/ProjectDeliveriesPage";
 import CommissionPayoutPrintPage from "./pages/CommissionPayoutPrintPage";
 import CommunicationsPage from "./pages/CommunicationsPage";
 import AdminPage from "./pages/AdminPage";
@@ -52,6 +58,8 @@ const queryClient = new QueryClient({
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <Toaster />
+      <ConfirmDialog />
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -196,12 +204,19 @@ export default function App() {
             </Route>
             <Route path="/vouchers/:id/print" element={<VoucherPrintPage />} />
             <Route path="/receipts/:id/print" element={<ReceiptPrintPage />} />
+            <Route
+              path="/bookings/:bookingId/schedule-lines/:lineId/invoice/print"
+              element={<InvoicePrintPage />}
+            />
             <Route path="/reports/print/general-ledger/:accountId" element={<GeneralLedgerPrintPage />} />
             <Route path="/reports/print/:type" element={<ReportPrintPage />} />
             <Route path="/refunds/:id/print" element={<RefundPrintPage />} />
             <Route path="/expenses/:type/:id/print" element={<ExpensePrintPage />} />
             <Route path="/inventory/:type/:id/print" element={<InventoryPrintPage />} />
+            <Route path="/warehouses/:id/dispatch" element={<WarehouseDispatchPage />} />
+            <Route path="/projects/:id/deliveries" element={<ProjectDeliveriesPage />} />
             <Route path="/commission-payouts/:id/print" element={<CommissionPayoutPrintPage />} />
+            <Route path="/partners/:id/statement/print" element={<PartnerStatementPrintPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

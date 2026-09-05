@@ -2,7 +2,7 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.receipt import ReceiptPaymentType
+from app.models.receipt import ChequeStatus, ReceiptPaymentType
 from app.schemas.account import AccountOut
 from app.schemas.booking import BookingOut
 
@@ -16,6 +16,7 @@ class ReceiptBase(BaseModel):
     mode_of_payment: str = "Cash"
     cheque_no: str | None = None
     cheque_date: date | None = None
+    cheque_clearing_date: date | None = None
     narration: str | None = None
 
 
@@ -28,8 +29,13 @@ class ReceiptOut(ReceiptBase):
     id: int
     receipt_no: str
     voucher_id: int | None
+    cheque_status: ChequeStatus | None
     credit_account: AccountOut
 
 
 class ReceiptWithBookingOut(ReceiptOut):
     booking: BookingOut
+
+
+class ChequeStatusUpdate(BaseModel):
+    status: ChequeStatus

@@ -1,12 +1,18 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Phone, Plus, Search, Trash2, UserRound } from "lucide-react";
+import { Camera, Loader2, Phone, Plus, Search, Trash2, UserRound } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input, Label } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import { TableRowsSkeleton } from "../components/ui/Skeleton";
+import { toast, apiErrorMessage } from "../lib/toast";
+import { confirm } from "../lib/confirm";
 import type { Allottee } from "../types";
+
+const API_ORIGIN = new URL(api.defaults.baseURL ?? "", window.location.origin).origin;
+const photoUrl = (path: string | null) => (path ? `${API_ORIGIN}${path}` : null);
 
 const emptyForm = {
   name: "",
@@ -18,10 +24,68 @@ const emptyForm = {
   cnic: "",
   email: "",
   referred_by: "",
+  picture_url: "" as string | null,
   nominee_name: "",
   nominee_relation: "",
   nominee_cnic: "",
+  nominee_picture_url: "" as string | null,
 };
+
+function PhotoPicker({
+  label,
+  url,
+  onChange,
+}: {
+  label: string;
+  url: string | null;
+  onChange: (url: string | null) => void;
+}) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      const { data } = await api.post<{ url: string }>("/uploads/image", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      return data.url;
+    },
+    onSuccess: (uploadedUrl) => onChange(uploadedUrl),
+    onError: (err: unknown) => {
+      toast.error(apiErrorMessage(err, "Failed to upload photo."));
+    },
+  });
+
+  return (
+    <div>
+      <Label>{label}</Label>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) upload.mutate(file);
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-400 hover:border-brand-400 hover:text-brand-500 dark:border-navy-700 dark:bg-navy-800"
+      >
+        {upload.isPending ? (
+          <Loader2 className="h-5 w-5 animate-spin" />
+        ) : url ? (
+          <img src={photoUrl(url) ?? undefined} alt={label} className="h-full w-full object-cover" />
+        ) : (
+          <Camera className="h-5 w-5" />
+        )}
+      </button>
+    </div>
+  );
+}
 
 export default function CustomersPage() {
   const queryClient = useQueryClient();
@@ -48,9 +112,11 @@ export default function CustomersPage() {
           cnic: form.cnic || null,
           email: form.email || null,
           referred_by: form.referred_by || null,
+          picture_url: form.picture_url || null,
           nominee_name: form.nominee_name || null,
           nominee_relation: form.nominee_relation || null,
           nominee_cnic: form.nominee_cnic || null,
+          nominee_picture_url: form.nominee_picture_url || null,
         })
       ).data,
     onSuccess: () => {
@@ -64,8 +130,7 @@ export default function CustomersPage() {
     mutationFn: async (id: number) => api.delete(`/allottees/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["allottees"] }),
     onError: (err: unknown) => {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(message ?? "Failed to delete allottee.");
+      toast.error(apiErrorMessage(err, "Failed to delete allottee."));
     },
   });
 
@@ -108,13 +173,7 @@ export default function CustomersPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-            {isLoading && (
-              <tr>
-                <td colSpan={7} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
-                  Loading...
-                </td>
-              </tr>
-            )}
+            {isLoading && <TableRowsSkeleton rows={4} cols={7} />}
             {!isLoading && allottees?.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
@@ -123,11 +182,19 @@ export default function CustomersPage() {
               </tr>
             )}
             {allottees?.map((a) => (
-              <tr key={a.id}>
+              <tr key={a.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                 <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{a.allottee_code}</td>
                 <td className="px-5 py-3 font-medium text-navy-900 dark:text-slate-100">
-                  <span className="inline-flex items-center gap-1.5">
-                    <UserRound className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
+                  <span className="inline-flex items-center gap-2">
+                    {a.picture_url ? (
+                      <img
+                        src={photoUrl(a.picture_url) ?? undefined}
+                        alt={a.name}
+                        className="h-6 w-6 rounded-full object-cover"
+                      />
+                    ) : (
+                      <UserRound className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
+                    )}
                     {a.name}
                   </span>
                 </td>
@@ -146,10 +213,12 @@ export default function CustomersPage() {
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{a.referred_by || "—"}</td>
                 <td className="px-5 py-3 text-right">
                   <button
-                    onClick={() => {
-                      if (window.confirm(`Delete allottee "${a.name}"?`)) {
-                        deleteAllottee.mutate(a.id);
-                      }
+                    onClick={async () => {
+                      const ok = await confirm(`Delete allottee "${a.name}"?`, {
+                        danger: true,
+                        confirmLabel: "Delete",
+                      });
+                      if (ok) deleteAllottee.mutate(a.id);
                     }}
                     className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
                   >
@@ -175,23 +244,30 @@ export default function CustomersPage() {
           }}
           className="space-y-4"
         >
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="name">Full Name</Label>
-              <Input
-                id="name"
-                required
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="father_name">Father's Name</Label>
-              <Input
-                id="father_name"
-                value={form.father_name}
-                onChange={(e) => setForm({ ...form, father_name: e.target.value })}
-              />
+          <div className="flex gap-4">
+            <PhotoPicker
+              label="Photo"
+              url={form.picture_url}
+              onChange={(url) => setForm({ ...form, picture_url: url })}
+            />
+            <div className="grid flex-1 grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="name">Full Name</Label>
+                <Input
+                  id="name"
+                  required
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="father_name">Father's Name</Label>
+                <Input
+                  id="father_name"
+                  value={form.father_name}
+                  onChange={(e) => setForm({ ...form, father_name: e.target.value })}
+                />
+              </div>
             </div>
           </div>
 
@@ -269,30 +345,37 @@ export default function CustomersPage() {
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
               Nominee Details
             </p>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label htmlFor="nominee_name">Nominee Name</Label>
-                <Input
-                  id="nominee_name"
-                  value={form.nominee_name}
-                  onChange={(e) => setForm({ ...form, nominee_name: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="nominee_relation">Relation</Label>
-                <Input
-                  id="nominee_relation"
-                  value={form.nominee_relation}
-                  onChange={(e) => setForm({ ...form, nominee_relation: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="nominee_cnic">Nominee CNIC</Label>
-                <Input
-                  id="nominee_cnic"
-                  value={form.nominee_cnic}
-                  onChange={(e) => setForm({ ...form, nominee_cnic: e.target.value })}
-                />
+            <div className="flex gap-4">
+              <PhotoPicker
+                label="Nominee Photo"
+                url={form.nominee_picture_url}
+                onChange={(url) => setForm({ ...form, nominee_picture_url: url })}
+              />
+              <div className="grid flex-1 grid-cols-3 gap-3">
+                <div>
+                  <Label htmlFor="nominee_name">Nominee Name</Label>
+                  <Input
+                    id="nominee_name"
+                    value={form.nominee_name}
+                    onChange={(e) => setForm({ ...form, nominee_name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="nominee_relation">Relation</Label>
+                  <Input
+                    id="nominee_relation"
+                    value={form.nominee_relation}
+                    onChange={(e) => setForm({ ...form, nominee_relation: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="nominee_cnic">Nominee CNIC</Label>
+                  <Input
+                    id="nominee_cnic"
+                    value={form.nominee_cnic}
+                    onChange={(e) => setForm({ ...form, nominee_cnic: e.target.value })}
+                  />
+                </div>
               </div>
             </div>
           </div>

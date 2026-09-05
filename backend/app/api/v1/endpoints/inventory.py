@@ -10,16 +10,21 @@ from app.schemas.inventory import (
     MaterialCreate,
     MaterialIssueCreate,
     MaterialIssueOut,
+    MaterialIssueReceive,
     MaterialIssueResolve,
     MaterialOut,
     MaterialUpdate,
     PurchaseOrderCreate,
     PurchaseOrderOut,
     PurchaseOrderUpdate,
+    ProjectStockOut,
     StockBalanceOut,
     VendorCreate,
     VendorOut,
     VendorUpdate,
+    WarehouseCreate,
+    WarehouseOut,
+    WarehouseUpdate,
 )
 
 router = APIRouter()
@@ -52,6 +57,38 @@ def delete_vendor(vendor_id: int, db: Session = Depends(get_db)):
     if not db_vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
     delete_with_fk_guard(db, lambda: inventory_crud.delete_vendor(db, db_vendor), "vendor")
+
+
+# Warehouses
+
+
+@router.get("/warehouses", response_model=list[WarehouseOut])
+def list_warehouses(is_active: bool | None = None, db: Session = Depends(get_db)):
+    return inventory_crud.list_warehouses(db, is_active=is_active)
+
+
+@router.post("/warehouses", response_model=WarehouseOut, status_code=status.HTTP_201_CREATED)
+def create_warehouse(warehouse_in: WarehouseCreate, db: Session = Depends(get_db)):
+    return inventory_crud.create_warehouse(db, warehouse_in)
+
+
+@router.put("/warehouses/{warehouse_id}", response_model=WarehouseOut)
+def update_warehouse(warehouse_id: int, warehouse_in: WarehouseUpdate, db: Session = Depends(get_db)):
+    db_warehouse = inventory_crud.get_warehouse(db, warehouse_id)
+    if not db_warehouse:
+        raise HTTPException(status_code=404, detail="Warehouse not found")
+    return inventory_crud.update_warehouse(db, db_warehouse, warehouse_in)
+
+
+@router.delete("/warehouses/{warehouse_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_warehouse(warehouse_id: int, db: Session = Depends(get_db)):
+    db_warehouse = inventory_crud.get_warehouse(db, warehouse_id)
+    if not db_warehouse:
+        raise HTTPException(status_code=404, detail="Warehouse not found")
+    try:
+        inventory_crud.delete_warehouse(db, db_warehouse)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # Materials
@@ -206,11 +243,29 @@ def resolve_material_issue(issue_id: int, payload: MaterialIssueResolve, db: Ses
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@router.put("/issues/{issue_id}/receive", response_model=MaterialIssueOut)
+def receive_material_issue(issue_id: int, payload: MaterialIssueReceive, db: Session = Depends(get_db)):
+    db_issue = inventory_crud.get_material_issue(db, issue_id)
+    if not db_issue:
+        raise HTTPException(status_code=404, detail="Material issue not found")
+    try:
+        return inventory_crud.mark_material_issue_received(db, db_issue, payload.received_by)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 # Stock balance
 
 
 @router.get("/stock", response_model=list[StockBalanceOut])
 def get_stock_balances(
+    warehouse_id: int | None = None, material_id: int | None = None, db: Session = Depends(get_db)
+):
+    return inventory_crud.get_stock_balances(db, warehouse_id=warehouse_id, material_id=material_id)
+
+
+@router.get("/stock/by-project", response_model=list[ProjectStockOut])
+def get_project_stock(
     project_id: int | None = None, material_id: int | None = None, db: Session = Depends(get_db)
 ):
-    return inventory_crud.get_stock_balances(db, project_id=project_id, material_id=material_id)
+    return inventory_crud.get_project_stock(db, project_id=project_id, material_id=material_id)

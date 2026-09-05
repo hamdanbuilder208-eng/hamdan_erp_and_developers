@@ -126,6 +126,13 @@ def bulk_generate_units(db: Session, project_id: int, payload: UnitBulkGenerate)
     if floor is None:
         raise ValueError("Floor not found")
 
+    existing = db.query(Unit).filter(Unit.floor_id == floor.id).count()
+    if existing > 0:
+        raise ValueError(
+            f"This floor already has {existing} unit(s) generated. Delete them first "
+            "if you want to regenerate."
+        )
+
     category = None
     if payload.unit_category_id is not None:
         category = (

@@ -2,7 +2,7 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.inventory import MaterialIssueReason, PurchaseOrderStatus
+from app.models.inventory import MaterialIssueReason, MaterialIssueStatus, PurchaseOrderStatus
 from app.schemas.account import AccountOut
 from app.schemas.project import ProjectOut
 
@@ -38,6 +38,31 @@ class VendorOut(VendorBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     vendor_code: str
+
+
+# Warehouse
+
+
+class WarehouseBase(BaseModel):
+    name: str
+    location: str | None = None
+    is_active: bool = True
+
+
+class WarehouseCreate(WarehouseBase):
+    pass
+
+
+class WarehouseUpdate(BaseModel):
+    name: str | None = None
+    location: str | None = None
+    is_active: bool | None = None
+
+
+class WarehouseOut(WarehouseBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    warehouse_code: str
 
 
 # Material
@@ -142,6 +167,10 @@ class GRNLineOut(GRNLineBase):
 class GRNBase(BaseModel):
     grn_date: date
     vendor_id: int
+    # Nullable for output only — a handful of GRNs predate the warehouses
+    # feature and have no warehouse on file. New GRNs must pick one (enforced
+    # in GRNCreate below).
+    warehouse_id: int | None = None
     project_id: int | None = None
     po_id: int | None = None
     payment_account_id: int
@@ -149,6 +178,7 @@ class GRNBase(BaseModel):
 
 
 class GRNCreate(GRNBase):
+    warehouse_id: int
     lines: list[GRNLineCreate]
 
     @model_validator(mode="after")
@@ -165,6 +195,7 @@ class GRNOut(GRNBase):
     total_amount: float
     voucher_id: int | None
     vendor: VendorOut
+    warehouse: WarehouseOut | None = None
     project: ProjectOut | None = None
     payment_account: AccountOut
     lines: list[GRNLineOut]
@@ -193,12 +224,16 @@ class MaterialIssueLineOut(MaterialIssueLineBase):
 class MaterialIssueBase(BaseModel):
     issue_date: date
     project_id: int
+    # Nullable for output only — issues created before the warehouses feature
+    # have no warehouse on file. New issues must pick one (enforced below).
+    warehouse_id: int | None = None
     reason: MaterialIssueReason = MaterialIssueReason.SITE_CONSUMPTION
     issued_to: str | None = None
     narration: str | None = None
 
 
 class MaterialIssueCreate(MaterialIssueBase):
+    warehouse_id: int
     lines: list[MaterialIssueLineCreate]
 
     @model_validator(mode="after")
@@ -217,7 +252,11 @@ class MaterialIssueOut(MaterialIssueBase):
     resolved_date: date | None
     resolution_note: str | None
     restocked: bool
+    status: MaterialIssueStatus
+    received_date: date | None
+    received_by: str | None
     project: ProjectOut
+    warehouse: WarehouseOut | None = None
     lines: list[MaterialIssueLineOut]
 
 
@@ -226,10 +265,25 @@ class MaterialIssueResolve(BaseModel):
     restock: bool = False
 
 
+class MaterialIssueReceive(BaseModel):
+    received_by: str
+
+
 # Stock balance (read-only summary)
 
 
 class StockBalanceOut(BaseModel):
+    material_id: int
+    material_code: str
+    material_name: str
+    unit_of_measure: str
+    warehouse_id: int | None
+    warehouse_name: str | None
+    balance_qty: float
+    balance_value: float
+
+
+class ProjectStockOut(BaseModel):
     material_id: int
     material_code: str
     material_name: str

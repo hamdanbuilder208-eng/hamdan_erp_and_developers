@@ -19,6 +19,7 @@ _DEFAULT_COA = [
     ("2000", "Liabilities", AccountNature.LIABILITY, True, [
         ("2010", "Accounts Payable", AccountNature.LIABILITY, False, []),
         ("2020", "Broker Commission Payable", AccountNature.LIABILITY, False, []),
+        ("2030", "Partner Payable", AccountNature.LIABILITY, False, []),
     ]),
     ("3000", "Capital", AccountNature.CAPITAL, True, [
         ("3010", "Owner's Capital", AccountNature.CAPITAL, False, []),

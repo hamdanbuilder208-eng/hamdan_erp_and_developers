@@ -8,11 +8,20 @@ from app.models.communication import (
     CommunicationStatus,
 )
 from app.models.user import User
-from app.schemas.communication import CommunicationSend
+from app.schemas.communication import CommunicationBulkSend, CommunicationSend
 
 
 def _load_query(db: Session):
     return db.query(CommunicationLog).options(joinedload(CommunicationLog.sent_by))
+
+
+def get_log(db: Session, log_id: int) -> CommunicationLog | None:
+    return _load_query(db).filter(CommunicationLog.id == log_id).first()
+
+
+def delete_log(db: Session, db_log: CommunicationLog) -> None:
+    db.delete(db_log)
+    db.commit()
 
 
 def list_logs(
@@ -31,15 +40,16 @@ def list_logs(
     return query.order_by(CommunicationLog.id.desc()).all()
 
 
+def _dispatch(channel: CommunicationChannel, phone: str, body: str):
+    if channel == CommunicationChannel.SMS:
+        return messaging.send_sms(phone, body)
+    return messaging.send_whatsapp(phone, body)
+
+
 def send_and_log(db: Session, send_in: CommunicationSend, user: User) -> CommunicationLog:
-    if send_in.channel == CommunicationChannel.SMS:
-        success, provider_message_id, error_message = messaging.send_sms(
-            send_in.recipient_phone, send_in.message_body
-        )
-    else:
-        success, provider_message_id, error_message = messaging.send_whatsapp(
-            send_in.recipient_phone, send_in.message_body
-        )
+    success, provider_message_id, error_message = _dispatch(
+        send_in.channel, send_in.recipient_phone, send_in.message_body
+    )
 
     log = CommunicationLog(
         channel=send_in.channel,
@@ -57,3 +67,33 @@ def send_and_log(db: Session, send_in: CommunicationSend, user: User) -> Communi
     db.commit()
     db.refresh(log)
     return log
+
+
+def send_bulk(db: Session, bulk_in: CommunicationBulkSend, user: User) -> list[CommunicationLog]:
+    """Sends the same message to every recipient one at a time, logging each
+    individually — one recipient's failure (bad number, provider error) never
+    blocks the rest of the batch."""
+    logs: list[CommunicationLog] = []
+    for recipient in bulk_in.recipients:
+        success, provider_message_id, error_message = _dispatch(
+            bulk_in.channel, recipient.phone, bulk_in.message_body
+        )
+        log = CommunicationLog(
+            channel=bulk_in.channel,
+            recipient_phone=recipient.phone,
+            recipient_name=recipient.name,
+            message_body=bulk_in.message_body,
+            related_type=bulk_in.related_type,
+            related_id=None,
+            status=CommunicationStatus.SENT if success else CommunicationStatus.FAILED,
+            provider_message_id=provider_message_id,
+            error_message=error_message,
+            sent_by_user_id=user.id,
+        )
+        db.add(log)
+        logs.append(log)
+
+    db.commit()
+    for log in logs:
+        db.refresh(log)
+    return logs

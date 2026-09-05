@@ -6,6 +6,7 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import { confirm } from "../lib/confirm";
 import type {
   Account,
   Employee,
@@ -297,8 +298,9 @@ export default function ExpensesPage() {
   const printUrl = (row: UnifiedRow) =>
     row.kind === "wages" ? `/expenses/wages/${row.id}/print` : `/expenses/${row.kind === "office" ? "office" : "owner-personal"}/${row.id}/print`;
 
-  const deleteRow = (row: UnifiedRow) => {
-    if (!window.confirm(`Delete expense "${row.expense_no}"?`)) return;
+  const deleteRow = async (row: UnifiedRow) => {
+    const ok = await confirm(`Delete expense "${row.expense_no}"?`, { danger: true, confirmLabel: "Delete" });
+    if (!ok) return;
     if (row.kind === "office") deleteOfficeExpense.mutate(row.id);
     else if (row.kind === "wages") deleteWagePayment.mutate(row.id);
     else deleteOwnerExpense.mutate(row.id);
@@ -361,7 +363,7 @@ export default function ExpensesPage() {
               </tr>
             )}
             {unifiedRows.map((row) => (
-              <tr key={row.key}>
+              <tr key={row.key} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                 <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{row.expense_no}</td>
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{row.date}</td>
                 <td className="px-5 py-3">

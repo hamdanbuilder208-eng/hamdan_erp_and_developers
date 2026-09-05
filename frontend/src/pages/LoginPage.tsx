@@ -43,6 +43,35 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen w-full">
+      {loading && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-5 bg-navy-950/80 backdrop-blur-sm">
+          <div className="relative flex h-20 w-20 items-center justify-center">
+            <div
+              className="absolute inset-0 rounded-full"
+              style={{
+                background:
+                  "conic-gradient(from 0deg, transparent 0%, rgba(52,104,240,0.9) 100%)",
+                animation: "erp-ring-spin 1.1s linear infinite",
+                WebkitMask:
+                  "radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px))",
+                mask: "radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px))",
+              }}
+            />
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-600 text-lg font-bold text-white shadow-lg shadow-brand-900/50">
+              H
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-medium text-white">Signing in</p>
+            <p className="text-xs text-slate-400">Verifying your credentials…</p>
+          </div>
+          <style>{`
+            @keyframes erp-ring-spin {
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      )}
       <div className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-navy-950 p-12 text-white lg:flex">
         <div
           className="pointer-events-none absolute inset-0 opacity-40"

@@ -29,6 +29,7 @@ class Project(Base, TimestampMixin):
     address: Mapped[str | None] = mapped_column(Text)
     total_budget: Mapped[float | None] = mapped_column(Numeric(18, 2))
     commission_percent: Mapped[float | None] = mapped_column(Numeric(5, 2), default=0)
+    total_floors: Mapped[int | None] = mapped_column(default=0)
     status: Mapped[ProjectStatus] = mapped_column(
         Enum(ProjectStatus), default=ProjectStatus.ACTIVE
     )

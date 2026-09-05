@@ -37,6 +37,7 @@ class ProjectBase(BaseModel):
     address: str | None = None
     total_budget: float | None = None
     commission_percent: float | None = 0
+    total_floors: int | None = 0
     status: ProjectStatus = ProjectStatus.ACTIVE
     project_group_id: int | None = None
 
@@ -50,6 +51,7 @@ class ProjectUpdate(BaseModel):
     address: str | None = None
     total_budget: float | None = None
     commission_percent: float | None = None
+    total_floors: int | None = None
     status: ProjectStatus | None = None
     project_group_id: int | None = None
 

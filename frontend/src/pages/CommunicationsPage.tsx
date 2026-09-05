@@ -1,18 +1,21 @@
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, MessageCircle, Plus, XCircle } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CheckCircle2, MessageCircle, Trash2, Users, XCircle } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Select } from "../components/ui/Input";
 import { Badge } from "../components/ui/Badge";
-import { SendMessageModal } from "../components/communication/SendMessageModal";
+import { BulkSendMessageModal } from "../components/communication/BulkSendMessageModal";
+import { toast, apiErrorMessage } from "../lib/toast";
+import { confirm } from "../lib/confirm";
 import type { CommunicationChannel, CommunicationLog } from "../types";
 
 const channels: CommunicationChannel[] = ["WhatsApp", "SMS"];
 
 export default function CommunicationsPage() {
-  const [modalOpen, setModalOpen] = React.useState(false);
+  const queryClient = useQueryClient();
+  const [bulkModalOpen, setBulkModalOpen] = React.useState(false);
   const [filterChannel, setFilterChannel] = React.useState("");
 
   const { data: logs, isLoading } = useQuery({
@@ -25,6 +28,16 @@ export default function CommunicationsPage() {
       ).data,
   });
 
+  const deleteLog = useMutation({
+    mutationFn: async (id: number) => api.delete(`/communications/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["communications"] });
+    },
+    onError: (err: unknown) => {
+      toast.error(apiErrorMessage(err, "Failed to delete message log."));
+    },
+  });
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -34,9 +47,9 @@ export default function CommunicationsPage() {
             Every message sent from the ERP — automatically logged, plus ad-hoc sends.
           </p>
         </div>
-        <Button onClick={() => setModalOpen(true)}>
-          <Plus className="h-4 w-4" />
-          New Message
+        <Button onClick={() => setBulkModalOpen(true)}>
+          <Users className="h-4 w-4" />
+          Bulk Message
         </Button>
       </div>
 
@@ -61,25 +74,26 @@ export default function CommunicationsPage() {
               <th className="px-5 py-3 font-medium">Related</th>
               <th className="px-5 py-3 font-medium">Message</th>
               <th className="px-5 py-3 font-medium">Status</th>
+              <th className="px-5 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
             {isLoading && (
               <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
+                <td colSpan={7} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
                   Loading...
                 </td>
               </tr>
             )}
             {!isLoading && logs?.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
-                  No messages sent yet. Click "New Message" or send from Receipts / Bookings / Refunds.
+                <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                  No messages sent yet. Click "Bulk Message" or send from Receipts / Bookings / Refunds.
                 </td>
               </tr>
             )}
             {logs?.map((l) => (
-              <tr key={l.id}>
+              <tr key={l.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
                   {new Date(l.created_at).toLocaleString()}
                 </td>
@@ -113,6 +127,21 @@ export default function CommunicationsPage() {
                     </span>
                   )}
                 </td>
+                <td className="px-5 py-3 text-right">
+                  <button
+                    onClick={async () => {
+                      const ok = await confirm("Delete this message log entry?", {
+                        danger: true,
+                        confirmLabel: "Delete",
+                      });
+                      if (ok) deleteLog.mutate(l.id);
+                    }}
+                    title="Delete log entry"
+                    className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -126,13 +155,7 @@ export default function CommunicationsPage() {
         </p>
       )}
 
-      <SendMessageModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        defaultPhone=""
-        defaultMessage=""
-        relatedType="Other"
-      />
+      <BulkSendMessageModal open={bulkModalOpen} onClose={() => setBulkModalOpen(false)} />
     </div>
   );
 }

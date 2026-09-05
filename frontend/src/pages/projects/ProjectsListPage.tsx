@@ -8,6 +8,9 @@ import { Card } from "../../components/ui/Card";
 import { Input, Label, Select } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
 import { ProjectStatusBadge } from "../../components/ui/Badge";
+import { TableRowsSkeleton } from "../../components/ui/Skeleton";
+import { toast, apiErrorMessage } from "../../lib/toast";
+import { confirm } from "../../lib/confirm";
 import type { Project, ProjectGroup } from "../../types";
 
 export default function ProjectsListPage() {
@@ -30,6 +33,7 @@ export default function ProjectsListPage() {
     address: "",
     total_budget: "",
     commission_percent: "",
+    total_floors: "",
     project_group_id: "",
   });
   const [newGroupName, setNewGroupName] = React.useState("");
@@ -50,16 +54,17 @@ export default function ProjectsListPage() {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
     onError: (err: unknown) => {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(message ?? "Failed to delete project.");
+      toast.error(apiErrorMessage(err, "Failed to delete project."));
     },
   });
 
-  const handleDelete = (e: React.MouseEvent, project: Project) => {
+  const handleDelete = async (e: React.MouseEvent, project: Project) => {
     e.stopPropagation();
-    if (window.confirm(`Delete project "${project.project_name}"? This cannot be undone.`)) {
-      deleteProject.mutate(project.id);
-    }
+    const ok = await confirm(`Delete project "${project.project_name}"? This cannot be undone.`, {
+      danger: true,
+      confirmLabel: "Delete",
+    });
+    if (ok) deleteProject.mutate(project.id);
   };
 
   const createProject = useMutation({
@@ -70,6 +75,7 @@ export default function ProjectsListPage() {
           address: form.address || null,
           total_budget: form.total_budget ? Number(form.total_budget) : null,
           commission_percent: form.commission_percent ? Number(form.commission_percent) : 0,
+          total_floors: form.total_floors ? Number(form.total_floors) : 0,
           project_group_id: form.project_group_id ? Number(form.project_group_id) : null,
         })
       ).data,
@@ -81,6 +87,7 @@ export default function ProjectsListPage() {
         address: "",
         total_budget: "",
         commission_percent: "",
+        total_floors: "",
         project_group_id: "",
       });
     },
@@ -115,13 +122,7 @@ export default function ProjectsListPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-            {isLoading && (
-              <tr>
-                <td colSpan={7} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
-                  Loading projects...
-                </td>
-              </tr>
-            )}
+            {isLoading && <TableRowsSkeleton rows={4} cols={7} />}
             {!isLoading && projects?.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
@@ -216,6 +217,21 @@ export default function ProjectsListPage() {
                 onChange={(e) => setForm({ ...form, commission_percent: e.target.value })}
               />
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor="total_floors">Total Floors in Project</Label>
+            <Input
+              id="total_floors"
+              type="number"
+              min="0"
+              value={form.total_floors}
+              onChange={(e) => setForm({ ...form, total_floors: e.target.value })}
+              placeholder="e.g. 5"
+            />
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              Used to limit the floor numbers you can add for this project.
+            </p>
           </div>
 
           <div>

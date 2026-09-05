@@ -8,6 +8,8 @@ import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Badge } from "../components/ui/Badge";
 import { SendMessageModal } from "../components/communication/SendMessageModal";
+import { toast, apiErrorMessage } from "../lib/toast";
+import { confirm } from "../lib/confirm";
 import type { Account, Booking, Refund, RefundType } from "../types";
 
 const refundTypes: RefundType[] = ["Customer", "Vendor", "Employee"];
@@ -123,8 +125,7 @@ export default function RefundsPage() {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
     },
     onError: (err: unknown) => {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(message ?? "Failed to delete refund.");
+      toast.error(apiErrorMessage(err, "Failed to delete refund."));
     },
   });
 
@@ -180,7 +181,7 @@ export default function RefundsPage() {
               </tr>
             )}
             {refunds?.map((r) => (
-              <tr key={r.id}>
+              <tr key={r.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                 <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{r.refund_no}</td>
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{r.refund_date}</td>
                 <td className="px-5 py-3">
@@ -213,10 +214,12 @@ export default function RefundsPage() {
                       <Printer className="h-3.5 w-3.5" />
                     </button>
                     <button
-                      onClick={() => {
-                        if (window.confirm(`Delete refund "${r.refund_no}"? This cannot be undone.`)) {
-                          deleteRefund.mutate(r.id);
-                        }
+                      onClick={async () => {
+                        const ok = await confirm(`Delete refund "${r.refund_no}"? This cannot be undone.`, {
+                          danger: true,
+                          confirmLabel: "Delete",
+                        });
+                        if (ok) deleteRefund.mutate(r.id);
                       }}
                       title="Delete refund"
                       className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"

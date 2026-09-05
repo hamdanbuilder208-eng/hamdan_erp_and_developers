@@ -13,15 +13,19 @@ from app.api.v1.endpoints import (
     expenses,
     inventory,
     land_properties,
+    partner_contributions,
     partner_drawings,
+    partner_expenses,
     partners,
     portal,
     projects,
     receipts,
     refunds,
     reports,
+    search,
     unit_categories,
     units,
+    uploads,
     users,
     vouchers,
 )
@@ -30,6 +34,7 @@ api_router = APIRouter()
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 api_router.include_router(portal.router, prefix="/portal", tags=["Customer Portal"])
+api_router.include_router(search.router, prefix="/search", tags=["Search"])
 api_router.include_router(
     users.router, prefix="/users", tags=["Users & Roles"]
 )
@@ -112,6 +117,18 @@ api_router.include_router(
     dependencies=[Depends(require_module_access("partners"))],
 )
 api_router.include_router(
+    partner_contributions.router,
+    prefix="/partner-contributions",
+    tags=["Partner Contributions"],
+    dependencies=[Depends(require_module_access("partners"))],
+)
+api_router.include_router(
+    partner_expenses.router,
+    prefix="/partner-expenses",
+    tags=["Partner Expenses"],
+    dependencies=[Depends(require_module_access("partners"))],
+)
+api_router.include_router(
     reports.router,
     prefix="/reports",
     tags=["Financial Reports"],
@@ -146,4 +163,9 @@ api_router.include_router(
     prefix="/admin",
     tags=["Admin Utilities"],
     dependencies=[Depends(get_current_user)],
+)
+api_router.include_router(
+    uploads.router,
+    prefix="/uploads",
+    tags=["Uploads"],
 )

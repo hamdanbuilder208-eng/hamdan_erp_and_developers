@@ -7,6 +7,7 @@ import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
 import { Input, Label } from "../components/ui/Input";
 import { AccessDenied } from "../components/ui/AccessDenied";
+import { toast, apiErrorMessage } from "../lib/toast";
 import type { CompanySettings, DataIntegrityReport } from "../types";
 
 type AdminTab = "signature" | "backup" | "integrity";
@@ -52,11 +53,10 @@ export default function AdminPage() {
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
-      window.alert("Signature settings saved.");
+      toast.success("Signature settings saved.");
     },
     onError: (err: unknown) => {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(detail ?? "Failed to save settings.");
+      toast.error(apiErrorMessage(err, "Failed to save settings."));
     },
   });
 
@@ -78,8 +78,7 @@ export default function AdminPage() {
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(detail ?? "Failed to download backup.");
+      toast.error(apiErrorMessage(err, "Failed to download backup."));
     } finally {
       setDownloading(false);
     }
@@ -90,8 +89,7 @@ export default function AdminPage() {
     mutationFn: async () => (await api.get<DataIntegrityReport>("/admin/data-integrity")).data,
     onSuccess: (report) => setIntegrityReport(report),
     onError: (err: unknown) => {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(detail ?? "Failed to run data integrity check.");
+      toast.error(apiErrorMessage(err, "Failed to run data integrity check."));
     },
   });
 

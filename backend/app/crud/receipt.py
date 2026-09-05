@@ -1,9 +1,11 @@
+from datetime import date
+
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.sequences import next_sequence_number
 from app.models.account import Account
 from app.models.booking import Booking, PaymentScheduleLine
-from app.models.receipt import Receipt, ReceiptAllocation
+from app.models.receipt import ChequeStatus, Receipt, ReceiptAllocation
 from app.models.voucher import Voucher, VoucherLine, VoucherType
 from app.schemas.receipt import ReceiptCreate
 
@@ -72,20 +74,57 @@ def _reverse_receipt_allocations(db: Session, db_receipt: Receipt) -> None:
         db.delete(allocation)
 
 
+def _apply_receipt_ledger(db: Session, booking: Booking, db_receipt: Receipt) -> None:
+    """Books the receipt's amount for real: installment allocation + a Receipt
+    voucher (debit the cash/bank account, credit Accounts Receivable). Used both
+    when a receipt is first created and when a previously-bounced cheque is
+    re-presented and clears — same booking either way."""
+    receivable_account = db.query(Account).filter(Account.code == RECEIVABLE_ACCOUNT_CODE).first()
+    if not receivable_account:
+        raise ValueError(
+            f"Accounts Receivable account (code {RECEIVABLE_ACCOUNT_CODE}) not found in chart of accounts"
+        )
+
+    voucher = Voucher(
+        voucher_no=_next_voucher_no(db),
+        voucher_type=VoucherType.RECEIPT,
+        voucher_date=db_receipt.receipt_date,
+        project_id=booking.project_id,
+        narration=f"Receipt {db_receipt.receipt_no} — {booking.booking_ref_no}",
+    )
+    db.add(voucher)
+    db.flush()
+
+    db.add(
+        VoucherLine(
+            voucher_id=voucher.id,
+            account_id=db_receipt.credit_account_id,
+            debit=db_receipt.amount,
+            credit=0,
+            narration=f"Receipt against {booking.booking_ref_no}",
+        )
+    )
+    db.add(
+        VoucherLine(
+            voucher_id=voucher.id,
+            account_id=receivable_account.id,
+            debit=0,
+            credit=db_receipt.amount,
+            narration=f"Receipt against {booking.booking_ref_no}",
+        )
+    )
+
+    db_receipt.voucher_id = voucher.id
+    db.flush()
+    _distribute_amount(db, booking, db_receipt.id, float(db_receipt.amount))
+
+
 def create_receipt(db: Session, receipt_in: ReceiptCreate) -> Receipt:
     booking = db.query(Booking).filter(Booking.id == receipt_in.booking_id).first()
     if not booking:
         raise ValueError("Booking not found")
     if booking.status.value == "Cancelled":
         raise ValueError("Cannot record a receipt against a cancelled booking")
-
-    receivable_account = (
-        db.query(Account).filter(Account.code == RECEIVABLE_ACCOUNT_CODE).first()
-    )
-    if not receivable_account:
-        raise ValueError(
-            f"Accounts Receivable account (code {RECEIVABLE_ACCOUNT_CODE}) not found in chart of accounts"
-        )
 
     db_receipt = Receipt(
         receipt_no=_next_receipt_no(db),
@@ -97,43 +136,63 @@ def create_receipt(db: Session, receipt_in: ReceiptCreate) -> Receipt:
         mode_of_payment=receipt_in.mode_of_payment,
         cheque_no=receipt_in.cheque_no,
         cheque_date=receipt_in.cheque_date,
+        cheque_clearing_date=receipt_in.cheque_clearing_date,
+        cheque_status=ChequeStatus.PENDING if receipt_in.mode_of_payment == "Cheque" else None,
         narration=receipt_in.narration,
     )
     db.add(db_receipt)
     db.flush()
 
-    voucher = Voucher(
-        voucher_no=_next_voucher_no(db),
-        voucher_type=VoucherType.RECEIPT,
-        voucher_date=receipt_in.receipt_date,
-        project_id=booking.project_id,
-        narration=f"Receipt {db_receipt.receipt_no} — {booking.booking_ref_no}",
-    )
-    db.add(voucher)
-    db.flush()
+    _apply_receipt_ledger(db, booking, db_receipt)
 
-    db.add(
-        VoucherLine(
-            voucher_id=voucher.id,
-            account_id=receipt_in.credit_account_id,
-            debit=receipt_in.amount,
-            credit=0,
-            narration=f"Receipt against {booking.booking_ref_no}",
-        )
-    )
-    db.add(
-        VoucherLine(
-            voucher_id=voucher.id,
-            account_id=receivable_account.id,
-            debit=0,
-            credit=receipt_in.amount,
-            narration=f"Receipt against {booking.booking_ref_no}",
-        )
-    )
+    db.commit()
+    return get_receipt(db, db_receipt.id)
 
-    db_receipt.voucher_id = voucher.id
-    _distribute_amount(db, booking, db_receipt.id, receipt_in.amount)
 
+def list_pending_cheques(db: Session, due_by: date | None = None) -> list[Receipt]:
+    """Cheques still awaiting clearing, optionally only those due on/before a
+    given date (used for the dashboard reminder — overdue + due today)."""
+    query = _load_query(db).filter(Receipt.cheque_status == ChequeStatus.PENDING)
+    if due_by is not None:
+        query = query.filter(Receipt.cheque_clearing_date <= due_by)
+    return query.order_by(Receipt.cheque_clearing_date.asc()).all()
+
+
+def mark_cheque_status(db: Session, db_receipt: Receipt, new_status: ChequeStatus) -> Receipt:
+    """Pending -> Cleared/Bounced is the usual first call. A Bounced cheque can
+    later be re-presented and marked Cleared — this re-books the payment from
+    scratch. A Cleared cheque can also be corrected back to Bounced if it was
+    marked in error — this reverses it again. Either way the ledger always
+    matches the current status: applied unless the status is Bounced."""
+    if db_receipt.mode_of_payment != "Cheque":
+        raise ValueError("This receipt was not paid by cheque")
+    if db_receipt.cheque_status == new_status:
+        raise ValueError(f"This cheque is already marked {new_status.value}")
+    if new_status not in (ChequeStatus.CLEARED, ChequeStatus.BOUNCED):
+        raise ValueError("Status must be Cleared or Bounced")
+
+    was_applied = db_receipt.cheque_status != ChequeStatus.BOUNCED
+    will_be_applied = new_status != ChequeStatus.BOUNCED
+
+    if was_applied and not will_be_applied:
+        # Cleared/Pending -> Bounced: the money was never actually received —
+        # undo exactly what this receipt did, but keep the row as a record.
+        _reverse_receipt_allocations(db, db_receipt)
+        voucher_id = db_receipt.voucher_id
+        db_receipt.voucher_id = None
+        db.flush()
+        if voucher_id:
+            voucher = db.query(Voucher).filter(Voucher.id == voucher_id).first()
+            if voucher:
+                db.delete(voucher)
+    elif not was_applied and will_be_applied:
+        # Bounced -> Cleared: the cheque was re-presented and this time cleared.
+        booking = db.query(Booking).filter(Booking.id == db_receipt.booking_id).first()
+        if not booking:
+            raise ValueError("Booking not found")
+        _apply_receipt_ledger(db, booking, db_receipt)
+
+    db_receipt.cheque_status = new_status
     db.commit()
     return get_receipt(db, db_receipt.id)
 

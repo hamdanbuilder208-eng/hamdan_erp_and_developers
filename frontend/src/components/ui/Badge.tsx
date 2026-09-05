@@ -6,6 +6,7 @@ import type {
   LandPropertyStatus,
   BookingStatus,
   PurchaseOrderStatus,
+  MaterialIssueStatus,
 } from "../../types";
 
 const badgeVariants = cva(
@@ -89,4 +90,13 @@ const purchaseOrderStatusTone: Record<PurchaseOrderStatus, VariantProps<typeof b
 
 export function PurchaseOrderStatusBadge({ status }: { status: PurchaseOrderStatus }) {
   return <Badge tone={purchaseOrderStatusTone[status]}>{status}</Badge>;
+}
+
+const materialIssueStatusTone: Record<MaterialIssueStatus, VariantProps<typeof badgeVariants>["tone"]> = {
+  Dispatched: "warning",
+  Received: "success",
+};
+
+export function MaterialIssueStatusBadge({ status }: { status: MaterialIssueStatus }) {
+  return <Badge tone={materialIssueStatusTone[status]}>{status}</Badge>;
 }

@@ -41,7 +41,7 @@ def bulk_generate_units(project_id: int, payload: UnitBulkGenerate, db: Session 
     try:
         return unit_crud.bulk_generate_units(db, project_id, payload)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.put("/{unit_id}", response_model=UnitOut)

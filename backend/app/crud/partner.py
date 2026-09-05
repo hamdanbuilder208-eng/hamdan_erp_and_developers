@@ -2,7 +2,13 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.sequences import next_sequence_number
 from app.models.account import AccountNature
-from app.models.partner import Partner, PartnerDrawing, ProjectPartnerShare
+from app.models.partner import (
+    Partner,
+    PartnerContribution,
+    PartnerDrawing,
+    PartnerExpense,
+    ProjectPartnerShare,
+)
 from app.models.project import Project
 from app.models.voucher import Voucher, VoucherLine
 from app.schemas.partner import (
@@ -151,18 +157,66 @@ def get_partner_summary(db: Session, partner_id: int) -> PartnerSummary | None:
         )
         drawn_amount = round(sum(float(d.amount) for d in drawn), 2)
 
+        contributions = (
+            db.query(PartnerContribution)
+            .filter(
+                PartnerContribution.partner_id == partner_id,
+                PartnerContribution.project_id == share.project_id,
+            )
+            .all()
+        )
+        contributed_amount = round(sum(float(c.amount) for c in contributions), 2)
+
+        partner_expenses = (
+            db.query(PartnerExpense)
+            .filter(
+                PartnerExpense.partner_id == partner_id,
+                PartnerExpense.project_id == share.project_id,
+            )
+            .all()
+        )
+        partner_expense_amount = round(sum(float(e.amount) for e in partner_expenses), 2)
+
+        # Everything the business currently owes this partner on this project:
+        # what they put in, plus what they're owed back for expenses paid on
+        # the company's behalf, plus their earned profit share — less what
+        # they've already withdrawn.
+        current_account_balance = round(
+            contributed_amount - drawn_amount + partner_share_amount + partner_expense_amount, 2
+        )
+
+        # Money still needed to finish construction stays reserved — only the
+        # revenue collected beyond that reserve is safe to distribute now.
+        construction_budget = (
+            float(share.project.total_budget) if share.project.total_budget is not None else None
+        )
+        reserve_amount = (
+            max(construction_budget - expense, 0) if construction_budget is not None else 0.0
+        )
+        distributable_amount = round(max(revenue - reserve_amount, 0), 2)
+        partner_distributable_share = round(
+            distributable_amount * float(share.share_percent) / 100, 2
+        )
+
         rows.append(
             PartnerProjectRow(
                 project_id=share.project_id,
                 project_name=share.project.project_name,
                 share_percent=float(share.share_percent),
                 investment_amount=float(share.investment_amount),
+                contributed_amount=contributed_amount,
                 project_revenue=revenue,
                 project_expense=expense,
                 project_net_profit=round(net_profit, 2),
                 partner_share_amount=partner_share_amount,
                 drawn_amount=drawn_amount,
                 balance=round(partner_share_amount - drawn_amount, 2),
+                construction_budget=construction_budget,
+                reserve_amount=round(reserve_amount, 2),
+                distributable_amount=distributable_amount,
+                partner_distributable_share=partner_distributable_share,
+                partner_expense_amount=partner_expense_amount,
+                current_account_balance=current_account_balance,
             )
         )
 
@@ -172,4 +226,8 @@ def get_partner_summary(db: Session, partner_id: int) -> PartnerSummary | None:
         total_share_amount=round(sum(r.partner_share_amount for r in rows), 2),
         total_drawn=round(sum(r.drawn_amount for r in rows), 2),
         total_balance=round(sum(r.balance for r in rows), 2),
+        total_contributed=round(sum(r.contributed_amount for r in rows), 2),
+        total_distributable_share=round(sum(r.partner_distributable_share for r in rows), 2),
+        total_partner_expense=round(sum(r.partner_expense_amount for r in rows), 2),
+        total_current_account_balance=round(sum(r.current_account_balance for r in rows), 2),
     )

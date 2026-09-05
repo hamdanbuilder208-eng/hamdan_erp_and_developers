@@ -4,6 +4,7 @@ import { api } from "../../lib/api";
 import { Button } from "../ui/Button";
 import { Input, Label, Select } from "../ui/Input";
 import { Modal } from "../ui/Modal";
+import { toast, apiErrorMessage } from "../../lib/toast";
 import type { CommunicationChannel, CommunicationLog, CommunicationRelatedType } from "../../types";
 
 const channels: CommunicationChannel[] = ["WhatsApp", "SMS"];
@@ -55,15 +56,14 @@ export function SendMessageModal({
     onSuccess: (log) => {
       queryClient.invalidateQueries({ queryKey: ["communications"] });
       if (log.status === "Sent") {
-        window.alert("Message sent.");
+        toast.success("Message sent.");
         onClose();
       } else {
-        window.alert(`Failed: ${log.error_message ?? "Unknown error"}`);
+        toast.error(`Failed: ${log.error_message ?? "Unknown error"}`);
       }
     },
     onError: (err: unknown) => {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(detail ?? "Failed to send message.");
+      toast.error(apiErrorMessage(err, "Failed to send message."));
     },
   });
 

@@ -8,6 +8,8 @@ import {
   List,
   Pencil,
   Plus,
+  Printer,
+  QrCode,
   Sparkles,
   Tags,
   Trash2,
@@ -19,6 +21,9 @@ import { Input, Label, Select } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
 import { ProjectStatusBadge, UnitStatusBadge } from "../../components/ui/Badge";
 import { UnitAvailabilityGrid } from "../../components/units/UnitAvailabilityGrid";
+import { QrImage } from "../../components/ui/QrImage";
+import { toast, apiErrorMessage } from "../../lib/toast";
+import { confirm } from "../../lib/confirm";
 import type {
   Partner,
   ProjectDetail,
@@ -37,6 +42,21 @@ function floorNumberLabel(floorNo: string): string | null {
   if (lower.includes("ground")) return "0";
   const match = lower.match(/\d+/);
   return match ? match[0] : null;
+}
+
+function ordinalFloorLabel(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th Floor`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st Floor`;
+    case 2:
+      return `${n}nd Floor`;
+    case 3:
+      return `${n}rd Floor`;
+    default:
+      return `${n}th Floor`;
+  }
 }
 
 export default function ProjectDetailPage() {
@@ -68,6 +88,20 @@ export default function ProjectDetailPage() {
     queryFn: async () => (await api.get<UnitCategory[]>("/unit-categories/")).data,
   });
 
+  // Total floors (must be set before floors/units can be added)
+  const [totalFloorsDraft, setTotalFloorsDraft] = React.useState("");
+  const setTotalFloors = useMutation({
+    mutationFn: async () =>
+      (
+        await api.put(`/projects/${projectId}`, {
+          total_floors: Number(totalFloorsDraft),
+        })
+      ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+    },
+  });
+
   // Floor form
   const [floorForm, setFloorForm] = React.useState({ block: "", floor_no: "", no_of_units: "" });
   const createFloor = useMutation({
@@ -90,8 +124,7 @@ export default function ProjectDetailPage() {
     mutationFn: async (floorId: number) => api.delete(`/projects/floors/${floorId}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["project", projectId] }),
     onError: (err: unknown) => {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(message ?? "Failed to delete floor.");
+      toast.error(apiErrorMessage(err, "Failed to delete floor."));
     },
   });
 
@@ -152,8 +185,7 @@ export default function ProjectDetailPage() {
       if (editingCategoryId) resetCategoryForm();
     },
     onError: (err: unknown) => {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(message ?? "Failed to delete category.");
+      toast.error(apiErrorMessage(err, "Failed to delete category."));
     },
   });
 
@@ -179,6 +211,9 @@ export default function ProjectDetailPage() {
       setGenerateModalOpen(false);
       setGenForm({ floor_id: "", unit_category_id: "" });
     },
+    onError: (err: unknown) => {
+      toast.error(apiErrorMessage(err, "Failed to generate units."));
+    },
   });
 
   const updateUnitStatus = useMutation({
@@ -194,8 +229,7 @@ export default function ProjectDetailPage() {
       setSelectedUnit(null);
     },
     onError: (err: unknown) => {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(message ?? "Failed to delete unit.");
+      toast.error(apiErrorMessage(err, "Failed to delete unit."));
     },
   });
 
@@ -243,14 +277,15 @@ export default function ProjectDetailPage() {
     mutationFn: async (shareId: number) => api.delete(`/projects/partner-shares/${shareId}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["project-partner-shares", projectId] }),
     onError: (err: unknown) => {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(message ?? "Failed to remove share.");
+      toast.error(apiErrorMessage(err, "Failed to remove share."));
     },
   });
 
   const currentSelectedUnit = selectedUnit
     ? units?.find((u) => u.id === selectedUnit.id) ?? selectedUnit
     : null;
+
+  const [deliveriesQrOpen, setDeliveriesQrOpen] = React.useState(false);
 
   if (!project) {
     return <div className="text-sm text-slate-400 dark:text-slate-500">Loading project...</div>;
@@ -271,6 +306,10 @@ export default function ProjectDetailPage() {
             <h2 className="text-xl font-semibold text-navy-950 dark:text-white">{project.project_name}</h2>
             <ProjectStatusBadge status={project.status} />
           </div>
+          <Button size="sm" variant="secondary" onClick={() => setDeliveriesQrOpen(true)}>
+            <QrCode className="h-4 w-4" />
+            Deliveries QR
+          </Button>
         </div>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           {project.project_code} {project.address ? `· ${project.address}` : ""}
@@ -289,7 +328,10 @@ export default function ProjectDetailPage() {
         <Card>
           <CardContent>
             <p className="text-xs text-slate-500 dark:text-slate-400">Floors / Blocks</p>
-            <p className="mt-1 text-lg font-semibold text-navy-950 dark:text-white">{project.floors.length}</p>
+            <p className="mt-1 text-lg font-semibold text-navy-950 dark:text-white">
+              {project.floors.length}
+              {project.total_floors ? ` / ${project.total_floors}` : ""}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -342,7 +384,13 @@ export default function ProjectDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle>Floors / Blocks</CardTitle>
-            <Button size="sm" onClick={() => setFloorModalOpen(true)}>
+            <Button
+              size="sm"
+              onClick={() => {
+                setTotalFloorsDraft(project.total_floors ? String(project.total_floors) : "");
+                setFloorModalOpen(true);
+              }}
+            >
               <Plus className="h-4 w-4" />
               Add Floor
             </Button>
@@ -366,7 +414,7 @@ export default function ProjectDetailPage() {
                   </tr>
                 )}
                 {project.floors.map((f) => (
-                  <tr key={f.id}>
+                  <tr key={f.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                     <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{f.block || "—"}</td>
                     <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{f.floor_no}</td>
                     <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{f.no_of_units}</td>
@@ -415,7 +463,13 @@ export default function ProjectDetailPage() {
                 <Tags className="h-4 w-4" />
                 Manage Categories
               </Button>
-              <Button size="sm" onClick={() => setGenerateModalOpen(true)}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setGenForm({ floor_id: "", unit_category_id: "" });
+                  setGenerateModalOpen(true);
+                }}
+              >
                 <Sparkles className="h-4 w-4" />
                 Generate Units
               </Button>
@@ -452,7 +506,7 @@ export default function ProjectDetailPage() {
                     </tr>
                   )}
                   {units?.map((u) => (
-                    <tr key={u.id}>
+                    <tr key={u.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                       <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{u.unit_ref_no}</td>
                       <td className="px-5 py-3 font-medium text-navy-900 dark:text-slate-100">{u.unit_number}</td>
                       <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{u.unit_category?.name ?? "—"}</td>
@@ -481,10 +535,12 @@ export default function ProjectDetailPage() {
                       </td>
                       <td className="px-5 py-3 text-right">
                         <button
-                          onClick={() => {
-                            if (window.confirm(`Delete unit "${u.unit_number}"?`)) {
-                              deleteUnit.mutate(u.id);
-                            }
+                          onClick={async () => {
+                            const ok = await confirm(`Delete unit "${u.unit_number}"?`, {
+                              danger: true,
+                              confirmLabel: "Delete",
+                            });
+                            if (ok) deleteUnit.mutate(u.id);
                           }}
                           title="Delete unit"
                           className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
@@ -538,7 +594,7 @@ export default function ProjectDetailPage() {
                   </tr>
                 )}
                 {shares?.map((s) => (
-                  <tr key={s.id}>
+                  <tr key={s.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                     <td className="px-5 py-3 font-medium text-navy-900 dark:text-slate-100">{s.partner.name}</td>
                     <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
                       {s.investment_amount ? `PKR ${Number(s.investment_amount).toLocaleString()}` : "—"}
@@ -546,10 +602,12 @@ export default function ProjectDetailPage() {
                     <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{s.share_percent}%</td>
                     <td className="px-5 py-3 text-right">
                       <button
-                        onClick={() => {
-                          if (window.confirm(`Remove ${s.partner.name}'s share from this project?`)) {
-                            deleteShare.mutate(s.id);
-                          }
+                        onClick={async () => {
+                          const ok = await confirm(`Remove ${s.partner.name}'s share from this project?`, {
+                            danger: true,
+                            confirmLabel: "Remove",
+                          });
+                          if (ok) deleteShare.mutate(s.id);
                         }}
                         className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
                       >
@@ -645,14 +703,39 @@ export default function ProjectDetailPage() {
       </Modal>
 
       {/* Add Floor Modal */}
-      <Modal open={floorModalOpen} onClose={() => setFloorModalOpen(false)} title="Add Floor / Block">
+      <Modal
+        open={floorModalOpen}
+        onClose={() => setFloorModalOpen(false)}
+        title="Add Floor / Block"
+        description="Set how many floors this project has, then add each floor and its units."
+      >
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
+            const draftCount = Number(totalFloorsDraft || 0);
+            if (draftCount !== (project.total_floors ?? 0)) {
+              await setTotalFloors.mutateAsync();
+            }
             createFloor.mutate();
           }}
           className="space-y-4"
         >
+          <div>
+            <Label htmlFor="total_floors_draft">Total Floors in this Project</Label>
+            <Input
+              id="total_floors_draft"
+              type="number"
+              min="1"
+              required
+              value={totalFloorsDraft}
+              onChange={(e) => setTotalFloorsDraft(e.target.value)}
+              placeholder="e.g. 5"
+            />
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              Enter this first — it determines which floor numbers you can pick below.
+            </p>
+          </div>
+
           <div>
             <Label htmlFor="block">Block (optional)</Label>
             <Input
@@ -662,22 +745,35 @@ export default function ProjectDetailPage() {
               placeholder="e.g. Block A"
             />
           </div>
+
           <div>
             <Label htmlFor="floor_no">Floor No.</Label>
-            <Input
+            <Select
               id="floor_no"
               required
+              disabled={!Number(totalFloorsDraft)}
               value={floorForm.floor_no}
               onChange={(e) => setFloorForm({ ...floorForm, floor_no: e.target.value })}
-              placeholder="e.g. Ground, 1st, 2nd"
-            />
+            >
+              <option value="">
+                {Number(totalFloorsDraft) ? "Select floor" : "Enter total floors first"}
+              </option>
+              <option value="Ground">Ground Floor</option>
+              {Array.from({ length: Number(totalFloorsDraft) || 0 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={ordinalFloorLabel(n)}>
+                  {ordinalFloorLabel(n)}
+                </option>
+              ))}
+            </Select>
           </div>
+
           <div>
             <Label htmlFor="no_of_units">No. of Units on this Floor</Label>
             <Input
               id="no_of_units"
               type="number"
               required
+              disabled={!Number(totalFloorsDraft)}
               value={floorForm.no_of_units}
               onChange={(e) => setFloorForm({ ...floorForm, no_of_units: e.target.value })}
             />
@@ -686,7 +782,10 @@ export default function ProjectDetailPage() {
             <Button type="button" variant="secondary" onClick={() => setFloorModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={createFloor.isPending}>
+            <Button
+              type="submit"
+              disabled={createFloor.isPending || setTotalFloors.isPending || !Number(totalFloorsDraft)}
+            >
               Add Floor
             </Button>
           </div>
@@ -732,10 +831,12 @@ export default function ProjectDetailPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      if (window.confirm(`Delete category "${c.name}"?`)) {
-                        deleteCategory.mutate(c.id);
-                      }
+                    onClick={async () => {
+                      const ok = await confirm(`Delete category "${c.name}"?`, {
+                        danger: true,
+                        confirmLabel: "Delete",
+                      });
+                      if (ok) deleteCategory.mutate(c.id);
                     }}
                     title="Delete category"
                     className="rounded-md p-1 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
@@ -820,12 +921,16 @@ export default function ProjectDetailPage() {
               onChange={(e) => setGenForm({ ...genForm, floor_id: e.target.value })}
             >
               <option value="">Select floor</option>
-              {project.floors.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.block ? `${f.block} · ` : ""}
-                  {f.floor_no} ({f.no_of_units} units)
-                </option>
-              ))}
+              {project.floors.map((f) => {
+                const alreadyGenerated = (units ?? []).some((u) => u.floor_id === f.id);
+                return (
+                  <option key={f.id} value={f.id} disabled={alreadyGenerated}>
+                    {f.block ? `${f.block} · ` : ""}
+                    {f.floor_no} ({f.no_of_units} units)
+                    {alreadyGenerated ? " — already generated" : ""}
+                  </option>
+                );
+              })}
             </Select>
           </div>
 
@@ -926,10 +1031,12 @@ export default function ProjectDetailPage() {
 
             <div className="flex justify-end border-t border-slate-100 dark:border-navy-800 pt-4">
               <button
-                onClick={() => {
-                  if (window.confirm(`Delete unit "${currentSelectedUnit.unit_number}"?`)) {
-                    deleteUnit.mutate(currentSelectedUnit.id);
-                  }
+                onClick={async () => {
+                  const ok = await confirm(`Delete unit "${currentSelectedUnit.unit_number}"?`, {
+                    danger: true,
+                    confirmLabel: "Delete",
+                  });
+                  if (ok) deleteUnit.mutate(currentSelectedUnit.id);
                 }}
                 title="Delete unit"
                 className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
@@ -939,6 +1046,22 @@ export default function ProjectDetailPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* ---- Deliveries QR Modal ---- */}
+      <Modal
+        open={deliveriesQrOpen}
+        onClose={() => setDeliveriesQrOpen(false)}
+        title={`Deliveries QR — ${project.project_name}`}
+        description="Print and keep this at site. Scanning it lists pending deliveries and lets you mark them received."
+      >
+        <div className="space-y-4 text-center">
+          <QrImage url={`${window.location.origin}/projects/${project.id}/deliveries`} />
+          <Button variant="secondary" className="w-full" onClick={() => window.print()}>
+            <Printer className="h-4 w-4" />
+            Print
+          </Button>
+        </div>
       </Modal>
     </div>
   );

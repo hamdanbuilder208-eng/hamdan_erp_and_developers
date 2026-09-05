@@ -14,6 +14,12 @@ class ReceiptPaymentType(str, enum.Enum):
     DOCUMENTATION_CHARGES = "Documentation Charges"
 
 
+class ChequeStatus(str, enum.Enum):
+    PENDING = "Pending"
+    CLEARED = "Cleared"
+    BOUNCED = "Bounced"
+
+
 class Receipt(Base, TimestampMixin):
     __tablename__ = "receipts"
 
@@ -32,6 +38,11 @@ class Receipt(Base, TimestampMixin):
     mode_of_payment: Mapped[str] = mapped_column(String(30), default="Cash")
     cheque_no: Mapped[str | None] = mapped_column(String(50))
     cheque_date: Mapped[date | None] = mapped_column(Date)
+    # "Cash date" — when the cheque is due to be presented at the bank for
+    # clearing. Distinct from cheque_date (the date written on the cheque
+    # itself by the customer).
+    cheque_clearing_date: Mapped[date | None] = mapped_column(Date)
+    cheque_status: Mapped[ChequeStatus | None] = mapped_column(Enum(ChequeStatus))
     narration: Mapped[str | None] = mapped_column(Text)
 
     booking: Mapped["Booking"] = relationship()

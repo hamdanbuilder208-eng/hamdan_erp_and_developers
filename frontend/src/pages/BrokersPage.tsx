@@ -6,6 +6,8 @@ import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import { toast, apiErrorMessage } from "../lib/toast";
+import { confirm } from "../lib/confirm";
 import type { Account, BookingAgent, BookingAgentSummary, CommissionPayout } from "../types";
 
 const emptyForm = {
@@ -64,8 +66,7 @@ export default function BrokersPage() {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
     },
     onError: (err: unknown) => {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(message ?? "Failed to delete payout.");
+      toast.error(apiErrorMessage(err, "Failed to delete payout."));
     },
   });
 
@@ -219,7 +220,7 @@ export default function BrokersPage() {
                       </tr>
                     )}
                     {summary.bookings.map((row) => (
-                      <tr key={row.booking_id}>
+                      <tr key={row.booking_id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                         <td className="px-4 py-3">
                           <p className="font-medium text-navy-900 dark:text-slate-100">{row.booking_ref_no}</p>
                           <p className="text-xs text-slate-400 dark:text-slate-500">
@@ -287,7 +288,7 @@ export default function BrokersPage() {
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
                       {payouts.map((p) => (
-                        <tr key={p.id}>
+                        <tr key={p.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                           <td className="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">
                             {p.payout_no}
                           </td>
@@ -307,9 +308,12 @@ export default function BrokersPage() {
                                 <Printer className="h-3.5 w-3.5" />
                               </button>
                               <button
-                                onClick={() => {
-                                  if (window.confirm(`Delete payout "${p.payout_no}"?`))
-                                    deletePayout.mutate(p.id);
+                                onClick={async () => {
+                                  const ok = await confirm(`Delete payout "${p.payout_no}"?`, {
+                                    danger: true,
+                                    confirmLabel: "Delete",
+                                  });
+                                  if (ok) deletePayout.mutate(p.id);
                                 }}
                                 className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
                               >

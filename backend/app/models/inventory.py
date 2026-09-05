@@ -34,6 +34,22 @@ class Material(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(default=True)
 
 
+class Warehouse(Base, TimestampMixin):
+    """A physical stock location — material lands here via GRN and is later
+    issued out to a project/site. Stock balances are tracked per (material,
+    warehouse), not per project, since the same warehouse can supply many
+    projects over time."""
+
+    __tablename__ = "warehouses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    warehouse_code: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    location: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(default=True)
+
+
 class PurchaseOrderStatus(str, enum.Enum):
     DRAFT = "Draft"
     APPROVED = "Approved"
@@ -85,6 +101,7 @@ class GRN(Base, TimestampMixin):
     grn_date: Mapped[date] = mapped_column(Date, nullable=False)
 
     vendor_id: Mapped[int] = mapped_column(ForeignKey("vendors.id"), nullable=False)
+    warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouses.id"))
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"))
     po_id: Mapped[int | None] = mapped_column(ForeignKey("purchase_orders.id"))
     payment_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
@@ -94,6 +111,7 @@ class GRN(Base, TimestampMixin):
     narration: Mapped[str | None] = mapped_column(Text)
 
     vendor: Mapped["Vendor"] = relationship()
+    warehouse: Mapped["Warehouse | None"] = relationship()
     project: Mapped["Project | None"] = relationship()
     purchase_order: Mapped["PurchaseOrder | None"] = relationship()
     payment_account: Mapped["Account"] = relationship()
@@ -120,6 +138,11 @@ class MaterialIssueReason(str, enum.Enum):
     DAMAGED = "Damaged / Wastage"
 
 
+class MaterialIssueStatus(str, enum.Enum):
+    DISPATCHED = "Dispatched"
+    RECEIVED = "Received"
+
+
 class MaterialIssue(Base, TimestampMixin):
     __tablename__ = "material_issues"
 
@@ -128,6 +151,7 @@ class MaterialIssue(Base, TimestampMixin):
     issue_date: Mapped[date] = mapped_column(Date, nullable=False)
 
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouses.id"))
     voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
 
     reason: Mapped[MaterialIssueReason] = mapped_column(
@@ -135,6 +159,14 @@ class MaterialIssue(Base, TimestampMixin):
     )
     issued_to: Mapped[str | None] = mapped_column(String(150))
     narration: Mapped[str | None] = mapped_column(Text)
+
+    # Dispatch -> site-receipt tracking (confirmed via the QR code printed on the
+    # issue slip, scanned by whoever receives the delivery at the site).
+    status: Mapped[MaterialIssueStatus] = mapped_column(
+        Enum(MaterialIssueStatus), default=MaterialIssueStatus.DISPATCHED
+    )
+    received_date: Mapped[date | None] = mapped_column(Date)
+    received_by: Mapped[str | None] = mapped_column(String(150))
 
     # Only meaningful when reason=DAMAGED: whether the vendor has made good on a
     # reported damage/wastage (replacement, refund, credit note, etc).
@@ -144,6 +176,7 @@ class MaterialIssue(Base, TimestampMixin):
     restocked: Mapped[bool] = mapped_column(default=False)
 
     project: Mapped["Project"] = relationship()
+    warehouse: Mapped["Warehouse | None"] = relationship()
     lines: Mapped[list["MaterialIssueLine"]] = relationship(
         back_populates="material_issue", cascade="all, delete-orphan"
     )
@@ -177,14 +210,17 @@ class StockRefType(str, enum.Enum):
 
 class StockLedger(Base, TimestampMixin):
     """Immutable per-movement audit trail. `balance_qty`/`balance_value` are the
-    running (material, project) balance as of this row, computed at insert time
-    from the previous row for the same pair — a simple perpetual moving-average
-    inventory valuation."""
+    running (material, warehouse) balance as of this row, computed at insert
+    time from the previous row for the same pair — a simple perpetual
+    moving-average inventory valuation. `project_id` is kept only as a
+    reporting tag (which project's GRN/Issue this movement came from) — it is
+    no longer part of the balance-tracking key, `warehouse_id` is."""
 
     __tablename__ = "stock_ledger"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"), nullable=False)
+    warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouses.id"))
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"))
 
     movement_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -199,4 +235,5 @@ class StockLedger(Base, TimestampMixin):
     balance_value: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
 
     material: Mapped["Material"] = relationship()
+    warehouse: Mapped["Warehouse | None"] = relationship()
     project: Mapped["Project | None"] = relationship()

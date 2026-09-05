@@ -35,6 +35,7 @@ export interface Project {
   address: string | null;
   total_budget: number | null;
   commission_percent: number | null;
+  total_floors: number | null;
   status: ProjectStatus;
   project_group_id: number | null;
   project_group: ProjectGroup | null;
@@ -350,6 +351,10 @@ export interface PartnerSummaryRow {
   total_share_amount: number;
   total_drawn: number;
   total_balance: number;
+  total_contributed: number;
+  total_distributable_share: number;
+  total_partner_expense: number;
+  total_current_account_balance: number;
 }
 
 export interface MaterialSummaryRow {
@@ -399,12 +404,19 @@ export interface PartnerProjectRow {
   project_name: string;
   share_percent: number;
   investment_amount: number;
+  contributed_amount: number;
   project_revenue: number;
   project_expense: number;
   project_net_profit: number;
   partner_share_amount: number;
   drawn_amount: number;
   balance: number;
+  construction_budget: number | null;
+  reserve_amount: number;
+  distributable_amount: number;
+  partner_distributable_share: number;
+  partner_expense_amount: number;
+  current_account_balance: number;
 }
 
 export interface PartnerSummary {
@@ -413,6 +425,10 @@ export interface PartnerSummary {
   total_share_amount: number;
   total_drawn: number;
   total_balance: number;
+  total_contributed: number;
+  total_distributable_share: number;
+  total_partner_expense: number;
+  total_current_account_balance: number;
 }
 
 export interface PartnerDrawing {
@@ -427,6 +443,35 @@ export interface PartnerDrawing {
   narration: string | null;
   partner: Partner;
   credit_account: Account;
+}
+
+export interface PartnerContribution {
+  id: number;
+  contribution_no: string;
+  contribution_date: string;
+  partner_id: number;
+  project_id: number;
+  debit_account_id: number;
+  voucher_id: number | null;
+  amount: number;
+  purpose: string | null;
+  narration: string | null;
+  partner: Partner;
+  debit_account: Account;
+}
+
+export interface PartnerExpense {
+  id: number;
+  expense_no: string;
+  expense_date: string;
+  partner_id: number;
+  project_id: number;
+  expense_account_id: number;
+  voucher_id: number | null;
+  amount: number;
+  narration: string | null;
+  partner: Partner;
+  expense_account: Account;
 }
 
 export interface BookingAgent {
@@ -537,6 +582,8 @@ export interface Receipt {
   mode_of_payment: string;
   cheque_no: string | null;
   cheque_date: string | null;
+  cheque_clearing_date: string | null;
+  cheque_status: "Pending" | "Cleared" | "Bounced" | null;
   narration: string | null;
   credit_account: Account;
   booking: Booking;
@@ -597,6 +644,14 @@ export interface Material {
   is_active: boolean;
 }
 
+export interface Warehouse {
+  id: number;
+  warehouse_code: string;
+  name: string;
+  location: string | null;
+  is_active: boolean;
+}
+
 export type PurchaseOrderStatus = "Draft" | "Approved" | "Closed" | "Cancelled";
 
 export interface PurchaseOrderLine {
@@ -635,6 +690,7 @@ export interface GRN {
   grn_no: string;
   grn_date: string;
   vendor_id: number;
+  warehouse_id: number | null;
   project_id: number | null;
   po_id: number | null;
   payment_account_id: number;
@@ -642,6 +698,7 @@ export interface GRN {
   voucher_id: number | null;
   narration: string | null;
   vendor: Vendor;
+  warehouse: Warehouse | null;
   project: Project | null;
   payment_account: Account;
   lines: GRNLine[];
@@ -657,12 +714,14 @@ export interface MaterialIssueLine {
 }
 
 export type MaterialIssueReason = "Site Consumption" | "Damaged / Wastage";
+export type MaterialIssueStatus = "Dispatched" | "Received";
 
 export interface MaterialIssue {
   id: number;
   issue_no: string;
   issue_date: string;
   project_id: number;
+  warehouse_id: number | null;
   reason: MaterialIssueReason;
   issued_to: string | null;
   voucher_id: number | null;
@@ -671,11 +730,26 @@ export interface MaterialIssue {
   resolved_date: string | null;
   resolution_note: string | null;
   restocked: boolean;
+  status: MaterialIssueStatus;
+  received_date: string | null;
+  received_by: string | null;
   project: Project;
+  warehouse: Warehouse | null;
   lines: MaterialIssueLine[];
 }
 
 export interface StockBalance {
+  material_id: number;
+  material_code: string;
+  material_name: string;
+  unit_of_measure: string;
+  warehouse_id: number | null;
+  warehouse_name: string | null;
+  balance_qty: number;
+  balance_value: number;
+}
+
+export interface ProjectStock {
   material_id: number;
   material_code: string;
   material_name: string;
@@ -703,6 +777,13 @@ export interface CommunicationLog {
   error_message: string | null;
   created_at: string;
   sent_by: { id: number; username: string } | null;
+}
+
+export interface CommunicationBulkResult {
+  total: number;
+  sent: number;
+  failed: number;
+  logs: CommunicationLog[];
 }
 
 export interface CompanySettings {

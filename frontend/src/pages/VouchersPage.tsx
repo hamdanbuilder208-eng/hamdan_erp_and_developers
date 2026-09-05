@@ -7,6 +7,9 @@ import { Card } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Badge } from "../components/ui/Badge";
+import { TableRowsSkeleton } from "../components/ui/Skeleton";
+import { toast, apiErrorMessage } from "../lib/toast";
+import { confirm } from "../lib/confirm";
 import type { Account, Project, Voucher, VoucherType } from "../types";
 
 const voucherTypes: VoucherType[] = ["Receipt", "Payment", "Journal", "Contra"];
@@ -112,8 +115,7 @@ export default function VouchersPage() {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
     },
     onError: (err: unknown) => {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      window.alert(message ?? "Failed to delete voucher.");
+      toast.error(apiErrorMessage(err, "Failed to delete voucher."));
     },
   });
 
@@ -163,13 +165,7 @@ export default function VouchersPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-            {isLoading && (
-              <tr>
-                <td colSpan={7} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
-                  Loading...
-                </td>
-              </tr>
-            )}
+            {isLoading && <TableRowsSkeleton rows={4} cols={7} />}
             {!isLoading && vouchers?.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
@@ -178,7 +174,7 @@ export default function VouchersPage() {
               </tr>
             )}
             {vouchers?.map((v) => (
-              <tr key={v.id}>
+              <tr key={v.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                 <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{v.voucher_no}</td>
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{v.voucher_date}</td>
                 <td className="px-5 py-3">
@@ -201,10 +197,12 @@ export default function VouchersPage() {
                       <Printer className="h-3.5 w-3.5" />
                     </button>
                     <button
-                      onClick={() => {
-                        if (window.confirm(`Delete voucher "${v.voucher_no}"? This cannot be undone.`)) {
-                          deleteVoucher.mutate(v.id);
-                        }
+                      onClick={async () => {
+                        const ok = await confirm(`Delete voucher "${v.voucher_no}"? This cannot be undone.`, {
+                          danger: true,
+                          confirmLabel: "Delete",
+                        });
+                        if (ok) deleteVoucher.mutate(v.id);
                       }}
                       title="Delete voucher"
                       className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"

@@ -6,6 +6,17 @@ import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
 import type { CompanySettings, Receipt } from "../types";
 
+const API_ORIGIN = new URL(api.defaults.baseURL ?? "", window.location.origin).origin;
+const photoUrl = (path: string | null) => (path ? `${API_ORIGIN}${path}` : null);
+
+const RECEIPT_TERMS = [
+  "Payment received is subject to clearance and realization of the payment instrument, where applicable.",
+  "Any applicable documentation, utility, development, maintenance, taxes, government charges or other charges shall be payable separately as per the agreed terms.",
+  "The payment shall be adjusted against the buyer's outstanding balance/payment schedule.",
+  "In case of any discrepancy, the company's official accounts and records shall prevail.",
+  "This receipt is valid only when issued and authorized by the company.",
+];
+
 export default function ReceiptPrintPage() {
   const { id } = useParams();
 
@@ -68,25 +79,61 @@ export default function ReceiptPrintPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 py-5 text-sm">
-          <div>
-            <p className="text-xs text-slate-500">Allottee</p>
-            <p className="mt-0.5 font-medium text-navy-900">{booking.allottee.name}</p>
+        <div className="flex gap-4 py-5">
+          <div className="grid flex-1 grid-cols-2 gap-4 text-sm">
+            <div>
+              <p className="text-xs text-slate-500">Allottee</p>
+              <p className="mt-0.5 font-medium text-navy-900">{booking.allottee.name}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Booking Ref</p>
+              <p className="mt-0.5 font-medium text-navy-900">{booking.booking_ref_no}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Project / Unit</p>
+              <p className="mt-0.5 font-medium text-navy-900">
+                {booking.project.project_name} · {booking.unit.unit_number}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Facilities</p>
+              <p className="mt-0.5 font-medium text-navy-900">{facilities || "—"}</p>
+            </div>
+            {booking.allottee.nominee_name && (
+              <div className="col-span-2 border-t border-slate-100 pt-3">
+                <p className="text-xs text-slate-500">Nominee</p>
+                <p className="mt-0.5 font-medium text-navy-900">
+                  {booking.allottee.nominee_name}
+                  {booking.allottee.nominee_relation ? ` (${booking.allottee.nominee_relation})` : ""}
+                </p>
+              </div>
+            )}
           </div>
-          <div>
-            <p className="text-xs text-slate-500">Booking Ref</p>
-            <p className="mt-0.5 font-medium text-navy-900">{booking.booking_ref_no}</p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">Project / Unit</p>
-            <p className="mt-0.5 font-medium text-navy-900">
-              {booking.project.project_name} · {booking.unit.unit_number}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">Facilities</p>
-            <p className="mt-0.5 font-medium text-navy-900">{facilities || "—"}</p>
-          </div>
+
+          {(booking.allottee.picture_url || booking.allottee.nominee_picture_url) && (
+            <div className="flex shrink-0 gap-3">
+              {booking.allottee.picture_url && (
+                <div className="text-center">
+                  <img
+                    src={photoUrl(booking.allottee.picture_url) ?? undefined}
+                    alt={booking.allottee.name}
+                    className="h-20 w-20 rounded-lg border border-slate-200 object-cover"
+                  />
+                  <p className="mt-1 text-[10px] text-slate-400">Allottee</p>
+                </div>
+              )}
+              {booking.allottee.nominee_picture_url && (
+                <div className="text-center">
+                  <img
+                    src={photoUrl(booking.allottee.nominee_picture_url) ?? undefined}
+                    alt={booking.allottee.nominee_name ?? "Nominee"}
+                    className="h-20 w-20 rounded-lg border border-slate-200 object-cover"
+                  />
+                  <p className="mt-1 text-[10px] text-slate-400">Nominee</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Payment History</p>
@@ -156,7 +203,18 @@ export default function ReceiptPrintPage() {
           </div>
         </div>
 
-        <div className="mt-16 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
+        <div className="mt-8">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Terms &amp; Conditions
+          </p>
+          <ol className="list-decimal space-y-0.5 pl-4 text-[10px] leading-relaxed text-slate-500">
+            {RECEIPT_TERMS.map((term, i) => (
+              <li key={i}>{term}</li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="mt-10 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
           <div className="border-t border-slate-300 pt-2">Prepared By</div>
           <AccountantSignature settings={companySettings} />
           <div className="border-t border-slate-300 pt-2">Received By</div>

@@ -182,6 +182,10 @@ class PartnerSummaryRow(BaseModel):
     total_share_amount: float
     total_drawn: float
     total_balance: float
+    total_contributed: float
+    total_distributable_share: float
+    total_partner_expense: float
+    total_current_account_balance: float
 
 
 # Material / Employee
