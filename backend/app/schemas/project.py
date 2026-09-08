@@ -65,3 +65,4 @@ class ProjectOut(ProjectBase):
 
 class ProjectDetailOut(ProjectOut):
     floors: list[ProjectFloorOut] = []
+    total_spent: float = 0

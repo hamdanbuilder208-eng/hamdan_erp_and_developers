@@ -45,6 +45,7 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
     db_project = project_crud.get_project(db, project_id)
     if not db_project:
         raise HTTPException(status_code=404, detail="Project not found")
+    db_project.total_spent = project_crud.project_total_spent(db, project_id)
     return db_project
 
 

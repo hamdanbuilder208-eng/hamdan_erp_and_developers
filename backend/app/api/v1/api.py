@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     partner_drawings,
     partner_expenses,
     partners,
+    petty_cash,
     portal,
     projects,
     receipts,
@@ -151,6 +152,12 @@ api_router.include_router(
     prefix="/inventory",
     tags=["Material & Inventory"],
     dependencies=[Depends(require_module_access("inventory"))],
+)
+api_router.include_router(
+    petty_cash.router,
+    prefix="/petty-cash",
+    tags=["Petty Cash"],
+    dependencies=[Depends(require_module_access("petty_cash"))],
 )
 api_router.include_router(
     communications.router,

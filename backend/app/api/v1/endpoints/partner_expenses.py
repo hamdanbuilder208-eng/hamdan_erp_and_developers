@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.errors import delete_with_fk_guard
 from app.crud import partner_expense as expense_crud
 from app.db.session import get_db
 from app.schemas.partner import PartnerExpenseCreate, PartnerExpenseOut
@@ -30,4 +31,4 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
     db_expense = expense_crud.get_expense(db, expense_id)
     if not db_expense:
         raise HTTPException(status_code=404, detail="Expense not found")
-    expense_crud.delete_expense(db, db_expense)
+    delete_with_fk_guard(db, lambda: expense_crud.delete_expense(db, db_expense), "expense")

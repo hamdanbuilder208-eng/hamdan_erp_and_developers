@@ -68,3 +68,20 @@ class BookingOut(BookingBase):
     allottee: AllotteeOut
     booking_agent: BookingAgentOut | None = None
     schedule_lines: list[PaymentScheduleLineOut]
+
+
+class BookingTransferCreate(BaseModel):
+    to_allottee_id: int
+    transfer_date: date
+    narration: str | None = None
+
+
+class BookingTransferOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    transfer_no: str
+    transfer_date: date
+    booking_id: int
+    narration: str | None
+    from_allottee: AllotteeOut
+    to_allottee: AllotteeOut

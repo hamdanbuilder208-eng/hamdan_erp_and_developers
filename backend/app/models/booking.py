@@ -66,6 +66,27 @@ class Booking(Base, TimestampMixin):
     )
 
 
+class BookingTransfer(Base, TimestampMixin):
+    """Audit trail of a booking's ownership moving from one allottee to
+    another — `Booking.allottee_id` always reflects the CURRENT owner; this
+    table is the only record of who held it before."""
+
+    __tablename__ = "booking_transfers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    transfer_no: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    transfer_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    booking_id: Mapped[int] = mapped_column(ForeignKey("bookings.id"), nullable=False)
+    from_allottee_id: Mapped[int] = mapped_column(ForeignKey("allottees.id"), nullable=False)
+    to_allottee_id: Mapped[int] = mapped_column(ForeignKey("allottees.id"), nullable=False)
+    narration: Mapped[str | None] = mapped_column(Text)
+
+    booking: Mapped["Booking"] = relationship()
+    from_allottee: Mapped["Allottee"] = relationship(foreign_keys=[from_allottee_id])
+    to_allottee: Mapped["Allottee"] = relationship(foreign_keys=[to_allottee_id])
+
+
 class PaymentScheduleLine(Base, TimestampMixin):
     __tablename__ = "payment_schedule_lines"
 

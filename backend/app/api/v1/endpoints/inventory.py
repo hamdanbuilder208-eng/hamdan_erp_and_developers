@@ -13,7 +13,11 @@ from app.schemas.inventory import (
     MaterialIssueReceive,
     MaterialIssueResolve,
     MaterialOut,
+    MaterialTransferCreate,
+    MaterialTransferOut,
     MaterialUpdate,
+    OpeningStockCreate,
+    OpeningStockOut,
     PurchaseOrderCreate,
     PurchaseOrderOut,
     PurchaseOrderUpdate,
@@ -252,6 +256,58 @@ def receive_material_issue(issue_id: int, payload: MaterialIssueReceive, db: Ses
         return inventory_crud.mark_material_issue_received(db, db_issue, payload.received_by)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+# Opening Stock
+
+
+@router.get("/opening-stock", response_model=list[OpeningStockOut])
+def list_opening_stocks(db: Session = Depends(get_db)):
+    return inventory_crud.list_opening_stocks(db)
+
+
+@router.post("/opening-stock", response_model=OpeningStockOut, status_code=status.HTTP_201_CREATED)
+def create_opening_stock(opening_in: OpeningStockCreate, db: Session = Depends(get_db)):
+    try:
+        return inventory_crud.create_opening_stock(db, opening_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.delete("/opening-stock/{opening_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_opening_stock(opening_id: int, db: Session = Depends(get_db)):
+    db_opening = inventory_crud.get_opening_stock(db, opening_id)
+    if not db_opening:
+        raise HTTPException(status_code=404, detail="Opening stock entry not found")
+    delete_with_fk_guard(
+        db, lambda: inventory_crud.delete_opening_stock(db, db_opening), "opening stock entry"
+    )
+
+
+# Material Transfer
+
+
+@router.get("/transfers", response_model=list[MaterialTransferOut])
+def list_material_transfers(db: Session = Depends(get_db)):
+    return inventory_crud.list_material_transfers(db)
+
+
+@router.post("/transfers", response_model=MaterialTransferOut, status_code=status.HTTP_201_CREATED)
+def create_material_transfer(transfer_in: MaterialTransferCreate, db: Session = Depends(get_db)):
+    try:
+        return inventory_crud.create_material_transfer(db, transfer_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.delete("/transfers/{transfer_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_material_transfer(transfer_id: int, db: Session = Depends(get_db)):
+    db_transfer = inventory_crud.get_material_transfer(db, transfer_id)
+    if not db_transfer:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+    delete_with_fk_guard(
+        db, lambda: inventory_crud.delete_material_transfer(db, db_transfer), "material transfer"
+    )
 
 
 # Stock balance

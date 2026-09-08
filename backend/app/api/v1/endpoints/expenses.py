@@ -48,7 +48,7 @@ def delete_office_expense(expense_id: int, db: Session = Depends(get_db)):
     db_expense = expense_crud.get_office_expense(db, expense_id)
     if not db_expense:
         raise HTTPException(status_code=404, detail="Expense not found")
-    expense_crud.delete_office_expense(db, db_expense)
+    delete_with_fk_guard(db, lambda: expense_crud.delete_office_expense(db, db_expense), "expense")
 
 
 # Employees
@@ -109,7 +109,7 @@ def delete_wage_payment(payment_id: int, db: Session = Depends(get_db)):
     db_payment = expense_crud.get_wage_payment(db, payment_id)
     if not db_payment:
         raise HTTPException(status_code=404, detail="Wage payment not found")
-    expense_crud.delete_wage_payment(db, db_payment)
+    delete_with_fk_guard(db, lambda: expense_crud.delete_wage_payment(db, db_payment), "wage payment")
 
 
 # Owner Personal Expenses
@@ -141,4 +141,4 @@ def delete_owner_expense(expense_id: int, db: Session = Depends(get_db)):
     db_expense = expense_crud.get_owner_expense(db, expense_id)
     if not db_expense:
         raise HTTPException(status_code=404, detail="Expense not found")
-    expense_crud.delete_owner_expense(db, db_expense)
+    delete_with_fk_guard(db, lambda: expense_crud.delete_owner_expense(db, db_expense), "expense")

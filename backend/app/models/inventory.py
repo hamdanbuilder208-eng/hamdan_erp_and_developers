@@ -38,7 +38,8 @@ class Warehouse(Base, TimestampMixin):
     """A physical stock location — material lands here via GRN and is later
     issued out to a project/site. Stock balances are tracked per (material,
     warehouse), not per project, since the same warehouse can supply many
-    projects over time."""
+    projects over time. A GRN can skip the warehouse entirely when the vendor
+    delivers straight to a project/site — see GRN.warehouse_id."""
 
     __tablename__ = "warehouses"
 
@@ -206,15 +207,21 @@ class StockRefType(str, enum.Enum):
     GRN = "GRN"
     ISSUE = "Issue"
     RESTOCK = "Restock"
+    TRANSFER = "Transfer"
+    OPENING = "Opening"
+    PETTY_CASH = "Petty Cash"
 
 
 class StockLedger(Base, TimestampMixin):
     """Immutable per-movement audit trail. `balance_qty`/`balance_value` are the
-    running (material, warehouse) balance as of this row, computed at insert
-    time from the previous row for the same pair — a simple perpetual
-    moving-average inventory valuation. `project_id` is kept only as a
-    reporting tag (which project's GRN/Issue this movement came from) — it is
-    no longer part of the balance-tracking key, `warehouse_id` is."""
+    running balance as of this row, computed at insert time from the previous
+    row for the same pair — a simple perpetual moving-average inventory
+    valuation. The balance is keyed by `warehouse_id` whenever one is set
+    (`project_id` is then just a reporting tag — which project a warehouse
+    receipt/issue was for). Only when `warehouse_id` is null — material
+    received or held directly at a project/site, no warehouse stop — does
+    `project_id` become part of the key instead, giving each project its own
+    balance pool."""
 
     __tablename__ = "stock_ledger"
 
@@ -233,6 +240,66 @@ class StockLedger(Base, TimestampMixin):
     amount: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
     balance_qty: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
     balance_value: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
+
+    material: Mapped["Material"] = relationship()
+    warehouse: Mapped["Warehouse | None"] = relationship()
+    project: Mapped["Project | None"] = relationship()
+
+
+class MaterialTransfer(Base, TimestampMixin):
+    """Moves existing stock from one location to another — warehouse to
+    warehouse, project to project, or between the two — at the source's
+    current weighted-average rate. Unlike a GRN or Material Issue this never
+    changes the company-wide inventory value or posts an accounting entry;
+    it only relocates where a quantity already on hand is tracked."""
+
+    __tablename__ = "material_transfers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    transfer_no: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    transfer_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"), nullable=False)
+    quantity: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
+    rate: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
+
+    from_warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouses.id"))
+    from_project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"))
+    to_warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouses.id"))
+    to_project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"))
+
+    narration: Mapped[str | None] = mapped_column(Text)
+
+    material: Mapped["Material"] = relationship()
+    from_warehouse: Mapped["Warehouse | None"] = relationship(foreign_keys=[from_warehouse_id])
+    from_project: Mapped["Project | None"] = relationship(foreign_keys=[from_project_id])
+    to_warehouse: Mapped["Warehouse | None"] = relationship(foreign_keys=[to_warehouse_id])
+    to_project: Mapped["Project | None"] = relationship(foreign_keys=[to_project_id])
+
+
+class OpeningStock(Base, TimestampMixin):
+    """Seeds a warehouse (or project) with material that's already physically
+    on hand when it's set up in the system — no vendor, no purchase. Posts a
+    stock-in movement plus a journal entry (debit Material Stock, credit
+    Owner's Capital) so the balance sheet stays correct."""
+
+    __tablename__ = "opening_stocks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    opening_no: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    opening_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"), nullable=False)
+    quantity: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
+    rate: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
+
+    warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouses.id"))
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"))
+    voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
+
+    narration: Mapped[str | None] = mapped_column(Text)
 
     material: Mapped["Material"] = relationship()
     warehouse: Mapped["Warehouse | None"] = relationship()

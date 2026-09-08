@@ -71,8 +71,8 @@ def delete_account(db: Session, db_account: Account) -> None:
     receipt_count = db.query(Receipt).filter(Receipt.credit_account_id == db_account.id).count()
     if line_count or receipt_count:
         raise ValueError(
-            f"This account has {line_count} voucher posting(s) and {receipt_count} receipt(s) "
-            "against it and cannot be deleted."
+            f"This account has {line_count} voucher posting(s) (Vouchers tab) and "
+            f"{receipt_count} receipt(s) (Receipts tab) against it and cannot be deleted."
         )
 
     db.delete(db_account)

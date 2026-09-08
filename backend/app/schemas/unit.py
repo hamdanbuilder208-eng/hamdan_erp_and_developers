@@ -68,6 +68,9 @@ class UnitOut(UnitBase):
 class UnitBulkGenerate(BaseModel):
     floor_id: int
     unit_category_id: int | None = None
-    starting_number: int = 1
+    # How many units to create in this batch. Omit to fill the floor's
+    # remaining, ungenerated slots — lets a floor be built up from several
+    # batches, each with its own category (e.g. 2x "2 Bed" + 1x "3 Bed").
+    quantity: int | None = None
     prefix: str = ""
     base_price: float = 0

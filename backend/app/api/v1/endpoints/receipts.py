@@ -3,6 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.errors import delete_with_fk_guard
 from app.crud import receipt as receipt_crud
 from app.db.session import get_db
 from app.schemas.receipt import ChequeStatusUpdate, ReceiptCreate, ReceiptWithBookingOut
@@ -56,4 +57,4 @@ def delete_receipt(receipt_id: int, db: Session = Depends(get_db)):
     db_receipt = receipt_crud.get_receipt(db, receipt_id)
     if not db_receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
-    receipt_crud.delete_receipt(db, db_receipt)
+    delete_with_fk_guard(db, lambda: receipt_crud.delete_receipt(db, db_receipt), "receipt")

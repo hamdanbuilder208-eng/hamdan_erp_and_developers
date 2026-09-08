@@ -1,7 +1,11 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.sequences import next_sequence_number
 from app.models.booking import Booking
+from app.models.expense import OfficeExpense
+from app.models.inventory import GRN
+from app.models.petty_cash import PettyCashExpense
 from app.models.project import Project, ProjectFloor, ProjectGroup
 from app.models.unit import Unit
 from app.schemas.project import (
@@ -18,6 +22,28 @@ def _next_project_code(db: Session) -> str:
 
 def list_projects(db: Session, skip: int = 0, limit: int = 100) -> list[Project]:
     return db.query(Project).offset(skip).limit(limit).all()
+
+
+def project_total_spent(db: Session, project_id: int) -> float:
+    """Everything actually spent against this project's construction budget —
+    material bought (GRN), office expenses, and petty cash expenses tagged to
+    it. Wages aren't included: WagePayment has no project link yet."""
+    grn_total = (
+        db.query(func.coalesce(func.sum(GRN.total_amount), 0))
+        .filter(GRN.project_id == project_id)
+        .scalar()
+    )
+    office_total = (
+        db.query(func.coalesce(func.sum(OfficeExpense.amount), 0))
+        .filter(OfficeExpense.project_id == project_id)
+        .scalar()
+    )
+    petty_cash_total = (
+        db.query(func.coalesce(func.sum(PettyCashExpense.amount), 0))
+        .filter(PettyCashExpense.project_id == project_id)
+        .scalar()
+    )
+    return float(grn_total) + float(office_total) + float(petty_cash_total)
 
 
 def get_project(db: Session, project_id: int) -> Project | None:
@@ -49,7 +75,7 @@ def delete_project(db: Session, db_project: Project) -> None:
         refs = ", ".join(b.booking_ref_no for b in bookings)
         raise ValueError(
             f"This project has {len(bookings)} booking(s) that must be cancelled and "
-            f"deleted first: {refs}"
+            f"deleted first (Unit Booking tab): {refs}"
         )
     db.delete(db_project)
     db.commit()
@@ -92,7 +118,8 @@ def delete_floor(db: Session, db_floor: ProjectFloor) -> None:
     if units:
         refs = ", ".join(u.unit_number for u in units)
         raise ValueError(
-            f"This floor has {len(units)} unit(s) that must be removed first: {refs}"
+            f"This floor has {len(units)} unit(s) that must be removed first "
+            f"(project's Units tab): {refs}"
         )
     db.delete(db_floor)
     db.commit()

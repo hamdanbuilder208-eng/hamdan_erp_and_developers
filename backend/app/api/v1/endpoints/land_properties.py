@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.errors import delete_with_fk_guard
 from app.crud import land_property as land_crud
 from app.db.session import get_db
 from app.models.land_property import LandPropertyStatus, PropertyType
@@ -41,4 +42,4 @@ def delete_land_property(property_id: int, db: Session = Depends(get_db)):
     db_property = land_crud.get_land_property(db, property_id)
     if not db_property:
         raise HTTPException(status_code=404, detail="Property not found")
-    land_crud.delete_land_property(db, db_property)
+    delete_with_fk_guard(db, lambda: land_crud.delete_land_property(db, db_property), "property")

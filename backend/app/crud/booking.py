@@ -5,11 +5,19 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.sequences import next_sequence_number
 from app.models.account import Account
-from app.models.booking import Booking, BookingStatus, PaymentScheduleLine, ScheduleFrequency
+from app.models.booking import (
+    Booking,
+    BookingStatus,
+    BookingTransfer,
+    PaymentScheduleLine,
+    ScheduleFrequency,
+)
+from app.models.commission_payout import CommissionPayout
 from app.models.receipt import Receipt
+from app.models.refund import Refund
 from app.models.unit import Unit, UnitStatus
 from app.models.voucher import Voucher, VoucherLine, VoucherType
-from app.schemas.booking import BookingCreate
+from app.schemas.booking import BookingCreate, BookingTransferCreate
 
 _FREQUENCY_MONTHS = {
     ScheduleFrequency.MONTHLY: 1,
@@ -168,6 +176,45 @@ def assign_agent(
     return get_booking(db, db_booking.id)
 
 
+def _load_transfer_query(db: Session):
+    return db.query(BookingTransfer).options(
+        joinedload(BookingTransfer.from_allottee),
+        joinedload(BookingTransfer.to_allottee),
+    )
+
+
+def list_transfers(db: Session, booking_id: int) -> list[BookingTransfer]:
+    return (
+        _load_transfer_query(db)
+        .filter(BookingTransfer.booking_id == booking_id)
+        .order_by(BookingTransfer.id.desc())
+        .all()
+    )
+
+
+def create_transfer(
+    db: Session, db_booking: Booking, transfer_in: BookingTransferCreate
+) -> BookingTransfer:
+    if db_booking.status == BookingStatus.CANCELLED:
+        raise ValueError("This booking is cancelled and cannot be transferred")
+    if transfer_in.to_allottee_id == db_booking.allottee_id:
+        raise ValueError("This booking is already held by that allottee")
+
+    db_transfer = BookingTransfer(
+        transfer_no=next_sequence_number(db, BookingTransfer.transfer_no, "TRF-", 5),
+        transfer_date=transfer_in.transfer_date,
+        booking_id=db_booking.id,
+        from_allottee_id=db_booking.allottee_id,
+        to_allottee_id=transfer_in.to_allottee_id,
+        narration=transfer_in.narration,
+    )
+    db.add(db_transfer)
+    db_booking.allottee_id = transfer_in.to_allottee_id
+    db.commit()
+    db.refresh(db_transfer)
+    return db_transfer
+
+
 def update_booking_status(
     db: Session, db_booking: Booking, new_status: BookingStatus, status_date: date
 ) -> Booking:
@@ -204,8 +251,26 @@ def delete_booking(db: Session, db_booking: Booking) -> None:
         refs = ", ".join(r.receipt_no for r in receipts)
         raise ValueError(
             f"This booking has {len(receipts)} receipt(s) recorded against it that must be "
-            f"deleted first: {refs}"
+            f"deleted first (Receipts tab): {refs}"
         )
+    refunds = db.query(Refund).filter(Refund.booking_id == db_booking.id).all()
+    if refunds:
+        refs = ", ".join(r.refund_no for r in refunds)
+        raise ValueError(
+            f"This booking has {len(refunds)} refund(s) recorded against it that must be "
+            f"deleted first (Refunds tab): {refs}"
+        )
+    payouts = db.query(CommissionPayout).filter(CommissionPayout.booking_id == db_booking.id).all()
+    if payouts:
+        refs = ", ".join(p.payout_no for p in payouts)
+        raise ValueError(
+            f"This booking has {len(payouts)} commission payout(s) recorded against it that must be "
+            f"deleted first (Broker Commissions tab): {refs}"
+        )
+    # Transfer history is just an audit trail with no delete UI of its own —
+    # cascade it silently rather than making deletion impossible.
+    db.query(BookingTransfer).filter(BookingTransfer.booking_id == db_booking.id).delete()
+
     unit = db.query(Unit).filter(Unit.id == db_booking.unit_id).first()
     if unit and db_booking.status != BookingStatus.CANCELLED:
         unit.status = UnitStatus.AVAILABLE

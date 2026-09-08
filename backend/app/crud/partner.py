@@ -64,7 +64,7 @@ def delete_partner(db: Session, db_partner: Partner) -> None:
         refs = ", ".join(s.project.project_name for s in shares)
         raise ValueError(
             f"This partner has a share in {len(shares)} project(s): {refs}. "
-            "Remove those shares first."
+            "Remove those shares first (project's Partners tab)."
         )
     db.delete(db_partner)
     db.commit()

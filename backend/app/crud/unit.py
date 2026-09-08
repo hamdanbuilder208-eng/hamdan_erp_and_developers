@@ -59,7 +59,7 @@ def delete_unit_category(db: Session, db_category: UnitCategory) -> None:
         refs = ", ".join(u.unit_ref_no for u in units)
         raise ValueError(
             f"This category is used by {len(units)} unit(s): {refs}. "
-            "Reassign or remove those units first."
+            "Reassign or remove those units first (project's Units tab)."
         )
     db.delete(db_category)
     db.commit()
@@ -115,7 +115,7 @@ def delete_unit(db: Session, db_unit: Unit) -> None:
         refs = ", ".join(b.booking_ref_no for b in bookings)
         raise ValueError(
             f"This unit has {len(bookings)} booking(s) that must be cancelled and "
-            f"deleted first: {refs}"
+            f"deleted first (Unit Booking tab): {refs}"
         )
     db.delete(db_unit)
     db.commit()
@@ -127,11 +127,18 @@ def bulk_generate_units(db: Session, project_id: int, payload: UnitBulkGenerate)
         raise ValueError("Floor not found")
 
     existing = db.query(Unit).filter(Unit.floor_id == floor.id).count()
-    if existing > 0:
+    remaining = floor.no_of_units - existing
+    if remaining <= 0:
         raise ValueError(
-            f"This floor already has {existing} unit(s) generated. Delete them first "
-            "if you want to regenerate."
+            f"This floor's {floor.no_of_units} unit(s) are already generated. Delete some "
+            "first if you want to regenerate."
         )
+
+    quantity = payload.quantity if payload.quantity is not None else remaining
+    if quantity <= 0:
+        raise ValueError("Quantity must be at least 1.")
+    if quantity > remaining:
+        raise ValueError(f"Only {remaining} unit slot(s) left on this floor.")
 
     category = None
     if payload.unit_category_id is not None:
@@ -142,10 +149,13 @@ def bulk_generate_units(db: Session, project_id: int, payload: UnitBulkGenerate)
         )
     base_price = payload.base_price or (category.base_price if category else 0) or 0
 
+    # Numbering continues on from whatever's already on this floor, so a
+    # second batch (a different category) doesn't collide with the first.
+    start_number = existing + 1
     created: list[Unit] = []
     next_seq = _next_unit_seq(db)
-    for i in range(floor.no_of_units):
-        unit_number = f"{payload.prefix}{payload.starting_number + i}"
+    for i in range(quantity):
+        unit_number = f"{payload.prefix}{start_number + i}"
         db_unit = Unit(
             unit_ref_no=f"UNT-{next_seq:06d}",
             project_id=project_id,

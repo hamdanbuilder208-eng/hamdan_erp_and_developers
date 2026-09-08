@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.errors import delete_with_fk_guard
 from app.crud import partner_drawing as drawing_crud
 from app.db.session import get_db
 from app.schemas.partner import PartnerDrawingCreate, PartnerDrawingOut
@@ -30,4 +31,4 @@ def delete_drawing(drawing_id: int, db: Session = Depends(get_db)):
     db_drawing = drawing_crud.get_drawing(db, drawing_id)
     if not db_drawing:
         raise HTTPException(status_code=404, detail="Drawing not found")
-    drawing_crud.delete_drawing(db, db_drawing)
+    delete_with_fk_guard(db, lambda: drawing_crud.delete_drawing(db, db_drawing), "drawing")

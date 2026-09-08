@@ -15,6 +15,7 @@ _DEFAULT_COA = [
         ("1020", "Bank Accounts", AccountNature.ASSET, False, []),
         ("1030", "Accounts Receivable", AccountNature.ASSET, False, []),
         ("1040", "Material / Inventory Stock", AccountNature.ASSET, False, []),
+        ("1041", "Petty Cash", AccountNature.ASSET, True, []),
     ]),
     ("2000", "Liabilities", AccountNature.LIABILITY, True, [
         ("2010", "Accounts Payable", AccountNature.LIABILITY, False, []),

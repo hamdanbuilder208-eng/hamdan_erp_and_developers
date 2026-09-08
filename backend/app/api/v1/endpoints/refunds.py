@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.errors import delete_with_fk_guard
 from app.crud import refund as refund_crud
 from app.db.session import get_db
 from app.models.refund import RefundType
@@ -35,4 +36,4 @@ def delete_refund(refund_id: int, db: Session = Depends(get_db)):
     db_refund = refund_crud.get_refund(db, refund_id)
     if not db_refund:
         raise HTTPException(status_code=404, detail="Refund not found")
-    refund_crud.delete_refund(db, db_refund)
+    delete_with_fk_guard(db, lambda: refund_crud.delete_refund(db, db_refund), "refund")

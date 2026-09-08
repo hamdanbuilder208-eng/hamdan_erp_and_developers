@@ -53,7 +53,7 @@ def delete_agent(db: Session, db_agent: BookingAgent) -> None:
         refs = ", ".join(b.booking_ref_no for b in bookings)
         raise ValueError(
             f"This agent is linked to {len(bookings)} booking(s): {refs}. "
-            "Unlink or remove those bookings first."
+            "Unlink or remove those bookings first (Unit Booking tab)."
         )
     db.delete(db_agent)
     db.commit()

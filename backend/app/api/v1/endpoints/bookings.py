@@ -5,7 +5,14 @@ from app.core.errors import delete_with_fk_guard
 from app.crud import booking as booking_crud
 from app.db.session import get_db
 from app.models.booking import BookingStatus
-from app.schemas.booking import BookingAgentAssign, BookingCreate, BookingOut, BookingStatusUpdate
+from app.schemas.booking import (
+    BookingAgentAssign,
+    BookingCreate,
+    BookingOut,
+    BookingStatusUpdate,
+    BookingTransferCreate,
+    BookingTransferOut,
+)
 
 router = APIRouter()
 
@@ -58,6 +65,26 @@ def assign_booking_agent(
     return booking_crud.assign_agent(
         db, db_booking, agent_in.booking_agent_id, agent_in.agent_commission_percent
     )
+
+
+@router.get("/{booking_id}/transfers", response_model=list[BookingTransferOut])
+def list_booking_transfers(booking_id: int, db: Session = Depends(get_db)):
+    return booking_crud.list_transfers(db, booking_id)
+
+
+@router.post(
+    "/{booking_id}/transfer", response_model=BookingTransferOut, status_code=status.HTTP_201_CREATED
+)
+def transfer_booking(
+    booking_id: int, transfer_in: BookingTransferCreate, db: Session = Depends(get_db)
+):
+    db_booking = booking_crud.get_booking(db, booking_id)
+    if not db_booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    try:
+        return booking_crud.create_transfer(db, db_booking, transfer_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.delete("/{booking_id}", status_code=status.HTTP_204_NO_CONTENT)

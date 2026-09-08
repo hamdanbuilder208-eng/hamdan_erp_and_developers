@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.errors import delete_with_fk_guard
 from app.crud import partner_contribution as contribution_crud
 from app.db.session import get_db
 from app.schemas.partner import PartnerContributionCreate, PartnerContributionOut
@@ -30,4 +31,6 @@ def delete_contribution(contribution_id: int, db: Session = Depends(get_db)):
     db_contribution = contribution_crud.get_contribution(db, contribution_id)
     if not db_contribution:
         raise HTTPException(status_code=404, detail="Contribution not found")
-    contribution_crud.delete_contribution(db, db_contribution)
+    delete_with_fk_guard(
+        db, lambda: contribution_crud.delete_contribution(db, db_contribution), "contribution"
+    )

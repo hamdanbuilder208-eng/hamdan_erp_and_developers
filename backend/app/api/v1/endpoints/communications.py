@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.errors import delete_with_fk_guard
 from app.crud import communication as comm_crud
 from app.db.session import get_db
 from app.models.communication import CommunicationChannel, CommunicationRelatedType
@@ -55,4 +56,4 @@ def delete_communication(log_id: int, db: Session = Depends(get_db)):
     db_log = comm_crud.get_log(db, log_id)
     if not db_log:
         raise HTTPException(status_code=404, detail="Message log not found")
-    comm_crud.delete_log(db, db_log)
+    delete_with_fk_guard(db, lambda: comm_crud.delete_log(db, db_log), "message log")

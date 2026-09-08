@@ -167,9 +167,10 @@ class GRNLineOut(GRNLineBase):
 class GRNBase(BaseModel):
     grn_date: date
     vendor_id: int
-    # Nullable for output only — a handful of GRNs predate the warehouses
-    # feature and have no warehouse on file. New GRNs must pick one (enforced
-    # in GRNCreate below).
+    # Received into a warehouse (goes into store stock) or, when the vendor
+    # delivers straight to site, a project instead (goes into that project's
+    # site stock directly, skipping the warehouse). Exactly one of the two
+    # is the actual destination — enforced in GRNCreate below.
     warehouse_id: int | None = None
     project_id: int | None = None
     po_id: int | None = None
@@ -178,13 +179,14 @@ class GRNBase(BaseModel):
 
 
 class GRNCreate(GRNBase):
-    warehouse_id: int
     lines: list[GRNLineCreate]
 
     @model_validator(mode="after")
     def validate_lines(self):
         if not self.lines:
             raise ValueError("A GRN needs at least one line item")
+        if not self.warehouse_id and not self.project_id:
+            raise ValueError("Choose a warehouse or a project to receive this material into")
         return self
 
 
@@ -267,6 +269,79 @@ class MaterialIssueResolve(BaseModel):
 
 class MaterialIssueReceive(BaseModel):
     received_by: str
+
+
+# Opening Stock
+
+
+class OpeningStockBase(BaseModel):
+    opening_date: date
+    material_id: int
+    quantity: float = Field(gt=0)
+    rate: float = Field(ge=0)
+    warehouse_id: int | None = None
+    project_id: int | None = None
+    narration: str | None = None
+
+
+class OpeningStockCreate(OpeningStockBase):
+    @model_validator(mode="after")
+    def validate_location(self):
+        if not self.warehouse_id and not self.project_id:
+            raise ValueError("Choose a warehouse or project to receive this opening stock into")
+        return self
+
+
+class OpeningStockOut(OpeningStockBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    opening_no: str
+    amount: float
+    voucher_id: int | None
+    material: MaterialOut
+    warehouse: WarehouseOut | None = None
+    project: ProjectOut | None = None
+
+
+# Material Transfer
+
+
+class MaterialTransferBase(BaseModel):
+    transfer_date: date
+    material_id: int
+    quantity: float = Field(gt=0)
+    from_warehouse_id: int | None = None
+    from_project_id: int | None = None
+    to_warehouse_id: int | None = None
+    to_project_id: int | None = None
+    narration: str | None = None
+
+
+class MaterialTransferCreate(MaterialTransferBase):
+    @model_validator(mode="after")
+    def validate_locations(self):
+        if not self.from_warehouse_id and not self.from_project_id:
+            raise ValueError("Choose a warehouse or project to transfer from")
+        if not self.to_warehouse_id and not self.to_project_id:
+            raise ValueError("Choose a warehouse or project to transfer to")
+        from_key = ("w", self.from_warehouse_id) if self.from_warehouse_id else ("p", self.from_project_id)
+        to_key = ("w", self.to_warehouse_id) if self.to_warehouse_id else ("p", self.to_project_id)
+        if from_key == to_key:
+            raise ValueError("Source and destination must be different")
+        return self
+
+
+class MaterialTransferOut(MaterialTransferBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    transfer_no: str
+    rate: float
+    amount: float
+    material: MaterialOut
+    from_warehouse: WarehouseOut | None = None
+    from_project: ProjectOut | None = None
+    to_warehouse: WarehouseOut | None = None
+    to_project: ProjectOut | None = None
 
 
 # Stock balance (read-only summary)

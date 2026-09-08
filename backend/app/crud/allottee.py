@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.sequences import next_sequence_number
 from app.models.allottee import Allottee
 from app.models.booking import Booking
+from app.models.customer_account import CustomerAccount
 from app.schemas.allottee import AllotteeCreate, AllotteeUpdate
 
 
@@ -55,7 +56,14 @@ def delete_allottee(db: Session, db_allottee: Allottee) -> None:
         refs = ", ".join(b.booking_ref_no for b in bookings)
         raise ValueError(
             f"This allottee has {len(bookings)} booking(s) that must be cancelled and "
-            f"deleted first: {refs}"
+            f"deleted first (Unit Booking tab): {refs}"
         )
+    # Portal login credentials are just an auth record with no independent
+    # business value once the allottee itself is gone — cascade it silently
+    # rather than making the user hunt for a delete button that doesn't exist
+    # (there's no admin-facing tab for customer portal accounts).
+    portal_account = db.query(CustomerAccount).filter(CustomerAccount.allottee_id == db_allottee.id).first()
+    if portal_account:
+        db.delete(portal_account)
     db.delete(db_allottee)
     db.commit()
