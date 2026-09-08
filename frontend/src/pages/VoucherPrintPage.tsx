@@ -6,6 +6,13 @@ import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
 import type { CompanySettings, Voucher } from "../types";
 
+const VOUCHER_TERMS = [
+  "This voucher is recorded in the company's official books as per the accounts and amounts stated above.",
+  "This voucher is valid only when signed by the preparer and an authorized signatory.",
+  "Any correction or reversal of this entry must be authorized in writing by management.",
+  "In case of any discrepancy, the company's official accounts and records shall prevail.",
+];
+
 export default function VoucherPrintPage() {
   const { id } = useParams();
 
@@ -96,7 +103,18 @@ export default function VoucherPrintPage() {
           </tfoot>
         </table>
 
-        <div className="mt-16 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
+        <div className="mt-8">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Terms &amp; Conditions
+          </p>
+          <ol className="list-decimal space-y-0.5 pl-4 text-[10px] leading-relaxed text-slate-500">
+            {VOUCHER_TERMS.map((term, i) => (
+              <li key={i}>{term}</li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="mt-10 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
           <div className="border-t border-slate-300 pt-2">Prepared By</div>
           <AccountantSignature settings={companySettings} />
           <div className="border-t border-slate-300 pt-2">Received By</div>

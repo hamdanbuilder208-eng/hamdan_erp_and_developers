@@ -51,6 +51,7 @@ export interface ProjectFloor {
 
 export interface ProjectDetail extends Project {
   floors: ProjectFloor[];
+  total_spent: number;
 }
 
 export interface UnitCategory {
@@ -140,6 +141,45 @@ export interface OfficeExpense {
   expense_head: Account;
   paid_from: Account;
   project: Project | null;
+}
+
+export interface PettyCashFloat {
+  id: number;
+  float_code: string;
+  holder_name: string;
+  is_active: boolean;
+  account: Account;
+}
+
+export interface PettyCashTopup {
+  id: number;
+  topup_no: string;
+  topup_date: string;
+  float_id: number;
+  amount: number;
+  paid_from_id: number;
+  narration: string | null;
+  voucher_id: number | null;
+  float: PettyCashFloat;
+  paid_from: Account;
+}
+
+export interface PettyCashExpense {
+  id: number;
+  expense_no: string;
+  expense_date: string;
+  float_id: number;
+  description: string;
+  amount: number;
+  project_id: number | null;
+  material_id: number | null;
+  quantity: number | null;
+  warehouse_id: number | null;
+  voucher_id: number | null;
+  float: PettyCashFloat;
+  project: Project | null;
+  material: Material | null;
+  warehouse: Warehouse | null;
 }
 
 export type WageType = "Monthly" | "Daily";
@@ -568,6 +608,16 @@ export interface Booking {
   schedule_lines: PaymentScheduleLine[];
 }
 
+export interface BookingTransfer {
+  id: number;
+  transfer_no: string;
+  transfer_date: string;
+  booking_id: number;
+  narration: string | null;
+  from_allottee: Allottee;
+  to_allottee: Allottee;
+}
+
 export type ReceiptPaymentType = "Booking" | "Installment" | "Extra Charges" | "Documentation Charges";
 
 export interface Receipt {
@@ -736,6 +786,43 @@ export interface MaterialIssue {
   project: Project;
   warehouse: Warehouse | null;
   lines: MaterialIssueLine[];
+}
+
+export interface OpeningStock {
+  id: number;
+  opening_no: string;
+  opening_date: string;
+  material_id: number;
+  quantity: number;
+  rate: number;
+  amount: number;
+  warehouse_id: number | null;
+  project_id: number | null;
+  voucher_id: number | null;
+  narration: string | null;
+  material: Material;
+  warehouse: Warehouse | null;
+  project: Project | null;
+}
+
+export interface MaterialTransfer {
+  id: number;
+  transfer_no: string;
+  transfer_date: string;
+  material_id: number;
+  quantity: number;
+  rate: number;
+  amount: number;
+  from_warehouse_id: number | null;
+  from_project_id: number | null;
+  to_warehouse_id: number | null;
+  to_project_id: number | null;
+  narration: string | null;
+  material: Material;
+  from_warehouse: Warehouse | null;
+  from_project: Project | null;
+  to_warehouse: Warehouse | null;
+  to_project: Project | null;
 }
 
 export interface StockBalance {

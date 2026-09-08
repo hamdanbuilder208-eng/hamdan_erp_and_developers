@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { Building2, Loader2, Lock, ShieldCheck, User as UserIcon } from "lucide-react";
+import { Boxes, Building2, Layers, Loader2, Lock, ShieldCheck, User as UserIcon, Wallet } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/authStore";
 import { Button } from "../components/ui/Button";
@@ -84,22 +84,35 @@ export default function LoginPage() {
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-600 font-bold text-white shadow-lg shadow-brand-900/50">
             H
           </div>
-          <div>
-            <p className="text-lg font-semibold">Hamdan ERP</p>
-            <p className="text-xs text-slate-400">Hamdan Associates</p>
-          </div>
+          <p className="text-lg font-semibold">Hamdan Associates</p>
         </div>
 
         <div className="relative z-10 space-y-6">
-          <Building2 className="h-10 w-10 text-brand-400" />
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-300 ring-1 ring-inset ring-brand-400/30">
+            <Building2 className="h-3.5 w-3.5" />
+            Admin Panel
+          </span>
           <h2 className="max-w-md text-3xl font-semibold leading-tight">
-            One system for every project, plot and payment.
+            Run every project, booking and rupee from one place.
           </h2>
           <p className="max-w-sm text-sm text-slate-400">
-            Manage projects, units, bookings, installments, brokers and
-            accounts &mdash; all in a single, secure ERP built for real estate
-            developers.
+            The complete back office for Hamdan Associates &mdash; sales, accounts,
+            inventory and everything in between.
           </p>
+          <ul className="space-y-3 text-sm text-slate-300">
+            <li className="flex items-center gap-2.5">
+              <Layers className="h-4 w-4 shrink-0 text-brand-400" />
+              Projects, units and bookings, floor to floor
+            </li>
+            <li className="flex items-center gap-2.5">
+              <Wallet className="h-4 w-4 shrink-0 text-brand-400" />
+              Receipts, vouchers and the full chart of accounts
+            </li>
+            <li className="flex items-center gap-2.5">
+              <Boxes className="h-4 w-4 shrink-0 text-brand-400" />
+              Material inventory, petty cash and partner shares
+            </li>
+          </ul>
         </div>
 
         <div className="relative z-10 flex items-center gap-2 text-xs text-slate-500">
@@ -173,6 +186,20 @@ export default function LoginPage() {
             <span className="font-medium text-slate-500 dark:text-slate-400">admin</span> /{" "}
             <span className="font-medium text-slate-500 dark:text-slate-400">Admin@123</span>
           </p>
+
+          <div className="mt-4 border-t border-slate-100 pt-4 dark:border-navy-800">
+            <p className="mb-2 text-center text-xs text-slate-400 dark:text-slate-500">
+              Are you a customer?
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => navigate("/portal/login")}
+            >
+              Access Customer Portal
+            </Button>
+          </div>
         </div>
       </div>
     </div>

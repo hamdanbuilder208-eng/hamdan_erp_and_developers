@@ -28,6 +28,9 @@ import RefundPrintPage from "./pages/RefundPrintPage";
 import ExpensesPage from "./pages/ExpensesPage";
 import ExpensePrintPage from "./pages/ExpensePrintPage";
 import MaterialInventoryPage from "./pages/MaterialInventoryPage";
+import PettyCashPage from "./pages/PettyCashPage";
+import PettyCashPrintPage from "./pages/PettyCashPrintPage";
+import BookingLetterPrintPage from "./pages/BookingLetterPrintPage";
 import InventoryPrintPage from "./pages/InventoryPrintPage";
 import WarehouseDispatchPage from "./pages/WarehouseDispatchPage";
 import ProjectDeliveriesPage from "./pages/ProjectDeliveriesPage";
@@ -192,6 +195,14 @@ export default function App() {
                 }
               />
               <Route
+                path="/petty-cash"
+                element={
+                  <ModuleGate module="petty_cash">
+                    <PettyCashPage />
+                  </ModuleGate>
+                }
+              />
+              <Route
                 path="/communications"
                 element={
                   <ModuleGate module="communications">
@@ -208,10 +219,12 @@ export default function App() {
               path="/bookings/:bookingId/schedule-lines/:lineId/invoice/print"
               element={<InvoicePrintPage />}
             />
+            <Route path="/bookings/:bookingId/letter/:type/print" element={<BookingLetterPrintPage />} />
             <Route path="/reports/print/general-ledger/:accountId" element={<GeneralLedgerPrintPage />} />
             <Route path="/reports/print/:type" element={<ReportPrintPage />} />
             <Route path="/refunds/:id/print" element={<RefundPrintPage />} />
             <Route path="/expenses/:type/:id/print" element={<ExpensePrintPage />} />
+            <Route path="/petty-cash/:type/:id/print" element={<PettyCashPrintPage />} />
             <Route path="/inventory/:type/:id/print" element={<InventoryPrintPage />} />
             <Route path="/warehouses/:id/dispatch" element={<WarehouseDispatchPage />} />
             <Route path="/projects/:id/deliveries" element={<ProjectDeliveriesPage />} />

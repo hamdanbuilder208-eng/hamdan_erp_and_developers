@@ -1,14 +1,25 @@
 import * as React from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { History, Plus, Printer, QrCode, Trash2 } from "lucide-react";
+import {
+  CheckCircle2,
+  History,
+  PackagePlus,
+  Plus,
+  Printer,
+  QrCode,
+  ScanLine,
+  Trash2,
+} from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import { QrImage } from "../components/ui/QrImage";
+import { QrScannerModal } from "../components/ui/QrScannerModal";
 import { Badge, PurchaseOrderStatusBadge, MaterialIssueStatusBadge } from "../components/ui/Badge";
 import { TableRowsSkeleton } from "../components/ui/Skeleton";
-import { QrImage } from "../components/ui/QrImage";
 import { toast } from "../lib/toast";
 import { confirm } from "../lib/confirm";
 import type {
@@ -17,6 +28,8 @@ import type {
   Material,
   MaterialIssue,
   MaterialIssueReason,
+  MaterialTransfer,
+  OpeningStock,
   Project,
   ProjectStock,
   PurchaseOrder,
@@ -52,7 +65,16 @@ const emptyLine = (): QtyRateLine => ({ material_id: "", quantity: "", rate: "" 
 
 export default function MaterialInventoryPage() {
   const queryClient = useQueryClient();
-  const [tab, setTab] = React.useState<InventoryTab>("vendors");
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = React.useState<InventoryTab>(
+    (searchParams.get("tab") as InventoryTab | null) || "vendors"
+  );
+  // A material's QR code deep-links here — jump straight to its stock and
+  // pre-filter to just that material instead of landing on a blank tab.
+  const [qrMaterial, setQrMaterial] = React.useState<Material | null>(null);
+  const [stockMaterialFilter, setStockMaterialFilter] = React.useState(
+    searchParams.get("material") || ""
+  );
 
   const { data: projects } = useQuery({
     queryKey: ["projects"],
@@ -134,7 +156,6 @@ export default function MaterialInventoryPage() {
     onError: (err: unknown) => toast.error(errorMessage(err, "Failed to delete warehouse.")),
   });
 
-  const [qrWarehouse, setQrWarehouse] = React.useState<Warehouse | null>(null);
 
   // ---- Materials ----
   const [materialModalOpen, setMaterialModalOpen] = React.useState(false);
@@ -282,7 +303,7 @@ export default function MaterialInventoryPage() {
         await api.post<GRN>("/inventory/grn", {
           grn_date: todayIso(),
           vendor_id: Number(grnForm.vendor_id),
-          warehouse_id: Number(grnForm.warehouse_id),
+          warehouse_id: grnForm.warehouse_id ? Number(grnForm.warehouse_id) : null,
           project_id: grnForm.project_id ? Number(grnForm.project_id) : null,
           po_id: grnForm.po_id ? Number(grnForm.po_id) : null,
           payment_account_id: Number(grnForm.payment_account_id),
@@ -433,30 +454,240 @@ export default function MaterialInventoryPage() {
     onError: (err: unknown) => setReceiveError(errorMessage(err, "Failed to confirm receipt")),
   });
 
-  // ---- Stock ----
-  const [stockView, setStockView] = React.useState<"warehouse" | "project">("warehouse");
-  const [stockWarehouseFilter, setStockWarehouseFilter] = React.useState("");
+  // ---- Stock ---- one combined filter: "" (all), "w:<id>" (a warehouse) or "p:<id>" (a project)
+  const [stockFilter, setStockFilter] = React.useState("");
+  const stockFilterWarehouseId = stockFilter.startsWith("w:") ? stockFilter.slice(2) : "";
+  const stockFilterProjectId = stockFilter.startsWith("p:") ? stockFilter.slice(2) : "";
+  const showWarehouseStock = stockFilter === "" || stockFilter.startsWith("w:");
+  const showProjectStock = stockFilter === "" || stockFilter.startsWith("p:");
+
   const { data: stock, isLoading: stockLoading } = useQuery({
-    queryKey: ["stock", stockWarehouseFilter],
+    queryKey: ["stock", stockFilterWarehouseId, stockMaterialFilter],
     queryFn: async () =>
       (
         await api.get<StockBalance[]>("/inventory/stock", {
-          params: { warehouse_id: stockWarehouseFilter || undefined },
+          params: {
+            warehouse_id: stockFilterWarehouseId || undefined,
+            material_id: stockMaterialFilter || undefined,
+          },
         })
       ).data,
-    enabled: tab === "stock" && stockView === "warehouse",
+    enabled: tab === "stock" && showWarehouseStock,
   });
 
-  const [stockProjectFilter, setStockProjectFilter] = React.useState("");
   const { data: projectStock, isLoading: projectStockLoading } = useQuery({
-    queryKey: ["stock-by-project", stockProjectFilter],
+    queryKey: ["stock-by-project", stockFilterProjectId, stockMaterialFilter],
     queryFn: async () =>
       (
         await api.get<ProjectStock[]>("/inventory/stock/by-project", {
-          params: { project_id: stockProjectFilter || undefined },
+          params: {
+            project_id: stockFilterProjectId || undefined,
+            material_id: stockMaterialFilter || undefined,
+          },
         })
       ).data,
-    enabled: tab === "stock" && stockView === "project",
+    enabled: tab === "stock" && showProjectStock,
+  });
+
+  const stockIsLoading = (showWarehouseStock && stockLoading) || (showProjectStock && projectStockLoading);
+  const combinedStockRows = [
+    ...(showWarehouseStock ? stock ?? [] : []).map((s) => ({
+      key: `w-${s.material_id}-${s.warehouse_id}`,
+      material_name: s.material_name,
+      unit_of_measure: s.unit_of_measure,
+      location: s.warehouse_name ?? "—",
+      balance_qty: s.balance_qty,
+      balance_value: s.balance_value,
+    })),
+    ...(showProjectStock ? projectStock ?? [] : []).map((s) => ({
+      key: `p-${s.material_id}-${s.project_id}`,
+      material_name: s.material_name,
+      unit_of_measure: s.unit_of_measure,
+      location: `${s.project_name ?? "—"} (Project)`,
+      balance_qty: s.balance_qty,
+      balance_value: s.balance_value,
+    })),
+  ].sort((a, b) => a.material_name.localeCompare(b.material_name));
+
+  // ---- Opening Stock (seed a warehouse/project with material already on hand) ----
+  const [openingWarehouse, setOpeningWarehouse] = React.useState<Warehouse | null>(null);
+  const [openingForm, setOpeningForm] = React.useState({
+    material_id: "",
+    quantity: "",
+    rate: "",
+    narration: "",
+  });
+  const [openingError, setOpeningError] = React.useState<string | null>(null);
+
+  const resetOpeningForm = () => {
+    setOpeningForm({ material_id: "", quantity: "", rate: "", narration: "" });
+    setOpeningError(null);
+  };
+
+  // Quantity isn't a free guess — it's pulled from what the system already
+  // knows is sitting in this warehouse for the chosen material, so opening
+  // stock reflects the recorded balance rather than the admin's own figure.
+  const { data: openingMaterialStock } = useQuery({
+    queryKey: ["stock", "opening-current", openingWarehouse?.id, openingForm.material_id],
+    queryFn: async () =>
+      (
+        await api.get<StockBalance[]>("/inventory/stock", {
+          params: { warehouse_id: openingWarehouse?.id, material_id: openingForm.material_id },
+        })
+      ).data,
+    enabled: !!openingWarehouse && !!openingForm.material_id,
+  });
+  const openingCurrentBalance = openingMaterialStock?.[0]?.balance_qty ?? 0;
+
+  React.useEffect(() => {
+    if (!openingWarehouse || !openingForm.material_id || openingMaterialStock === undefined) return;
+    setOpeningForm((f) => (f.material_id === openingForm.material_id ? { ...f, quantity: String(openingCurrentBalance) } : f));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openingMaterialStock, openingWarehouse, openingForm.material_id]);
+
+  const createOpeningStock = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post<OpeningStock>("/inventory/opening-stock", {
+          opening_date: todayIso(),
+          material_id: Number(openingForm.material_id),
+          quantity: Number(openingForm.quantity) || 0,
+          rate: Number(openingForm.rate) || 0,
+          warehouse_id: openingWarehouse?.id,
+          narration: openingForm.narration || null,
+        })
+      ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["stock"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      setOpeningWarehouse(null);
+      resetOpeningForm();
+    },
+    onError: (err: unknown) => setOpeningError(errorMessage(err, "Failed to add opening stock")),
+  });
+
+  // ---- Material Transfer (shift stock between two warehouses/projects) ----
+  // Gated behind a QR scan — the material field is never hand-picked, it's
+  // whatever the scanned QR resolves to, so a shift can't be logged against
+  // the wrong physical item.
+  const [qrScannerOpen, setQrScannerOpen] = React.useState(false);
+  const [transferModalOpen, setTransferModalOpen] = React.useState(false);
+  const [transferForm, setTransferForm] = React.useState({
+    material_id: "",
+    quantity: "",
+    from: "",
+    to: "",
+    narration: "",
+  });
+  const [transferError, setTransferError] = React.useState<string | null>(null);
+
+  const parseMaterialIdFromQr = (text: string): number | null => {
+    try {
+      const url = new URL(text);
+      const id = url.searchParams.get("material");
+      return id ? Number(id) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleTransferScan = React.useCallback(
+    (text: string) => {
+      const materialId = parseMaterialIdFromQr(text);
+      const material = materials?.find((m) => m.id === materialId);
+      if (!material) {
+        toast.error("That doesn't look like a material QR code — try scanning again.");
+        return;
+      }
+      setTransferForm({ material_id: String(material.id), quantity: "", from: "", to: "", narration: "" });
+      setTransferError(null);
+      setQrScannerOpen(false);
+      setTransferModalOpen(true);
+    },
+    [materials],
+  );
+
+  const locationLabel = (value: string) => {
+    const [kind, id] = value.split(":");
+    if (kind === "w") {
+      const w = warehouses?.find((wh) => wh.id === Number(id));
+      return w ? `${w.warehouse_code} — ${w.name}` : "warehouse";
+    }
+    if (kind === "p") {
+      return projects?.find((p) => p.id === Number(id))?.project_name ?? "project";
+    }
+    return "—";
+  };
+
+  const resetTransferForm = () => {
+    setTransferForm({ material_id: "", quantity: "", from: "", to: "", narration: "" });
+    setTransferError(null);
+  };
+
+  // How much of the selected material is currently at the chosen "From"
+  // location — looked up fresh (independent of the Stock Balance table's own
+  // filter) so it's always accurate no matter what's shown behind the modal.
+  const [transferFromKind, transferFromId] = transferForm.from.split(":");
+  const { data: transferFromWarehouseStock } = useQuery({
+    queryKey: ["stock", "transfer-from", transferFromId, transferForm.material_id],
+    queryFn: async () =>
+      (
+        await api.get<StockBalance[]>("/inventory/stock", {
+          params: { warehouse_id: transferFromId, material_id: transferForm.material_id },
+        })
+      ).data,
+    enabled: transferModalOpen && transferFromKind === "w" && !!transferFromId && !!transferForm.material_id,
+  });
+  const { data: transferFromProjectStock } = useQuery({
+    queryKey: ["stock-by-project", "transfer-from", transferFromId, transferForm.material_id],
+    queryFn: async () =>
+      (
+        await api.get<ProjectStock[]>("/inventory/stock/by-project", {
+          params: { project_id: transferFromId, material_id: transferForm.material_id },
+        })
+      ).data,
+    enabled: transferModalOpen && transferFromKind === "p" && !!transferFromId && !!transferForm.material_id,
+  });
+  const transferFromAvailable =
+    transferFromKind === "w"
+      ? transferFromWarehouseStock?.[0]
+      : transferFromKind === "p"
+        ? transferFromProjectStock?.[0]
+        : undefined;
+  const transferFromAvailableQty = transferFromAvailable?.balance_qty ?? (transferFromId ? 0 : null);
+  const transferFromUnit =
+    transferFromAvailable?.unit_of_measure ??
+    materials?.find((m) => m.id === Number(transferForm.material_id))?.unit_of_measure ??
+    "";
+
+  const createTransfer = useMutation({
+    mutationFn: async () => {
+      const [fromKind, fromId] = transferForm.from.split(":");
+      const [toKind, toId] = transferForm.to.split(":");
+      return (
+        await api.post<MaterialTransfer>("/inventory/transfers", {
+          transfer_date: todayIso(),
+          material_id: Number(transferForm.material_id),
+          quantity: Number(transferForm.quantity) || 0,
+          from_warehouse_id: fromKind === "w" ? Number(fromId) : null,
+          from_project_id: fromKind === "p" ? Number(fromId) : null,
+          to_warehouse_id: toKind === "w" ? Number(toId) : null,
+          to_project_id: toKind === "p" ? Number(toId) : null,
+          narration: transferForm.narration || null,
+        })
+      ).data;
+    },
+    onSuccess: () => {
+      const materialName = materials?.find((m) => m.id === Number(transferForm.material_id))?.name ?? "Material";
+      toast.success(
+        `${materialName} has been transferred from ${locationLabel(transferForm.from)} to ${locationLabel(transferForm.to)}.`,
+      );
+      queryClient.invalidateQueries({ queryKey: ["stock"] });
+      queryClient.invalidateQueries({ queryKey: ["stock-by-project"] });
+      setTransferModalOpen(false);
+      resetTransferForm();
+    },
+    onError: (err: unknown) => setTransferError(errorMessage(err, "Failed to shift material")),
   });
 
   return (
@@ -473,11 +704,11 @@ export default function MaterialInventoryPage() {
         {(
           [
             { key: "vendors", label: "Vendors" },
-            { key: "warehouses", label: "Warehouses" },
             { key: "materials", label: "Materials" },
             { key: "purchase-orders", label: "Purchase Orders" },
             { key: "grn", label: "GRN" },
             { key: "issues", label: "Material Issues" },
+            { key: "warehouses", label: "Warehouses" },
             { key: "stock", label: "Stock Balance" },
           ] as { key: InventoryTab; label: string }[]
         ).map((t) => (
@@ -591,11 +822,14 @@ export default function MaterialInventoryPage() {
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <button
-                        onClick={() => setQrWarehouse(w)}
-                        title="Dispatch QR"
+                        onClick={() => {
+                          resetOpeningForm();
+                          setOpeningWarehouse(w);
+                        }}
+                        title="Opening Stock"
                         className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
                       >
-                        <QrCode className="h-4 w-4" />
+                        <PackagePlus className="h-3.5 w-3.5" />
                       </button>
                       <button
                         onClick={async () => {
@@ -636,27 +870,18 @@ export default function MaterialInventoryPage() {
                 <th className="px-5 py-3 font-medium">Name</th>
                 <th className="px-5 py-3 font-medium">Unit</th>
                 <th className="px-5 py-3 font-medium">Category</th>
-                <th className="px-5 py-3 font-medium">Vendor(s)</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
               {materials?.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={5} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
                     No materials yet.
                   </td>
                 </tr>
               )}
               {materials?.map((m) => {
-                const vendorQtyMap = new Map<string, number>();
-                for (const g of grns ?? []) {
-                  for (const l of g.lines) {
-                    if (l.material_id !== m.id) continue;
-                    vendorQtyMap.set(g.vendor.name, (vendorQtyMap.get(g.vendor.name) ?? 0) + Number(l.quantity));
-                  }
-                }
-                const vendorRows = Array.from(vendorQtyMap.entries());
                 return (
                   <tr key={m.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                     <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">
@@ -665,21 +890,15 @@ export default function MaterialInventoryPage() {
                     <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{m.name}</td>
                     <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{m.unit_of_measure}</td>
                     <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{m.category ?? "—"}</td>
-                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
-                      {vendorRows.length === 0 ? (
-                        "—"
-                      ) : (
-                        <div className="space-y-0.5">
-                          {vendorRows.map(([vendorName, qty]) => (
-                            <div key={vendorName}>
-                              {vendorName} — {qty.toLocaleString()} {m.unit_of_measure}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setQrMaterial(m)}
+                          className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
+                          title="QR code"
+                        >
+                          <QrCode className="h-3.5 w-3.5" />
+                        </button>
                         <button
                           onClick={() => setHistoryMaterial(m)}
                           className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
@@ -816,7 +1035,7 @@ export default function MaterialInventoryPage() {
                 <th className="px-5 py-3 font-medium">GRN #</th>
                 <th className="px-5 py-3 font-medium">Date</th>
                 <th className="px-5 py-3 font-medium">Vendor</th>
-                <th className="px-5 py-3 font-medium">Warehouse</th>
+                <th className="px-5 py-3 font-medium">Received Into</th>
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 text-right font-medium">Amount</th>
                 <th className="px-5 py-3" />
@@ -845,7 +1064,11 @@ export default function MaterialInventoryPage() {
                   <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{g.grn_date}</td>
                   <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{g.vendor.name}</td>
                   <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
-                    {g.warehouse?.name ?? "—"}
+                    {g.warehouse
+                      ? g.warehouse.name
+                      : g.project
+                        ? `${g.project.project_name} (direct to site)`
+                        : "—"}
                   </td>
                   <td className="px-5 py-3">
                     <Badge tone={g.voucher_id ? "success" : "warning"}>
@@ -1008,91 +1231,76 @@ export default function MaterialInventoryPage() {
       {tab === "stock" && (
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-navy-800 px-5 py-4">
+            <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">Stock Balance</h3>
             <div className="flex items-center gap-3">
-              <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">Stock Balance</h3>
-              <div className="flex rounded-lg border border-slate-200 p-0.5 dark:border-navy-700">
-                <button
-                  onClick={() => setStockView("warehouse")}
-                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                    stockView === "warehouse"
-                      ? "bg-brand-600 text-white"
-                      : "text-slate-500 dark:text-slate-400"
-                  }`}
-                >
-                  By Warehouse
-                </button>
-                <button
-                  onClick={() => setStockView("project")}
-                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                    stockView === "project"
-                      ? "bg-brand-600 text-white"
-                      : "text-slate-500 dark:text-slate-400"
-                  }`}
-                >
-                  By Project
-                </button>
-              </div>
-            </div>
-            {stockView === "warehouse" ? (
+              <Button size="sm" variant="secondary" onClick={() => setQrScannerOpen(true)}>
+                <ScanLine className="h-4 w-4" />
+                Material Shift
+              </Button>
               <Select
-                value={stockWarehouseFilter}
-                onChange={(e) => setStockWarehouseFilter(e.target.value)}
+                value={stockMaterialFilter}
+                onChange={(e) => setStockMaterialFilter(e.target.value)}
                 className="w-56"
               >
-                <option value="">All Warehouses</option>
+                <option value="">All Materials</option>
+                {materials?.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                value={stockFilter}
+                onChange={(e) => setStockFilter(e.target.value)}
+                className="w-64"
+              >
+              <option value="">All Stock</option>
+              <optgroup label="Warehouses">
                 {warehouses?.map((w) => (
-                  <option key={w.id} value={w.id}>
+                  <option key={`w-${w.id}`} value={`w:${w.id}`}>
                     {w.warehouse_code} — {w.name}
                   </option>
                 ))}
-              </Select>
-            ) : (
-              <Select
-                value={stockProjectFilter}
-                onChange={(e) => setStockProjectFilter(e.target.value)}
-                className="w-56"
-              >
-                <option value="">All Projects</option>
+              </optgroup>
+              <optgroup label="Projects">
                 {projects?.map((p) => (
-                  <option key={p.id} value={p.id}>
+                  <option key={`p-${p.id}`} value={`p:${p.id}`}>
                     {p.project_name}
                   </option>
                 ))}
+              </optgroup>
               </Select>
-            )}
+            </div>
           </div>
-          {stockView === "warehouse" ? (
-            <div className="overflow-x-auto">
+          <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 <tr>
                   <th className="px-5 py-3 font-medium">Material</th>
-                  <th className="px-5 py-3 font-medium">Warehouse</th>
+                  <th className="px-5 py-3 font-medium">Location</th>
                   <th className="px-5 py-3 text-right font-medium">Quantity</th>
                   <th className="px-5 py-3 text-right font-medium">Value</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-                {stockLoading && (
+                {stockIsLoading && (
                   <tr>
                     <td colSpan={4} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
                       Loading...
                     </td>
                   </tr>
                 )}
-                {!stockLoading && stock?.length === 0 && (
+                {!stockIsLoading && combinedStockRows.length === 0 && (
                   <tr>
                     <td colSpan={4} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
-                      No stock movements recorded yet.
+                      No stock recorded yet.
                     </td>
                   </tr>
                 )}
-                {stock?.map((s) => (
-                  <tr key={`${s.material_id}-${s.warehouse_id}`} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
+                {combinedStockRows.map((s) => (
+                  <tr key={s.key} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                     <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{s.material_name}</td>
-                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
-                      {s.warehouse_name ?? "—"}
-                    </td>
+                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{s.location}</td>
                     <td className="px-5 py-3 text-right text-navy-900 dark:text-slate-100">
                       {s.balance_qty.toLocaleString()} {s.unit_of_measure}
                     </td>
@@ -1103,53 +1311,143 @@ export default function MaterialInventoryPage() {
                 ))}
               </tbody>
             </table>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                <tr>
-                  <th className="px-5 py-3 font-medium">Material</th>
-                  <th className="px-5 py-3 font-medium">Project</th>
-                  <th className="px-5 py-3 text-right font-medium">Received Qty</th>
-                  <th className="px-5 py-3 text-right font-medium">Value</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-                {projectStockLoading && (
-                  <tr>
-                    <td colSpan={4} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
-                      Loading...
-                    </td>
-                  </tr>
-                )}
-                {!projectStockLoading && projectStock?.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
-                      No confirmed deliveries yet — quantities appear here once a site marks a delivery as received.
-                    </td>
-                  </tr>
-                )}
-                {projectStock?.map((s) => (
-                  <tr key={`${s.material_id}-${s.project_id}`} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
-                    <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{s.material_name}</td>
-                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
-                      {s.project_name ?? "—"}
-                    </td>
-                    <td className="px-5 py-3 text-right text-navy-900 dark:text-slate-100">
-                      {s.balance_qty.toLocaleString()} {s.unit_of_measure}
-                    </td>
-                    <td className="px-5 py-3 text-right text-navy-900 dark:text-slate-100">
-                      PKR {s.balance_value.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            </div>
-          )}
+          </div>
         </Card>
       )}
+
+      {/* ---- Material Shift Modal ---- */}
+      <Modal
+        open={transferModalOpen}
+        onClose={() => setTransferModalOpen(false)}
+        title="Material Shift"
+        description="Move existing stock from one warehouse or project to another — no purchase, no accounting entry, just relocates what's already on hand."
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            createTransfer.mutate();
+          }}
+          className="space-y-4"
+        >
+          {transferError && (
+            <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">{transferError}</p>
+          )}
+          <div>
+            <Label>Material (scanned)</Label>
+            <div className="flex items-center justify-between rounded-lg border border-success-100 bg-success-50 px-3 py-2 text-sm dark:border-success-100/20 dark:bg-success-100/10">
+              <span className="flex items-center gap-2 font-medium text-success-700">
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                {materials?.find((m) => m.id === Number(transferForm.material_id))?.name ?? "—"}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setTransferModalOpen(false);
+                  setQrScannerOpen(true);
+                }}
+                className="text-xs font-medium text-brand-600 hover:underline"
+              >
+                Rescan
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="transfer_from">From</Label>
+              <Select
+                id="transfer_from"
+                required
+                value={transferForm.from}
+                onChange={(e) => setTransferForm({ ...transferForm, from: e.target.value })}
+              >
+                <option value="">Select warehouse or project</option>
+                <optgroup label="Warehouses">
+                  {warehouses?.map((w) => (
+                    <option key={`w-${w.id}`} value={`w:${w.id}`}>
+                      {w.warehouse_code} — {w.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Projects">
+                  {projects?.map((p) => (
+                    <option key={`p-${p.id}`} value={`p:${p.id}`}>
+                      {p.project_name}
+                    </option>
+                  ))}
+                </optgroup>
+              </Select>
+              {transferForm.material_id && transferForm.from && (
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                  Available: {(transferFromAvailableQty ?? 0).toLocaleString()} {transferFromUnit}
+                </p>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="transfer_to">To</Label>
+              <Select
+                id="transfer_to"
+                required
+                value={transferForm.to}
+                onChange={(e) => setTransferForm({ ...transferForm, to: e.target.value })}
+              >
+                <option value="">Select warehouse or project</option>
+                <optgroup label="Warehouses">
+                  {warehouses?.map((w) => (
+                    <option key={`w-${w.id}`} value={`w:${w.id}`}>
+                      {w.warehouse_code} — {w.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Projects">
+                  {projects?.map((p) => (
+                    <option key={`p-${p.id}`} value={`p:${p.id}`}>
+                      {p.project_name}
+                    </option>
+                  ))}
+                </optgroup>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="transfer_qty">Quantity</Label>
+            <Input
+              id="transfer_qty"
+              type="number"
+              step="0.01"
+              min="0.01"
+              max={transferFromAvailableQty ?? undefined}
+              required
+              value={transferForm.quantity}
+              onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="transfer_narration">Narration</Label>
+            <Input
+              id="transfer_narration"
+              value={transferForm.narration}
+              onChange={(e) => setTransferForm({ ...transferForm, narration: e.target.value })}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setTransferModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={createTransfer.isPending}>
+              Shift Material
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ---- Scan-to-Shift QR Modal ---- */}
+      <QrScannerModal
+        open={qrScannerOpen}
+        onClose={() => setQrScannerOpen(false)}
+        title="Scan Material to Shift"
+        description="A shift can only be logged by scanning the material's QR code first — this confirms it's the right physical item."
+        onScan={handleTransferScan}
+      />
 
       {/* ---- Vendor Modal ---- */}
       <Modal
@@ -1255,6 +1553,94 @@ export default function MaterialInventoryPage() {
         </form>
       </Modal>
 
+      {/* ---- Opening Stock Modal ---- */}
+      <Modal
+        open={!!openingWarehouse}
+        onClose={() => setOpeningWarehouse(null)}
+        title={openingWarehouse ? `Opening Stock — ${openingWarehouse.name}` : "Opening Stock"}
+        description="Seed this warehouse with material it already physically holds — no vendor, just a starting count."
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            createOpeningStock.mutate();
+          }}
+          className="space-y-4"
+        >
+          {openingError && (
+            <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">{openingError}</p>
+          )}
+          <div>
+            <Label htmlFor="opening_material">Material</Label>
+            <Select
+              id="opening_material"
+              required
+              value={openingForm.material_id}
+              onChange={(e) => setOpeningForm({ ...openingForm, material_id: e.target.value })}
+            >
+              <option value="">Select material</option>
+              {materials?.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} ({m.unit_of_measure})
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="opening_qty">Quantity</Label>
+              <Input
+                id="opening_qty"
+                type="number"
+                step="0.01"
+                min="0.01"
+                required
+                value={openingForm.quantity}
+                onChange={(e) => setOpeningForm({ ...openingForm, quantity: e.target.value })}
+              />
+              {openingForm.material_id && (
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                  Current recorded balance here: {openingCurrentBalance}
+                </p>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="opening_rate">Rate (per unit)</Label>
+              <Input
+                id="opening_rate"
+                type="number"
+                step="0.01"
+                min="0"
+                required
+                value={openingForm.rate}
+                onChange={(e) => setOpeningForm({ ...openingForm, rate: e.target.value })}
+              />
+            </div>
+          </div>
+          {Number(openingForm.quantity) > 0 && Number(openingForm.rate) > 0 && (
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              Value: PKR {(Number(openingForm.quantity) * Number(openingForm.rate)).toLocaleString()}
+            </p>
+          )}
+          <div>
+            <Label htmlFor="opening_narration">Narration</Label>
+            <Input
+              id="opening_narration"
+              value={openingForm.narration}
+              onChange={(e) => setOpeningForm({ ...openingForm, narration: e.target.value })}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setOpeningWarehouse(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={createOpeningStock.isPending}>
+              Add Opening Stock
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
       {/* ---- Material Modal ---- */}
       <Modal
         open={materialModalOpen}
@@ -1308,6 +1694,32 @@ export default function MaterialInventoryPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* ---- Material QR Code Modal ---- */}
+      <Modal
+        open={!!qrMaterial}
+        onClose={() => setQrMaterial(null)}
+        title={qrMaterial ? `QR Code — ${qrMaterial.name}` : "QR Code"}
+        description="Print this and stick it on the material's bin or bag — scanning it opens this material's current stock across every warehouse."
+      >
+        {qrMaterial && (
+          <div className="space-y-3 text-center">
+            <QrImage
+              url={`${window.location.origin}/material-inventory?tab=stock&material=${qrMaterial.id}`}
+            />
+            <div>
+              <p className="text-sm font-semibold text-navy-900 dark:text-slate-100">{qrMaterial.name}</p>
+              <p className="font-mono text-xs text-slate-400 dark:text-slate-500">
+                {qrMaterial.material_code} · {qrMaterial.unit_of_measure}
+              </p>
+            </div>
+            <Button variant="secondary" onClick={() => window.print()}>
+              <Printer className="h-4 w-4" />
+              Print
+            </Button>
+          </div>
+        )}
       </Modal>
 
       {/* ---- Material Purchase History Modal ---- */}
@@ -1521,40 +1933,49 @@ export default function MaterialInventoryPage() {
               </Select>
             </div>
             <div>
-              <Label htmlFor="grn_warehouse">Received Into</Label>
+              <Label htmlFor="grn_destination">Received Into</Label>
               <Select
-                id="grn_warehouse"
+                id="grn_destination"
                 required
-                value={grnForm.warehouse_id}
-                onChange={(e) => setGrnForm({ ...grnForm, warehouse_id: e.target.value })}
+                value={
+                  grnForm.warehouse_id
+                    ? `w:${grnForm.warehouse_id}`
+                    : grnForm.project_id
+                      ? `p:${grnForm.project_id}`
+                      : ""
+                }
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v.startsWith("w:")) {
+                    setGrnForm({ ...grnForm, warehouse_id: v.slice(2) });
+                  } else if (v.startsWith("p:")) {
+                    setGrnForm({ ...grnForm, warehouse_id: "", project_id: v.slice(2) });
+                  } else {
+                    setGrnForm({ ...grnForm, warehouse_id: "" });
+                  }
+                }}
               >
-                <option value="">Select warehouse</option>
-                {warehouses?.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.warehouse_code} — {w.name}
-                  </option>
-                ))}
+                <option value="">Select warehouse or project</option>
+                <optgroup label="Warehouses">
+                  {warehouses?.map((w) => (
+                    <option key={`w-${w.id}`} value={`w:${w.id}`}>
+                      {w.warehouse_code} — {w.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Projects — delivered direct to site">
+                  {projects?.map((p) => (
+                    <option key={`p-${p.id}`} value={`p:${p.id}`}>
+                      {p.project_name}
+                    </option>
+                  ))}
+                </optgroup>
               </Select>
+              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                Pick a warehouse for stock that lands in store, or a project when the vendor delivers straight to
+                site — no warehouse stop.
+              </p>
             </div>
-          </div>
-
-          <div>
-            <Label htmlFor="grn_project">Project (optional)</Label>
-            <Select
-              id="grn_project"
-              value={grnForm.project_id}
-              onChange={(e) => setGrnForm({ ...grnForm, project_id: e.target.value })}
-            >
-              <option value="">— None —</option>
-              {projects?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.project_name}
-                </option>
-              ))}
-            </Select>
-            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-              Just for reporting which project this purchase was for — stock lands in the warehouse above either way.
-            </p>
           </div>
 
           <div>
@@ -1868,24 +2289,6 @@ export default function MaterialInventoryPage() {
             </Button>
           </div>
         </form>
-      </Modal>
-
-      {/* ---- Warehouse Dispatch QR Modal ---- */}
-      <Modal
-        open={!!qrWarehouse}
-        onClose={() => setQrWarehouse(null)}
-        title={qrWarehouse ? `Dispatch QR — ${qrWarehouse.name}` : "Dispatch QR"}
-        description="Print and stick this at the warehouse gate. Scanning it opens a form to log what's leaving — no need to create the issue from the office first."
-      >
-        {qrWarehouse && (
-          <div className="space-y-4 text-center">
-            <QrImage url={`${window.location.origin}/warehouses/${qrWarehouse.id}/dispatch`} />
-            <Button variant="secondary" className="w-full" onClick={() => window.print()}>
-              <Printer className="h-4 w-4" />
-              Print
-            </Button>
-          </div>
-        )}
       </Modal>
     </div>
   );

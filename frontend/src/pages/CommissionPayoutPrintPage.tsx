@@ -6,6 +6,14 @@ import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
 import type { CommissionPayout, CompanySettings } from "../types";
 
+const COMMISSION_TERMS = [
+  "This payment is made against the commission earned on the booking referenced above, as per the agreed commission structure.",
+  "This voucher is valid only when signed by the preparer and an authorized signatory.",
+  "The amount stated has been paid from the account noted above and recorded in the company's official books.",
+  "This payment must not be claimed or processed more than once.",
+  "In case of any discrepancy, the company's official accounts and records shall prevail.",
+];
+
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex justify-between border-b border-slate-100 py-2 text-sm">
@@ -69,7 +77,18 @@ export default function CommissionPayoutPrintPage() {
           </div>
         </div>
 
-        <div className="mt-16 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
+        <div className="mt-8">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Terms &amp; Conditions
+          </p>
+          <ol className="list-decimal space-y-0.5 pl-4 text-[10px] leading-relaxed text-slate-500">
+            {COMMISSION_TERMS.map((term, i) => (
+              <li key={i}>{term}</li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="mt-10 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
           <div className="border-t border-slate-300 pt-2">Prepared By</div>
           <AccountantSignature settings={companySettings} />
           <div className="border-t border-slate-300 pt-2">Received By (Agent)</div>

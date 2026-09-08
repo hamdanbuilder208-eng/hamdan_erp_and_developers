@@ -12,6 +12,14 @@ import type {
   PartnerSummary,
 } from "../types";
 
+const PARTNER_STATEMENT_TERMS = [
+  "This statement reflects the partner's contributions, profit share and drawings as recorded in the company's official books as of the date shown.",
+  "Profit share is calculated on each project's net profit per the partner's agreed share percentage; amounts shown as distributable remain subject to project cash flow.",
+  "Any discrepancy must be reported in writing within 15 days of receipt, or this statement is deemed accepted and final.",
+  "Withdrawals against the current account balance require a prior written request and management approval.",
+  "This statement is confidential and issued solely for the named partner's record.",
+];
+
 type LedgerRow = {
   date: string;
   project: string;
@@ -232,7 +240,18 @@ export default function PartnerStatementPrintPage() {
           </tbody>
         </table>
 
-        <div className="mt-16 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
+        <div className="mt-8">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Terms &amp; Conditions
+          </p>
+          <ol className="list-decimal space-y-0.5 pl-4 text-[10px] leading-relaxed text-slate-500">
+            {PARTNER_STATEMENT_TERMS.map((term, i) => (
+              <li key={i}>{term}</li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="mt-10 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
           <div className="border-t border-slate-300 pt-2">Prepared By</div>
           <AccountantSignature settings={companySettings} />
           <div className="border-t border-slate-300 pt-2">Partner Signature</div>

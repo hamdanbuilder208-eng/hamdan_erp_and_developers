@@ -45,6 +45,7 @@ const activeModules: {
   { to: "/partners", label: "Investor / Partners", icon: Landmark, moduleKey: "partners" },
   { to: "/reports", label: "Financial Reports", icon: BarChart3, moduleKey: "reports" },
   { to: "/expenses", label: "Expense Management", icon: Wallet2, moduleKey: "expenses" },
+  { to: "/petty-cash", label: "Petty Cash", icon: Wallet, moduleKey: "petty_cash" },
   { to: "/material-inventory", label: "Material & Inventory", icon: Boxes, moduleKey: "inventory" },
   { to: "/communications", label: "WhatsApp / SMS", icon: MessageCircle, moduleKey: "communications" },
 ];

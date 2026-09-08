@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, MessageCircle, Plus, Printer, Trash2 } from "lucide-react";
+import { CalendarClock, FileText, MessageCircle, Plus, Printer, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -16,6 +16,7 @@ import type {
   Booking,
   BookingAgent,
   BookingStatus,
+  BookingTransfer,
   Project,
   ScheduleFrequency,
   Unit,
@@ -61,15 +62,16 @@ export default function BookingsPage() {
   });
 
   const { data: units } = useQuery({
-    queryKey: ["units", "available", form.project_id],
+    queryKey: ["units", "for-booking", form.project_id],
     queryFn: async () =>
       (
         await api.get<Unit[]>("/units/", {
-          params: { project_id: Number(form.project_id), status_filter: "Available" },
+          params: { project_id: Number(form.project_id) },
         })
       ).data,
     enabled: !!form.project_id,
   });
+  const availableUnitCount = units?.filter((u) => u.status === "Available").length ?? 0;
 
   const { data: allottees } = useQuery({
     queryKey: ["allottees"],
@@ -79,6 +81,13 @@ export default function BookingsPage() {
   const { data: agents } = useQuery({
     queryKey: ["booking-agents"],
     queryFn: async () => (await api.get<BookingAgent[]>("/booking-agents/")).data,
+  });
+
+  const { data: transfers } = useQuery({
+    queryKey: ["booking-transfers", detailBooking?.id],
+    queryFn: async () =>
+      (await api.get<BookingTransfer[]>(`/bookings/${detailBooking!.id}/transfers`)).data,
+    enabled: !!detailBooking,
   });
 
   const selectedUnit = units?.find((u) => u.id === Number(form.unit_id));
@@ -185,6 +194,39 @@ export default function BookingsPage() {
     },
   });
 
+  // ---- Transfer ----
+  const [transferModalOpen, setTransferModalOpen] = React.useState(false);
+  const [transferForm, setTransferForm] = React.useState({ to_allottee_id: "", narration: "" });
+  const [transferError, setTransferError] = React.useState<string | null>(null);
+  const [letterMenuOpen, setLetterMenuOpen] = React.useState(false);
+  const letterMenuButtonRef = React.useRef<HTMLButtonElement>(null);
+  const [letterMenuPos, setLetterMenuPos] = React.useState<{
+    left: number;
+    top?: number;
+    bottom?: number;
+  }>({ left: 0 });
+
+  const createTransfer = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post<BookingTransfer>(`/bookings/${detailBooking!.id}/transfer`, {
+          to_allottee_id: Number(transferForm.to_allottee_id),
+          transfer_date: todayIso(),
+          narration: transferForm.narration || null,
+        })
+      ).data,
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["booking-transfers", detailBooking?.id] });
+      const refreshed = (await api.get<Booking>(`/bookings/${detailBooking!.id}`)).data;
+      setDetailBooking(refreshed);
+      setTransferModalOpen(false);
+      setTransferForm({ to_allottee_id: "", narration: "" });
+      setTransferError(null);
+    },
+    onError: (err: unknown) => setTransferError(apiErrorMessage(err, "Failed to transfer booking")),
+  });
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -285,7 +327,7 @@ export default function BookingsPage() {
               </Select>
             </div>
             <div>
-              <Label htmlFor="b_unit">Unit (Available only)</Label>
+              <Label htmlFor="b_unit">Unit</Label>
               <Select
                 id="b_unit"
                 required
@@ -295,13 +337,17 @@ export default function BookingsPage() {
               >
                 <option value="">Select unit</option>
                 {units?.map((u) => (
-                  <option key={u.id} value={u.id}>
+                  <option key={u.id} value={u.id} disabled={u.status !== "Available"}>
                     {u.unit_number} · PKR {Number(u.total_price).toLocaleString()}
+                    {u.status !== "Available" ? ` — ${u.status}` : ""}
                   </option>
                 ))}
               </Select>
-              {form.project_id && units?.length === 0 && (
+              {form.project_id && units && units.length > 0 && availableUnitCount === 0 && (
                 <p className="mt-1 text-xs text-warning-700">No available units in this project.</p>
+              )}
+              {form.project_id && units?.length === 0 && (
+                <p className="mt-1 text-xs text-warning-700">This project has no units yet.</p>
               )}
             </div>
           </div>
@@ -608,8 +654,8 @@ export default function BookingsPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between border-t border-slate-100 dark:border-navy-800 pt-4">
-              <div className="flex gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 dark:border-navy-800 pt-4">
+              <div className="flex flex-wrap gap-2">
                 {detailBooking.status !== "Confirmed" && detailBooking.status !== "Cancelled" && (
                   <Button
                     size="sm"
@@ -645,12 +691,103 @@ export default function BookingsPage() {
                     Cancel Booking
                   </Button>
                 )}
+                {detailBooking.status !== "Cancelled" && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setTransferForm({ to_allottee_id: "", narration: "" });
+                      setTransferError(null);
+                      setTransferModalOpen(true);
+                    }}
+                  >
+                    Transfer Owner
+                  </Button>
+                )}
                 {detailBooking.allottee.mobile && (
                   <Button size="sm" variant="secondary" onClick={() => setMessageOpen(true)}>
                     <MessageCircle className="h-3.5 w-3.5" />
                     Send WhatsApp / SMS
                   </Button>
                 )}
+                <div className="relative">
+                  <Button
+                    ref={letterMenuButtonRef}
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      const rect = letterMenuButtonRef.current?.getBoundingClientRect();
+                      if (rect) {
+                        const openUp = window.innerHeight - rect.bottom < 160;
+                        setLetterMenuPos({
+                          left: rect.left,
+                          top: openUp ? undefined : rect.bottom + 4,
+                          bottom: openUp ? window.innerHeight - rect.top + 4 : undefined,
+                        });
+                      }
+                      setLetterMenuOpen((o) => !o);
+                    }}
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Print Letter ▾
+                  </Button>
+                  {letterMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setLetterMenuOpen(false)} />
+                      <div
+                        style={{
+                          position: "fixed",
+                          left: letterMenuPos.left,
+                          top: letterMenuPos.top,
+                          bottom: letterMenuPos.bottom,
+                        }}
+                        className="z-20 w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-navy-700 dark:bg-navy-900"
+                      >
+                        <button
+                          onClick={() => {
+                            window.open(`/bookings/${detailBooking.id}/letter/allotment/print`, "_blank");
+                            setLetterMenuOpen(false);
+                          }}
+                          className="block w-full px-3 py-2 text-left text-sm text-navy-800 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-navy-800"
+                        >
+                          Allotment Letter
+                        </button>
+                        <button
+                          disabled={!transfers || transfers.length === 0}
+                          title={!transfers || transfers.length === 0 ? "This booking has never been transferred" : undefined}
+                          onClick={() => {
+                            window.open(`/bookings/${detailBooking.id}/letter/transfer/print`, "_blank");
+                            setLetterMenuOpen(false);
+                          }}
+                          className="block w-full px-3 py-2 text-left text-sm text-navy-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent dark:text-slate-200 dark:hover:bg-navy-800 dark:disabled:text-slate-600"
+                        >
+                          Transfer Letter
+                        </button>
+                        <button
+                          disabled={
+                            !detailBooking.schedule_lines.every(
+                              (l) => Number(l.paid_amount) >= Number(l.amount),
+                            )
+                          }
+                          title={
+                            !detailBooking.schedule_lines.every(
+                              (l) => Number(l.paid_amount) >= Number(l.amount),
+                            )
+                              ? "All installments must be fully paid first"
+                              : undefined
+                          }
+                          onClick={() => {
+                            window.open(`/bookings/${detailBooking.id}/letter/possession/print`, "_blank");
+                            setLetterMenuOpen(false);
+                          }}
+                          className="block w-full px-3 py-2 text-left text-sm text-navy-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent dark:text-slate-200 dark:hover:bg-navy-800 dark:disabled:text-slate-600"
+                        >
+                          Possession Letter
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
               <button
                 onClick={async () => {
@@ -668,6 +805,65 @@ export default function BookingsPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* ---- Transfer Owner Modal ---- */}
+      <Modal
+        open={transferModalOpen}
+        onClose={() => setTransferModalOpen(false)}
+        title="Transfer Booking"
+        description={
+          detailBooking
+            ? `Move ${detailBooking.unit.unit_number} (${detailBooking.booking_ref_no}) from ${detailBooking.allottee.name} to a different allottee.`
+            : undefined
+        }
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            createTransfer.mutate();
+          }}
+          className="space-y-4"
+        >
+          {transferError && (
+            <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">{transferError}</p>
+          )}
+          <div>
+            <Label htmlFor="transfer_to">New Allottee</Label>
+            <Select
+              id="transfer_to"
+              required
+              value={transferForm.to_allottee_id}
+              onChange={(e) => setTransferForm({ ...transferForm, to_allottee_id: e.target.value })}
+            >
+              <option value="">Select allottee</option>
+              {allottees
+                ?.filter((a) => a.id !== detailBooking?.allottee_id)
+                .map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} {a.cnic ? `(${a.cnic})` : ""}
+                  </option>
+                ))}
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="transfer_narration">Narration (optional)</Label>
+            <Input
+              id="transfer_narration"
+              value={transferForm.narration}
+              onChange={(e) => setTransferForm({ ...transferForm, narration: e.target.value })}
+              placeholder="Reason for transfer, agreement ref, etc."
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setTransferModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={createTransfer.isPending}>
+              Transfer
+            </Button>
+          </div>
+        </form>
       </Modal>
 
       {detailBooking && messageOpen && (

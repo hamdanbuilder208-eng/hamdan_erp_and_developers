@@ -6,6 +6,14 @@ import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
 import type { CompanySettings, Refund } from "../types";
 
+const REFUND_TERMS = [
+  "This refund has been processed against the amount originally received/paid and is recorded in the company's official books.",
+  "Any deduction shown above has been applied as per the applicable policy/agreement.",
+  "This voucher is valid only when signed by the preparer and an authorized signatory.",
+  "Once processed, this refund cannot be reversed except through a fresh, separately authorized transaction.",
+  "In case of any discrepancy, the company's official accounts and records shall prevail.",
+];
+
 export default function RefundPrintPage() {
   const { id } = useParams();
 
@@ -118,7 +126,18 @@ export default function RefundPrintPage() {
           </tfoot>
         </table>
 
-        <div className="mt-16 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
+        <div className="mt-8">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Terms &amp; Conditions
+          </p>
+          <ol className="list-decimal space-y-0.5 pl-4 text-[10px] leading-relaxed text-slate-500">
+            {REFUND_TERMS.map((term, i) => (
+              <li key={i}>{term}</li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="mt-10 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
           <div className="border-t border-slate-300 pt-2">Prepared By</div>
           <AccountantSignature settings={companySettings} />
           <div className="border-t border-slate-300 pt-2">Received By</div>

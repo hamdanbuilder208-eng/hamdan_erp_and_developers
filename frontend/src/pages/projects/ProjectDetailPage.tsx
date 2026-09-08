@@ -8,8 +8,6 @@ import {
   List,
   Pencil,
   Plus,
-  Printer,
-  QrCode,
   Sparkles,
   Tags,
   Trash2,
@@ -21,7 +19,6 @@ import { Input, Label, Select } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
 import { ProjectStatusBadge, UnitStatusBadge } from "../../components/ui/Badge";
 import { UnitAvailabilityGrid } from "../../components/units/UnitAvailabilityGrid";
-import { QrImage } from "../../components/ui/QrImage";
 import { toast, apiErrorMessage } from "../../lib/toast";
 import { confirm } from "../../lib/confirm";
 import type {
@@ -104,6 +101,22 @@ export default function ProjectDetailPage() {
 
   // Floor form
   const [floorForm, setFloorForm] = React.useState({ block: "", floor_no: "", no_of_units: "" });
+  // Floor numbers already added for the block currently typed into the form —
+  // used to stop the same floor being picked twice for one block.
+  const takenFloorNos = React.useMemo(() => {
+    const normalizedBlock = floorForm.block.trim().toLowerCase();
+    return new Set(
+      (project?.floors ?? [])
+        .filter((f) => (f.block ?? "").trim().toLowerCase() === normalizedBlock)
+        .map((f) => f.floor_no)
+    );
+  }, [project?.floors, floorForm.block]);
+  React.useEffect(() => {
+    if (floorForm.floor_no && takenFloorNos.has(floorForm.floor_no)) {
+      setFloorForm((f) => ({ ...f, floor_no: "" }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [takenFloorNos]);
   const createFloor = useMutation({
     mutationFn: async () =>
       (
@@ -189,30 +202,72 @@ export default function ProjectDetailPage() {
     },
   });
 
-  // Bulk generate units
-  const [genForm, setGenForm] = React.useState({ floor_id: "", unit_category_id: "" });
+  // Bulk generate units — one floor can mix categories in a single go, e.g.
+  // 2x "2 Bed" + 1x "3 Bed" on a 3-unit floor, via one row per category.
+  type GenRow = { unit_category_id: string; quantity: string };
+  const emptyGenRow: GenRow = { unit_category_id: "", quantity: "" };
+  const [genForm, setGenForm] = React.useState<{ floor_id: string; rows: GenRow[] }>({
+    floor_id: "",
+    rows: [emptyGenRow],
+  });
+  const genFloor = project?.floors.find((f) => f.id === Number(genForm.floor_id));
+  const genFloorGeneratedCount = genFloor
+    ? (units ?? []).filter((u) => u.floor_id === genFloor.id).length
+    : 0;
+  const genFloorRemaining = genFloor ? genFloor.no_of_units - genFloorGeneratedCount : 0;
+  const genRowsTotal = genForm.rows.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0);
+
+  React.useEffect(() => {
+    if (genFloor) {
+      setGenForm((f) => ({ ...f, rows: [{ unit_category_id: "", quantity: String(genFloorRemaining) }] }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [genForm.floor_id]);
+
+  const updateGenRow = (index: number, patch: Partial<GenRow>) =>
+    setGenForm((f) => ({ ...f, rows: f.rows.map((r, i) => (i === index ? { ...r, ...patch } : r)) }));
+
+  const addGenRow = () =>
+    setGenForm((f) => ({
+      ...f,
+      rows: [...f.rows, { unit_category_id: "", quantity: String(Math.max(genFloorRemaining - genRowsTotal, 0)) }],
+    }));
+
+  const removeGenRow = (index: number) =>
+    setGenForm((f) => ({ ...f, rows: f.rows.filter((_, i) => i !== index) }));
+
   const generateUnits = useMutation({
     mutationFn: async () => {
       const floor = project?.floors.find((f) => f.id === Number(genForm.floor_id));
       const floorLabel = floor ? floorNumberLabel(floor.floor_no) : null;
       const prefix = [floor?.block, floorLabel].filter(Boolean).join("-");
-      return (
-        await api.post<Unit[]>(`/units/bulk-generate/${projectId}`, {
-          floor_id: Number(genForm.floor_id),
-          unit_category_id: genForm.unit_category_id ? Number(genForm.unit_category_id) : null,
-          starting_number: 1,
-          prefix: prefix ? `${prefix}-` : "",
-          base_price: 0,
-        })
-      ).data;
+      const results: Unit[] = [];
+      // Sequential, not parallel — each batch's numbering picks up from
+      // however many units the previous batch just created on this floor.
+      for (const row of genForm.rows) {
+        const quantity = Number(row.quantity) || 0;
+        if (quantity <= 0) continue;
+        const created = (
+          await api.post<Unit[]>(`/units/bulk-generate/${projectId}`, {
+            floor_id: Number(genForm.floor_id),
+            unit_category_id: row.unit_category_id ? Number(row.unit_category_id) : null,
+            quantity,
+            prefix: prefix ? `${prefix}-` : "",
+            base_price: 0,
+          })
+        ).data;
+        results.push(...created);
+      }
+      return results;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["units", projectId] });
       setGenerateModalOpen(false);
-      setGenForm({ floor_id: "", unit_category_id: "" });
+      setGenForm({ floor_id: "", rows: [emptyGenRow] });
     },
     onError: (err: unknown) => {
       toast.error(apiErrorMessage(err, "Failed to generate units."));
+      queryClient.invalidateQueries({ queryKey: ["units", projectId] });
     },
   });
 
@@ -285,7 +340,6 @@ export default function ProjectDetailPage() {
     ? units?.find((u) => u.id === selectedUnit.id) ?? selectedUnit
     : null;
 
-  const [deliveriesQrOpen, setDeliveriesQrOpen] = React.useState(false);
 
   if (!project) {
     return <div className="text-sm text-slate-400 dark:text-slate-500">Loading project...</div>;
@@ -306,10 +360,6 @@ export default function ProjectDetailPage() {
             <h2 className="text-xl font-semibold text-navy-950 dark:text-white">{project.project_name}</h2>
             <ProjectStatusBadge status={project.status} />
           </div>
-          <Button size="sm" variant="secondary" onClick={() => setDeliveriesQrOpen(true)}>
-            <QrCode className="h-4 w-4" />
-            Deliveries QR
-          </Button>
         </div>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           {project.project_code} {project.address ? `· ${project.address}` : ""}
@@ -323,6 +373,25 @@ export default function ProjectDetailPage() {
             <p className="mt-1 text-lg font-semibold text-navy-950 dark:text-white">
               {project.total_budget ? `PKR ${Number(project.total_budget).toLocaleString()}` : "—"}
             </p>
+            {project.total_budget ? (
+              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                Spent PKR {project.total_spent.toLocaleString()} ·{" "}
+                <span
+                  className={
+                    project.total_budget - project.total_spent < 0
+                      ? "font-medium text-danger-500"
+                      : "font-medium"
+                  }
+                >
+                  {project.total_budget - project.total_spent < 0 ? "Over by" : "Remaining"} PKR{" "}
+                  {Math.abs(project.total_budget - project.total_spent).toLocaleString()}
+                </span>
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                Spent so far: PKR {project.total_spent.toLocaleString()}
+              </p>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -466,7 +535,7 @@ export default function ProjectDetailPage() {
               <Button
                 size="sm"
                 onClick={() => {
-                  setGenForm({ floor_id: "", unit_category_id: "" });
+                  setGenForm({ floor_id: "", rows: [emptyGenRow] });
                   setGenerateModalOpen(true);
                 }}
               >
@@ -758,12 +827,16 @@ export default function ProjectDetailPage() {
               <option value="">
                 {Number(totalFloorsDraft) ? "Select floor" : "Enter total floors first"}
               </option>
-              <option value="Ground">Ground Floor</option>
-              {Array.from({ length: Number(totalFloorsDraft) || 0 }, (_, i) => i + 1).map((n) => (
-                <option key={n} value={ordinalFloorLabel(n)}>
-                  {ordinalFloorLabel(n)}
-                </option>
-              ))}
+              <option value="Ground" disabled={takenFloorNos.has("Ground")}>
+                Ground Floor{takenFloorNos.has("Ground") ? " (already added)" : ""}
+              </option>
+              {Array.from({ length: Number(totalFloorsDraft) || 0 }, (_, i) => i + 1)
+                .map((n) => ordinalFloorLabel(n))
+                .map((label) => (
+                  <option key={label} value={label} disabled={takenFloorNos.has(label)}>
+                    {label}{takenFloorNos.has(label) ? " (already added)" : ""}
+                  </option>
+                ))}
             </Select>
           </div>
 
@@ -922,45 +995,103 @@ export default function ProjectDetailPage() {
             >
               <option value="">Select floor</option>
               {project.floors.map((f) => {
-                const alreadyGenerated = (units ?? []).some((u) => u.floor_id === f.id);
+                const generatedCount = (units ?? []).filter((u) => u.floor_id === f.id).length;
+                const full = generatedCount >= f.no_of_units;
                 return (
-                  <option key={f.id} value={f.id} disabled={alreadyGenerated}>
+                  <option key={f.id} value={f.id} disabled={full}>
                     {f.block ? `${f.block} · ` : ""}
-                    {f.floor_no} ({f.no_of_units} units)
-                    {alreadyGenerated ? " — already generated" : ""}
+                    {f.floor_no} ({generatedCount} of {f.no_of_units} generated)
+                    {full ? " — full" : ""}
                   </option>
                 );
               })}
             </Select>
           </div>
 
-          <div>
-            <Label htmlFor="gen_category">Unit Category</Label>
-            <Select
-              id="gen_category"
-              value={genForm.unit_category_id}
-              onChange={(e) => setGenForm({ ...genForm, unit_category_id: e.target.value })}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="!mb-0">Categories &amp; Quantities</Label>
+              {genForm.floor_id && (
+                <span
+                  className={`text-xs ${
+                    genRowsTotal > genFloorRemaining
+                      ? "text-danger-500"
+                      : "text-slate-400 dark:text-slate-500"
+                  }`}
+                >
+                  {genRowsTotal} of {genFloorRemaining} slot(s) assigned
+                </span>
+              )}
+            </div>
+            {genForm.rows.map((row, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Select
+                  aria-label="Unit category"
+                  disabled={!genForm.floor_id}
+                  value={row.unit_category_id}
+                  onChange={(e) => updateGenRow(i, { unit_category_id: e.target.value })}
+                  className="flex-1"
+                >
+                  <option value="">— None —</option>
+                  {categories?.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>
+                <Input
+                  aria-label="Quantity"
+                  type="number"
+                  min="1"
+                  required
+                  disabled={!genForm.floor_id}
+                  value={row.quantity}
+                  onChange={(e) => updateGenRow(i, { quantity: e.target.value })}
+                  className="w-24"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeGenRow(i)}
+                  disabled={genForm.rows.length <= 1}
+                  className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={!genForm.floor_id || genRowsTotal >= genFloorRemaining}
+              onClick={addGenRow}
             >
-              <option value="">— None —</option>
-              {categories?.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
+              <Plus className="h-3.5 w-3.5" />
+              Add another category
+            </Button>
           </div>
 
           <p className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
             <Layers className="h-3.5 w-3.5" />
-            Units will be created using the floor's configured unit count, numbered from 1
-            (prefixed with the floor's block, if any) at the category's price.
+            {genForm.floor_id
+              ? `Mix categories on this floor by giving each its own row — e.g. 2x "2 Bed" + ` +
+                `1x "3 Bed" — they're numbered on in the order listed here.`
+              : "Units are created using each category's price, numbered from wherever this floor already has."}
           </p>
 
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setGenerateModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={generateUnits.isPending || !genForm.floor_id}>
+            <Button
+              type="submit"
+              disabled={
+                generateUnits.isPending ||
+                !genForm.floor_id ||
+                genRowsTotal <= 0 ||
+                genRowsTotal > genFloorRemaining
+              }
+            >
               Generate
             </Button>
           </div>
@@ -1046,22 +1177,6 @@ export default function ProjectDetailPage() {
             </div>
           </div>
         )}
-      </Modal>
-
-      {/* ---- Deliveries QR Modal ---- */}
-      <Modal
-        open={deliveriesQrOpen}
-        onClose={() => setDeliveriesQrOpen(false)}
-        title={`Deliveries QR — ${project.project_name}`}
-        description="Print and keep this at site. Scanning it lists pending deliveries and lets you mark them received."
-      >
-        <div className="space-y-4 text-center">
-          <QrImage url={`${window.location.origin}/projects/${project.id}/deliveries`} />
-          <Button variant="secondary" className="w-full" onClick={() => window.print()}>
-            <Printer className="h-4 w-4" />
-            Print
-          </Button>
-        </div>
       </Modal>
     </div>
   );

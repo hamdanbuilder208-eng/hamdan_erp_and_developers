@@ -6,6 +6,13 @@ import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
 import type { CompanySettings, GRN, MaterialIssue, PurchaseOrder } from "../types";
 
+const GRN_TERMS = [
+  "Materials received have been checked for quantity and condition at the time of receipt.",
+  "Any discrepancy in quantity, quality or specification must be reported within 3 days of receipt.",
+  "This note is valid only when signed by the store keeper and an authorized signatory.",
+  "Stock quantities and values are updated in the company's inventory records as per this note.",
+];
+
 function PrintShell({
   title,
   refNo,
@@ -14,6 +21,7 @@ function PrintShell({
   children,
   footerLeft,
   footerRight,
+  terms,
 }: {
   title: string;
   refNo: string;
@@ -22,6 +30,7 @@ function PrintShell({
   children: React.ReactNode;
   footerLeft: string;
   footerRight: string;
+  terms?: string[];
 }) {
   const { data: companySettings } = useQuery({
     queryKey: ["admin-settings"],
@@ -52,7 +61,21 @@ function PrintShell({
           </div>
         </div>
         <div className="py-5">{children}</div>
-        <div className="mt-16 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
+
+        {terms && (
+          <div className="mt-8">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              Terms &amp; Conditions
+            </p>
+            <ol className="list-decimal space-y-0.5 pl-4 text-[10px] leading-relaxed text-slate-500">
+              {terms.map((term, i) => (
+                <li key={i}>{term}</li>
+              ))}
+            </ol>
+          </div>
+        )}
+
+        <div className="mt-10 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
           <div className="border-t border-slate-300 pt-2">{footerLeft}</div>
           <AccountantSignature settings={companySettings} />
           <div className="border-t border-slate-300 pt-2">{footerRight}</div>
@@ -156,6 +179,7 @@ function GRNPrint({ id }: { id: string }) {
       statusLabel={data.voucher_id ? "Received" : "Pending"}
       footerLeft="Received By"
       footerRight="Store Keeper"
+      terms={GRN_TERMS}
     >
       <Row label="Vendor" value={data.vendor.name} />
       <Row label="Project" value={data.project?.project_name ?? "General (Company-wide)"} />

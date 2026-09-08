@@ -4,17 +4,26 @@ import { Printer } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
-import type { CompanySettings, OfficeExpense, OwnerPersonalExpense, WagePayment } from "../types";
+import type { CompanySettings, PettyCashExpense, PettyCashTopup } from "../types";
 
-const EXPENSE_TERMS = [
+const VOUCHER_TERMS = [
   "This voucher is valid only when signed by the preparer and approved by an authorized signatory.",
-  "The amount stated has been paid/disbursed from the account noted above and recorded in the company's official books.",
+  "The amount stated has been paid/disbursed and recorded in the company's official books.",
   "This voucher must not be processed or claimed more than once.",
   "Any correction or cancellation must be authorized in writing by management.",
-  "Supporting documents/receipts, where applicable, are attached and retained with this voucher.",
 ];
 
-function PrintShell({ title, refNo, date, children }: { title: string; refNo: string; date: string; children: React.ReactNode }) {
+function PrintShell({
+  title,
+  refNo,
+  date,
+  children,
+}: {
+  title: string;
+  refNo: string;
+  date: string;
+  children: React.ReactNode;
+}) {
   const { data: companySettings } = useQuery({
     queryKey: ["admin-settings"],
     queryFn: async () => (await api.get<CompanySettings>("/admin/settings")).data,
@@ -47,7 +56,7 @@ function PrintShell({ title, refNo, date, children }: { title: string; refNo: st
             Terms &amp; Conditions
           </p>
           <ol className="list-decimal space-y-0.5 pl-4 text-[10px] leading-relaxed text-slate-500">
-            {EXPENSE_TERMS.map((term, i) => (
+            {VOUCHER_TERMS.map((term, i) => (
               <li key={i}>{term}</li>
             ))}
           </ol>
@@ -56,7 +65,7 @@ function PrintShell({ title, refNo, date, children }: { title: string; refNo: st
         <div className="mt-10 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
           <div className="border-t border-slate-300 pt-2">Prepared By</div>
           <AccountantSignature settings={companySettings} />
-          <div className="border-t border-slate-300 pt-2">Approved By</div>
+          <div className="border-t border-slate-300 pt-2">Received By</div>
         </div>
       </div>
     </div>
@@ -72,16 +81,15 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function OfficeExpensePrint({ id }: { id: string }) {
+function TopupPrint({ id }: { id: string }) {
   const { data } = useQuery({
-    queryKey: ["office-expense", id],
-    queryFn: async () => (await api.get<OfficeExpense>(`/expenses/office/${id}`)).data,
+    queryKey: ["petty-cash-topup", id],
+    queryFn: async () => (await api.get<PettyCashTopup>(`/petty-cash/topups/${id}`)).data,
   });
   if (!data) return <p className="p-10 text-sm text-slate-400">Loading...</p>;
   return (
-    <PrintShell title="Office Expense Voucher" refNo={data.expense_no} date={data.expense_date}>
-      <Row label="Expense Head" value={data.expense_head.name} />
-      <Row label="Project" value={data.project?.project_name ?? "General (Company-wide)"} />
+    <PrintShell title="Petty Cash Top-up" refNo={data.topup_no} date={data.topup_date}>
+      <Row label="Float / Holder" value={data.float.holder_name} />
       <Row label="Paid From" value={data.paid_from.name} />
       <Row label="Narration" value={data.narration || "—"} />
       <div className="mt-4 rounded-lg bg-brand-50 px-4 py-3 text-right">
@@ -92,39 +100,25 @@ function OfficeExpensePrint({ id }: { id: string }) {
   );
 }
 
-function WagePaymentPrint({ id }: { id: string }) {
+function ExpensePrint({ id }: { id: string }) {
   const { data } = useQuery({
-    queryKey: ["wage-payment", id],
-    queryFn: async () => (await api.get<WagePayment>(`/expenses/wages/${id}`)).data,
+    queryKey: ["petty-cash-expense", id],
+    queryFn: async () => (await api.get<PettyCashExpense>(`/petty-cash/expenses/${id}`)).data,
   });
   if (!data) return <p className="p-10 text-sm text-slate-400">Loading...</p>;
   return (
-    <PrintShell title="Wage / Salary Payment Slip" refNo={data.payment_no} date={data.payment_date}>
-      <Row label="Employee" value={`${data.employee.name} (${data.employee.employee_code})`} />
-      <Row label="Designation" value={data.employee.designation ?? "—"} />
-      <Row label="Period" value={`${data.period_from} to ${data.period_to}`} />
-      <Row label="Paid From" value={data.paid_from.name} />
-      <Row label="Gross Amount" value={Number(data.gross_amount).toLocaleString()} />
-      <Row label="Advances / Deductions" value={`-${Number(data.advances_deductions).toLocaleString()}`} />
-      <div className="mt-4 rounded-lg bg-brand-50 px-4 py-3 text-right">
-        <span className="text-sm text-brand-700">Net Paid: </span>
-        <span className="text-lg font-bold text-brand-900">PKR {Number(data.net_paid).toLocaleString()}</span>
-      </div>
-    </PrintShell>
-  );
-}
-
-function OwnerExpensePrint({ id }: { id: string }) {
-  const { data } = useQuery({
-    queryKey: ["owner-expense", id],
-    queryFn: async () => (await api.get<OwnerPersonalExpense>(`/expenses/owner-personal/${id}`)).data,
-  });
-  if (!data) return <p className="p-10 text-sm text-slate-400">Loading...</p>;
-  return (
-    <PrintShell title="Owner Personal Expense Voucher" refNo={data.expense_no} date={data.expense_date}>
-      <Row label="Category" value={data.category} />
-      <Row label="Source Account" value={data.source_account.name} />
-      <Row label="Remarks" value={data.remarks || "—"} />
+    <PrintShell title="Petty Cash Expense Voucher" refNo={data.expense_no} date={data.expense_date}>
+      <Row label="Float / Holder" value={data.float.holder_name} />
+      <Row label="Description" value={data.description} />
+      <Row label="Project" value={data.project?.project_name ?? "General"} />
+      {data.material && (
+        <Row
+          label="Material"
+          value={`${data.quantity} ${data.material.unit_of_measure} ${data.material.name}${
+            data.warehouse ? ` — ${data.warehouse.name}` : " — direct to project site"
+          }`}
+        />
+      )}
       <div className="mt-4 rounded-lg bg-brand-50 px-4 py-3 text-right">
         <span className="text-sm text-brand-700">Amount: </span>
         <span className="text-lg font-bold text-brand-900">PKR {Number(data.amount).toLocaleString()}</span>
@@ -133,11 +127,10 @@ function OwnerExpensePrint({ id }: { id: string }) {
   );
 }
 
-export default function ExpensePrintPage() {
+export default function PettyCashPrintPage() {
   const { type, id } = useParams();
   if (!id) return <p className="p-10 text-sm text-slate-400">Missing reference.</p>;
-  if (type === "office") return <OfficeExpensePrint id={id} />;
-  if (type === "wages") return <WagePaymentPrint id={id} />;
-  if (type === "owner-personal") return <OwnerExpensePrint id={id} />;
-  return <p className="p-10 text-sm text-slate-400">Unknown expense type.</p>;
+  if (type === "topup") return <TopupPrint id={id} />;
+  if (type === "expense") return <ExpensePrint id={id} />;
+  return <p className="p-10 text-sm text-slate-400">Unknown document type.</p>;
 }

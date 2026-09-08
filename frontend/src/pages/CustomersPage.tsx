@@ -1,15 +1,19 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Loader2, Phone, Plus, Search, Trash2, UserRound } from "lucide-react";
+import { Camera, KeyRound, Loader2, Phone, Plus, Search, Trash2, UserRound } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input, Label } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import { QrImage } from "../components/ui/QrImage";
+import { SendMessageModal } from "../components/communication/SendMessageModal";
 import { TableRowsSkeleton } from "../components/ui/Skeleton";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
 import type { Allottee } from "../types";
+
+const portalUrl = `${window.location.origin}/portal/login`;
 
 const API_ORIGIN = new URL(api.defaults.baseURL ?? "", window.location.origin).origin;
 const photoUrl = (path: string | null) => (path ? `${API_ORIGIN}${path}` : null);
@@ -92,6 +96,8 @@ export default function CustomersPage() {
   const [modalOpen, setModalOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [form, setForm] = React.useState(emptyForm);
+  const [portalShareAllottee, setPortalShareAllottee] = React.useState<Allottee | null>(null);
+  const [portalMessageOpen, setPortalMessageOpen] = React.useState(false);
 
   const { data: allottees, isLoading } = useQuery({
     queryKey: ["allottees", search],
@@ -212,18 +218,27 @@ export default function CustomersPage() {
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{a.cnic || "—"}</td>
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{a.referred_by || "—"}</td>
                 <td className="px-5 py-3 text-right">
-                  <button
-                    onClick={async () => {
-                      const ok = await confirm(`Delete allottee "${a.name}"?`, {
-                        danger: true,
-                        confirmLabel: "Delete",
-                      });
-                      if (ok) deleteAllottee.mutate(a.id);
-                    }}
-                    className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      onClick={() => setPortalShareAllottee(a)}
+                      title="Share customer portal access"
+                      className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const ok = await confirm(`Delete allottee "${a.name}"?`, {
+                          danger: true,
+                          confirmLabel: "Delete",
+                        });
+                        if (ok) deleteAllottee.mutate(a.id);
+                      }}
+                      className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -390,6 +405,56 @@ export default function CustomersPage() {
           </div>
         </form>
       </Modal>
+
+      {/* ---- Customer Portal Access Modal ---- */}
+      <Modal
+        open={!!portalShareAllottee}
+        onClose={() => setPortalShareAllottee(null)}
+        title={portalShareAllottee ? `Portal Access — ${portalShareAllottee.name}` : "Portal Access"}
+        description="Scan the QR or send the link — the customer signs up themselves using their mobile number and CNIC."
+      >
+        {portalShareAllottee && (
+          <div className="space-y-4">
+            <QrImage url={portalUrl} size={200} />
+            <div className="rounded-lg bg-slate-50 px-3 py-2 text-center text-xs text-slate-500 dark:bg-navy-800 dark:text-slate-400">
+              {portalUrl}
+            </div>
+            {(!portalShareAllottee.mobile || !portalShareAllottee.cnic) && (
+              <p className="rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
+                {!portalShareAllottee.mobile && !portalShareAllottee.cnic
+                  ? "This customer has no mobile number or CNIC on file — sign-up will fail until both are added."
+                  : !portalShareAllottee.mobile
+                    ? "This customer has no mobile number on file — sign-up needs one."
+                    : "This customer has no CNIC on file — sign-up needs one."}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="secondary" onClick={() => setPortalShareAllottee(null)}>
+                Close
+              </Button>
+              <Button
+                type="button"
+                disabled={!portalShareAllottee.mobile}
+                onClick={() => setPortalMessageOpen(true)}
+              >
+                Send via WhatsApp / SMS
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {portalShareAllottee && (
+        <SendMessageModal
+          open={portalMessageOpen}
+          onClose={() => setPortalMessageOpen(false)}
+          defaultPhone={portalShareAllottee.mobile ?? ""}
+          defaultName={portalShareAllottee.name}
+          defaultMessage={`Dear ${portalShareAllottee.name}, you can now track your booking, payment schedule and receipts online. Sign up here: ${portalUrl} — use your mobile number and CNIC (${portalShareAllottee.cnic ?? "on file"}) to create your account. — Hamdan Associates.`}
+          relatedType="Other"
+          relatedId={portalShareAllottee.id}
+        />
+      )}
     </div>
   );
 }

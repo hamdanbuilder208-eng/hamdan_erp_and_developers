@@ -6,6 +6,14 @@ import { Button } from "../../components/ui/Button";
 import { AccountantSignature } from "../../components/print/SignatureBlock";
 import type { CompanySettings, Receipt } from "../../types";
 
+const RECEIPT_TERMS = [
+  "Payment received is subject to clearance and realization of the payment instrument, where applicable.",
+  "Any applicable documentation, utility, development, maintenance, taxes, government charges or other charges shall be payable separately as per the agreed terms.",
+  "The payment shall be adjusted against the buyer's outstanding balance/payment schedule.",
+  "In case of any discrepancy, the company's official accounts and records shall prevail.",
+  "This receipt is valid only when issued and authorized by the company.",
+];
+
 export default function CustomerReceiptPrintPage() {
   const { id } = useParams();
 
@@ -157,7 +165,18 @@ export default function CustomerReceiptPrintPage() {
           </div>
         </div>
 
-        <div className="mt-16 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
+        <div className="mt-8">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Terms &amp; Conditions
+          </p>
+          <ol className="list-decimal space-y-0.5 pl-4 text-[10px] leading-relaxed text-slate-500">
+            {RECEIPT_TERMS.map((term, i) => (
+              <li key={i}>{term}</li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="mt-10 grid grid-cols-3 gap-6 text-center text-xs text-slate-500">
           <div className="border-t border-slate-300 pt-2">Prepared By</div>
           <AccountantSignature settings={companySettings} />
           <div className="border-t border-slate-300 pt-2">Received By</div>
