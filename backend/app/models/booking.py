@@ -28,6 +28,16 @@ class ScheduleFrequency(str, enum.Enum):
     YEARLY = "Yearly"
 
 
+class ExtraChargesReason(str, enum.Enum):
+    EAST_FACING = "East Facing"
+    WEST_FACING = "West Facing"
+    OPEN = "Open"
+    ROAD_FACING = "Road Facing"
+    WATER = "Water"
+    ELECTRICITY = "Electricity"
+    OTHER = "Other"
+
+
 class Booking(Base, TimestampMixin):
     __tablename__ = "bookings"
 
@@ -51,6 +61,8 @@ class Booking(Base, TimestampMixin):
     revenue_voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
 
     down_payment_amount: Mapped[float] = mapped_column(Numeric(18, 2), default=0)
+    extra_charges_amount: Mapped[float] = mapped_column(Numeric(18, 2), default=0)
+    extra_charges_reason: Mapped[ExtraChargesReason | None] = mapped_column(Enum(ExtraChargesReason))
     no_of_installments: Mapped[int] = mapped_column(default=0)
     frequency: Mapped[ScheduleFrequency] = mapped_column(
         Enum(ScheduleFrequency), default=ScheduleFrequency.MONTHLY

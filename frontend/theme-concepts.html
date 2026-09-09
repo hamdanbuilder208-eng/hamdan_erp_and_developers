@@ -1,0 +1,408 @@
+<title>Hamdan Theme Concepts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f6fb;
+    --surface: #ffffff;
+    --surface-border: #e2e5ee;
+    --surface-2: #eceff6;
+    --text: #10131c;
+    --text-muted: #5c6072;
+    --text-faint: #9297a6;
+    --accent: #234ce4;
+    --accent-soft: #eef2ff;
+    --code-bg: #eef0f7;
+    --shadow: 0 1px 2px rgba(16,19,28,0.04), 0 8px 24px -12px rgba(16,19,28,0.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0a0b0f;
+      --surface: #15171f;
+      --surface-border: #262a36;
+      --surface-2: #1c1f29;
+      --text: #edeef3;
+      --text-muted: #a2a6b4;
+      --text-faint: #6c7080;
+      --accent: #7096ff;
+      --accent-soft: #1a2340;
+      --code-bg: #1c1f29;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 12px 28px -14px rgba(0,0,0,0.55);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a0b0f;
+    --surface: #15171f;
+    --surface-border: #262a36;
+    --surface-2: #1c1f29;
+    --text: #edeef3;
+    --text-muted: #a2a6b4;
+    --text-faint: #6c7080;
+    --accent: #7096ff;
+    --accent-soft: #1a2340;
+    --code-bg: #1c1f29;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 12px 28px -14px rgba(0,0,0,0.55);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    padding: 48px 32px 72px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+
+  .masthead { max-width: 640px; margin-bottom: 44px; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 500;
+    margin: 0 0 12px;
+  }
+  h1 {
+    font-family: "Sora", ui-sans-serif, sans-serif;
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0 0 12px;
+    text-wrap: balance;
+    color: var(--text);
+  }
+  .masthead p {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text-muted);
+    margin: 0;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 22px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--surface-border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .card.current { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  /* --- the mockup panel: a fixed miniature of the app's real dark login panel --- */
+  .mock {
+    position: relative;
+    aspect-ratio: 4 / 3;
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+    color: #f2f4fb;
+  }
+  .mock .orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(2px);
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  .mock-brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    position: relative;
+    z-index: 1;
+  }
+  .mock-logo {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Sora", sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    color: #fff;
+    flex-shrink: 0;
+    box-shadow: 0 4px 14px -4px rgba(0,0,0,0.5);
+  }
+  .mock-brand-name {
+    font-family: "Sora", sans-serif;
+    font-weight: 600;
+    font-size: 13.5px;
+    letter-spacing: -0.01em;
+  }
+  .mock-headline {
+    position: relative;
+    z-index: 1;
+    font-family: "Sora", sans-serif;
+    font-weight: 600;
+    font-size: 17px;
+    line-height: 1.32;
+    letter-spacing: -0.01em;
+    max-width: 21ch;
+    text-wrap: balance;
+  }
+  .mock-tag {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-self: flex-start;
+    align-items: center;
+    gap: 6px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 5px 10px 5px 8px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.16);
+    backdrop-filter: blur(2px);
+  }
+  .mock-tag::before {
+    content: "";
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .card-body {
+    padding: 16px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+  }
+  .card-title-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .card-title {
+    font-family: "Sora", sans-serif;
+    font-weight: 600;
+    font-size: 15.5px;
+    color: var(--text);
+  }
+  .current-pill {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 3px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .card-pitch {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-muted);
+    margin: 0;
+  }
+  .swatches {
+    display: flex;
+    gap: 6px;
+    margin-top: auto;
+    padding-top: 4px;
+  }
+  .swatch {
+    flex: 1;
+    min-width: 0;
+    border-radius: 8px;
+    padding: 7px 0 6px;
+    text-align: center;
+    background: var(--code-bg);
+    border: 1px solid var(--surface-border);
+  }
+  .swatch .dot {
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    margin: 0 auto 5px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
+  }
+  .swatch .hex {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 9px;
+    color: var(--text-faint);
+    letter-spacing: 0.01em;
+  }
+
+  .footnote {
+    margin-top: 40px;
+    padding-top: 22px;
+    border-top: 1px solid var(--surface-border);
+    font-size: 12.5px;
+    color: var(--text-faint);
+    max-width: 640px;
+    line-height: 1.6;
+  }
+  .footnote b { color: var(--text-muted); font-weight: 600; }
+
+  @media (max-width: 460px) {
+    body { padding: 32px 18px 56px; }
+    h1 { font-size: 26px; }
+  }
+</style>
+
+<div class="wrap">
+  <div class="masthead">
+    <p class="eyebrow">Hamdan ERP &middot; Visual Direction</p>
+    <h1>Five gradient directions for the login screen</h1>
+    <p>
+      Same layout, logo mark and headline as the live login page — only the panel's
+      color story changes. Current build (Blue Signal) is outlined for reference.
+      Pick one and I'll wire it into <code style="font-family:'IBM Plex Mono',monospace;font-size:12px;background:var(--code-bg);padding:1px 5px;border-radius:4px;">LoginPage.tsx</code> and the customer portal to match.
+    </p>
+  </div>
+
+  <div class="grid">
+
+    <!-- 1. Current -->
+    <div class="card current">
+      <div class="mock" style="background:#06070a;">
+        <div class="orb" style="width:220px;height:220px;top:-60px;left:-40px;background:radial-gradient(circle,#3468f0,transparent 70%);"></div>
+        <div class="orb" style="width:180px;height:180px;bottom:-50px;right:-30px;background:radial-gradient(circle,#234ce4,transparent 70%);"></div>
+        <div class="mock-brand">
+          <div class="mock-logo" style="background:#234ce4;">H</div>
+          <div class="mock-brand-name">Hamdan Associates</div>
+        </div>
+        <div>
+          <span class="mock-tag" style="color:#90b6fb;">Admin Panel</span>
+          <div class="mock-headline" style="margin-top:10px;">Run every project, booking and rupee from one place.</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-title-row">
+          <span class="card-title">Blue Signal</span>
+          <span class="current-pill">Current</span>
+        </div>
+        <p class="card-pitch">The existing brand blue on near-black. Clean and trustworthy — the safe baseline everything else is measured against.</p>
+        <div class="swatches">
+          <div class="swatch"><div class="dot" style="background:#06070a;"></div><div class="hex">06070A</div></div>
+          <div class="swatch"><div class="dot" style="background:#234ce4;"></div><div class="hex">234CE4</div></div>
+          <div class="swatch"><div class="dot" style="background:#5b90f7;"></div><div class="hex">5B90F7</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Indigo Luxury -->
+    <div class="card">
+      <div class="mock" style="background:linear-gradient(150deg,#150c30 0%,#3b1878 55%,#7c3aed 100%);">
+        <div class="orb" style="width:200px;height:200px;top:-50px;right:-50px;background:radial-gradient(circle,#a855f7,transparent 70%);"></div>
+        <div class="orb" style="width:170px;height:170px;bottom:-60px;left:-40px;background:radial-gradient(circle,#4c1d95,transparent 70%);"></div>
+        <div class="mock-brand">
+          <div class="mock-logo" style="background:linear-gradient(135deg,#a855f7,#6d28d9);">H</div>
+          <div class="mock-brand-name">Hamdan Associates</div>
+        </div>
+        <div>
+          <span class="mock-tag" style="color:#e9d5ff;">Admin Panel</span>
+          <div class="mock-headline" style="margin-top:10px;">Run every project, booking and rupee from one place.</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-title-row"><span class="card-title">Indigo Estate</span></div>
+        <p class="card-pitch">Deep violet with a plum undertone — reads premium and a step above the typical builder ERP without losing seriousness.</p>
+        <div class="swatches">
+          <div class="swatch"><div class="dot" style="background:#150c30;"></div><div class="hex">150C30</div></div>
+          <div class="swatch"><div class="dot" style="background:#6d28d9;"></div><div class="hex">6D28D9</div></div>
+          <div class="swatch"><div class="dot" style="background:#a855f7;"></div><div class="hex">A855F7</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Emerald Growth -->
+    <div class="card">
+      <div class="mock" style="background:linear-gradient(150deg,#031f1c 0%,#0d5c50 55%,#12b886 100%);">
+        <div class="orb" style="width:210px;height:210px;top:-55px;left:-30px;background:radial-gradient(circle,#12b886,transparent 70%);"></div>
+        <div class="orb" style="width:170px;height:170px;bottom:-55px;right:-40px;background:radial-gradient(circle,#0d5c50,transparent 70%);"></div>
+        <div class="mock-brand">
+          <div class="mock-logo" style="background:linear-gradient(135deg,#12b886,#0d5c50);">H</div>
+          <div class="mock-brand-name">Hamdan Associates</div>
+        </div>
+        <div>
+          <span class="mock-tag" style="color:#a7f3d0;">Admin Panel</span>
+          <div class="mock-headline" style="margin-top:10px;">Run every project, booking and rupee from one place.</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-title-row"><span class="card-title">Emerald Ledger</span></div>
+        <p class="card-pitch">Dark teal into emerald — signals growth and money moving well. Good fit if the accounting/reports side is the app's real selling point.</p>
+        <div class="swatches">
+          <div class="swatch"><div class="dot" style="background:#031f1c;"></div><div class="hex">031F1C</div></div>
+          <div class="swatch"><div class="dot" style="background:#0d5c50;"></div><div class="hex">0D5C50</div></div>
+          <div class="swatch"><div class="dot" style="background:#12b886;"></div><div class="hex">12B886</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Gold Estate -->
+    <div class="card">
+      <div class="mock" style="background:linear-gradient(150deg,#1a1408 0%,#5c3f0f 55%,#d4a437 100%);">
+        <div class="orb" style="width:210px;height:210px;top:-60px;right:-40px;background:radial-gradient(circle,#eac54f,transparent 70%);"></div>
+        <div class="orb" style="width:170px;height:170px;bottom:-50px;left:-30px;background:radial-gradient(circle,#8a5a12,transparent 70%);"></div>
+        <div class="mock-brand">
+          <div class="mock-logo" style="background:linear-gradient(135deg,#eac54f,#a97417);color:#1a1408;">H</div>
+          <div class="mock-brand-name">Hamdan Associates</div>
+        </div>
+        <div>
+          <span class="mock-tag" style="color:#f3dfa0;">Admin Panel</span>
+          <div class="mock-headline" style="margin-top:10px;">Run every project, booking and rupee from one place.</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-title-row"><span class="card-title">Gold Estate</span></div>
+        <p class="card-pitch">Charcoal to brass gold — the classic real-estate-developer palette. Warmest and most "brochure" of the five; strongest for client-facing demos.</p>
+        <div class="swatches">
+          <div class="swatch"><div class="dot" style="background:#1a1408;"></div><div class="hex">1A1408</div></div>
+          <div class="swatch"><div class="dot" style="background:#a97417;"></div><div class="hex">A97417</div></div>
+          <div class="swatch"><div class="dot" style="background:#eac54f;"></div><div class="hex">EAC54F</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. Midnight Cyan -->
+    <div class="card">
+      <div class="mock" style="background:linear-gradient(150deg,#040f14 0%,#0a4a5c 55%,#22d3ee 100%);">
+        <div class="orb" style="width:210px;height:210px;top:-55px;left:-45px;background:radial-gradient(circle,#22d3ee,transparent 70%);"></div>
+        <div class="orb" style="width:170px;height:170px;bottom:-55px;right:-30px;background:radial-gradient(circle,#0a4a5c,transparent 70%);"></div>
+        <div class="mock-brand">
+          <div class="mock-logo" style="background:linear-gradient(135deg,#22d3ee,#0a4a5c);">H</div>
+          <div class="mock-brand-name">Hamdan Associates</div>
+        </div>
+        <div>
+          <span class="mock-tag" style="color:#a5f3fc;">Admin Panel</span>
+          <div class="mock-headline" style="margin-top:10px;">Run every project, booking and rupee from one place.</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-title-row"><span class="card-title">Midnight Cyan</span></div>
+        <p class="card-pitch">Near-black into bright cyan — the crispest, most "software" feeling of the set. Reads modern and technical rather than traditional real estate.</p>
+        <div class="swatches">
+          <div class="swatch"><div class="dot" style="background:#040f14;"></div><div class="hex">040F14</div></div>
+          <div class="swatch"><div class="dot" style="background:#0a4a5c;"></div><div class="hex">0A4A5C</div></div>
+          <div class="swatch"><div class="dot" style="background:#22d3ee;"></div><div class="hex">22D3EE</div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="footnote">
+    Each mockup uses the real login-panel proportions, logo shape and headline copy — only the color story changes.
+    <b>Reply with a name</b> (e.g. "Gold Estate") or ask for a mix, and it goes into the actual login page, customer portal, and sidebar next.
+  </p>
+</div>

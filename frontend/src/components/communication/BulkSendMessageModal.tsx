@@ -6,16 +6,19 @@ import { Button } from "../ui/Button";
 import { Input, Label, Select } from "../ui/Input";
 import { Modal } from "../ui/Modal";
 import { toast, apiErrorMessage } from "../../lib/toast";
-import type { Allottee, CommunicationBulkResult, CommunicationChannel } from "../../types";
+import type { Allottee, CommunicationBulkResult, CommunicationChannel, Lead } from "../../types";
 
 const channels: CommunicationChannel[] = ["WhatsApp", "SMS"];
 
 interface BulkSendMessageModalProps {
   open: boolean;
   onClose: () => void;
+  /** Which list to pick recipients from — existing customers (default) or
+   * imported leads who haven't booked yet. */
+  source?: "allottees" | "leads";
 }
 
-export function BulkSendMessageModal({ open, onClose }: BulkSendMessageModalProps) {
+export function BulkSendMessageModal({ open, onClose, source = "allottees" }: BulkSendMessageModalProps) {
   const queryClient = useQueryClient();
   const [channel, setChannel] = React.useState<CommunicationChannel>("WhatsApp");
   const [search, setSearch] = React.useState("");
@@ -31,13 +34,20 @@ export function BulkSendMessageModal({ open, onClose }: BulkSendMessageModalProp
     }
   }, [open]);
 
-  const { data: allottees, isLoading } = useQuery({
+  const { data: allottees, isLoading: allotteesLoading } = useQuery({
     queryKey: ["allottees", "bulk-send"],
     queryFn: async () => (await api.get<Allottee[]>("/allottees/")).data,
-    enabled: open,
+    enabled: open && source === "allottees",
   });
+  const { data: leads, isLoading: leadsLoading } = useQuery({
+    queryKey: ["leads", "bulk-send"],
+    queryFn: async () => (await api.get<Lead[]>("/leads/")).data,
+    enabled: open && source === "leads",
+  });
+  const isLoading = source === "allottees" ? allotteesLoading : leadsLoading;
 
-  const withMobile = (allottees ?? []).filter((a) => !!a.mobile);
+  const withMobile: { id: number; name: string; mobile: string | null }[] =
+    source === "allottees" ? (allottees ?? []).filter((a) => !!a.mobile) : leads ?? [];
   const filtered = withMobile.filter(
     (a) =>
       !search ||
@@ -126,7 +136,8 @@ export function BulkSendMessageModal({ open, onClose }: BulkSendMessageModalProp
             <Label htmlFor="bulk_search">
               Recipients{" "}
               <span className="font-normal text-slate-400">
-                ({selectedIds.size} customer{selectedIds.size === 1 ? "" : "s"} selected)
+                ({selectedIds.size} {source === "leads" ? "lead" : "customer"}
+                {selectedIds.size === 1 ? "" : "s"} selected)
               </span>
             </Label>
             <div className="flex gap-2 text-xs">
@@ -143,18 +154,20 @@ export function BulkSendMessageModal({ open, onClose }: BulkSendMessageModalProp
             <Input
               id="bulk_search"
               className="pl-9"
-              placeholder="Search customers by name or mobile..."
+              placeholder={`Search ${source === "leads" ? "leads" : "customers"} by name or mobile...`}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-navy-700">
             {isLoading && (
-              <p className="px-3 py-6 text-center text-sm text-slate-400">Loading customers...</p>
+              <p className="px-3 py-6 text-center text-sm text-slate-400">
+                Loading {source === "leads" ? "leads" : "customers"}...
+              </p>
             )}
             {!isLoading && filtered.length === 0 && (
               <p className="px-3 py-6 text-center text-sm text-slate-400">
-                No customers with a mobile number match.
+                No {source === "leads" ? "leads" : "customers"} with a mobile number match.
               </p>
             )}
             {filtered.map((a) => (

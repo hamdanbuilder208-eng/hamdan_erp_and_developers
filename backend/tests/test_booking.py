@@ -1,9 +1,10 @@
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.crud import booking as booking_crud
 from app.models.allottee import Allottee
-from app.models.booking import BookingStatus, ScheduleFrequency
+from app.models.booking import BookingStatus, ExtraChargesReason, ScheduleFrequency
 from app.models.project import Project
 from app.models.unit import Unit, UnitStatus
 from app.schemas.booking import BookingCreate, BookingTransferCreate
@@ -152,3 +153,73 @@ def test_transfer_rejects_cancelled_booking(db: Session, project, unit, allottee
         booking_crud.create_transfer(
             db, result, BookingTransferCreate(to_allottee_id=new_allottee.id, transfer_date=TODAY)
         )
+
+
+# Extra charges
+
+
+def test_extra_charges_add_to_total_price(db: Session, project, unit, allottee):
+    result = booking_crud.create_booking(
+        db,
+        _booking_in(
+            unit, project, allottee,
+            extra_charges_amount=50_000,
+            extra_charges_reason=ExtraChargesReason.EAST_FACING,
+        ),
+    )
+
+    assert result.total_price == unit.total_price + 50_000
+
+
+def test_extra_charges_create_a_labeled_schedule_line(db: Session, project, unit, allottee):
+    result = booking_crud.create_booking(
+        db,
+        _booking_in(
+            unit, project, allottee,
+            extra_charges_amount=50_000,
+            extra_charges_reason=ExtraChargesReason.WATER,
+        ),
+    )
+
+    extra_line = next(l for l in result.schedule_lines if l.label == "Extra Charges — Water")
+    assert extra_line.amount == 50_000
+    assert extra_line.due_date == result.booking_date
+
+
+def test_extra_charges_are_excluded_from_remaining_installments(db: Session, project, unit, allottee):
+    # unit total is 1,000,000 (see conftest); +50,000 extra charges = 1,050,000,
+    # minus the 50,000 extra-charges line itself leaves exactly 1,000,000 to
+    # split across 2 installments — if extra charges leaked into the
+    # remaining-balance calc, each installment would be off.
+    result = booking_crud.create_booking(
+        db,
+        _booking_in(
+            unit, project, allottee,
+            extra_charges_amount=50_000,
+            extra_charges_reason=ExtraChargesReason.ROAD_FACING,
+            no_of_installments=2,
+        ),
+    )
+
+    installment_lines = [l for l in result.schedule_lines if l.installment_no > 0]
+    assert sum(l.amount for l in installment_lines) == pytest.approx(1_000_000)
+
+
+def test_extra_charges_amount_requires_a_reason(unit, project, allottee):
+    with pytest.raises(ValidationError, match="Select what the extra charges are for"):
+        _booking_in(unit, project, allottee, extra_charges_amount=50_000)
+
+
+def test_extra_charges_rejects_negative_amount(unit, project, allottee):
+    with pytest.raises(ValidationError, match="cannot be negative"):
+        _booking_in(
+            unit, project, allottee,
+            extra_charges_amount=-1,
+            extra_charges_reason=ExtraChargesReason.OTHER,
+        )
+
+
+def test_no_extra_charges_line_when_amount_is_zero(db: Session, project, unit, allottee):
+    result = booking_crud.create_booking(db, _booking_in(unit, project, allottee))
+
+    assert not any("Extra Charges" in l.label for l in result.schedule_lines)

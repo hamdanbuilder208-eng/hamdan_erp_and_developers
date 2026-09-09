@@ -15,15 +15,19 @@ import {
   MapPin,
   FileText,
   Landmark,
+  Key,
   MessageCircle,
+  ScrollText,
   Settings,
   Undo2,
+  UserPlus,
   Wallet2,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useAuthStore } from "../../store/authStore";
+import hamdanIcon from "../../assets/hamdan-icon.png";
 
 const activeModules: {
   to: string;
@@ -35,8 +39,10 @@ const activeModules: {
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true, moduleKey: null },
   { to: "/projects", label: "Projects & Units", icon: Building2, moduleKey: "projects" },
   { to: "/land-plots", label: "Land / Plots", icon: MapPin, moduleKey: "land_properties" },
+  { to: "/leads", label: "Leads", icon: UserPlus, moduleKey: "leads" },
   { to: "/customers", label: "Customers & Allottees", icon: Users, moduleKey: "allottees" },
   { to: "/bookings", label: "Unit Booking", icon: Layers, moduleKey: "bookings" },
+  { to: "/rentals", label: "Rentals", icon: Key, moduleKey: "rentals" },
   { to: "/receipts", label: "Receipts", icon: Receipt, moduleKey: "receipts" },
   { to: "/refunds", label: "Refunds", icon: Undo2, moduleKey: "refunds" },
   { to: "/accounts", label: "Chart of Accounts", icon: Wallet, moduleKey: "accounts" },
@@ -68,6 +74,7 @@ export function Sidebar({
   const withAdminEntries = isAdmin
     ? [
         ...modules,
+        { to: "/payment-slip", label: "Payment Slip", icon: ScrollText },
         { to: "/users", label: "Users & Roles", icon: UserCog },
         { to: "/admin", label: "Admin Utilities", icon: Settings },
       ]
@@ -81,9 +88,11 @@ export function Sidebar({
       )}
     >
       <div className={cn("flex items-center gap-2.5 px-5 py-5", collapsed && "justify-center px-0")}>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-600 font-bold text-white shadow-lg shadow-brand-900/40">
-          H
-        </div>
+        <img
+          src={hamdanIcon}
+          alt="Hamdan"
+          className="h-9 w-9 shrink-0 rounded-lg object-cover shadow-lg shadow-brand-900/40"
+        />
         {!collapsed && (
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-white">Hamdan ERP</p>

@@ -79,8 +79,20 @@
   --color-onhold-100: rgba(192, 38, 212, 0.24);
   --color-onhold-700: #e879f9;
 
-  --color-brand-50: rgba(52, 104, 240, 0.12);
-  --color-brand-100: rgba(52, 104, 240, 0.22);
+  /* Gold/bronze accent in dark mode, matching the login screens — 400 stays
+     the bright highlight color (icons, small text), 600/700 are the deeper
+     bronze used for solid button/active-nav backgrounds so white button text
+     keeps enough contrast, 900 is near-black for subtle shadow tints. */
+  --color-brand-50: rgba(234, 197, 79, 0.12);
+  --color-brand-100: rgba(234, 197, 79, 0.22);
+  --color-brand-200: #f3dfa0;
+  --color-brand-300: #edd07a;
+  --color-brand-400: #eac54f;
+  --color-brand-500: #d9ae3a;
+  --color-brand-600: #a97417;
+  --color-brand-700: #8f5f12;
+  --color-brand-800: #6b480d;
+  --color-brand-900: #4a3109;
 }
 
 @layer base {

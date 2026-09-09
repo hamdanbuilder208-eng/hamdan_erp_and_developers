@@ -29,6 +29,7 @@ _DEFAULT_COA = [
     ("4000", "Revenue", AccountNature.REVENUE, True, [
         ("4010", "Unit Sales", AccountNature.REVENUE, False, []),
         ("4020", "Plot / Land Sales", AccountNature.REVENUE, False, []),
+        ("4030", "Rental Income", AccountNature.REVENUE, False, []),
     ]),
     ("5000", "Expenses", AccountNature.EXPENSE, True, [
         ("5010", "Office Expenses", AccountNature.EXPENSE, False, []),

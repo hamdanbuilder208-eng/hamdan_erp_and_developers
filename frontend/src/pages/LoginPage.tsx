@@ -1,11 +1,28 @@
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { Boxes, Building2, Layers, Loader2, Lock, ShieldCheck, User as UserIcon, Wallet } from "lucide-react";
+import { Eye, EyeOff, Loader2, Lock, ShieldCheck, User as UserIcon } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/authStore";
+import hamdanLogo from "../assets/hamdan-logo-full.png";
 import { Button } from "../components/ui/Button";
-import { Input, Label } from "../components/ui/Input";
+import { Label } from "../components/ui/Input";
 import type { User } from "../types";
+
+function SkylineBackdrop() {
+  const bars = [18, 34, 24, 46, 30, 60, 38, 50, 26, 42];
+  return (
+    <svg
+      className="pointer-events-none absolute inset-x-0 bottom-0 h-40 w-full opacity-[0.06]"
+      viewBox="0 0 400 100"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      {bars.map((h, i) => (
+        <rect key={i} x={i * 40} y={100 - h} width={28} height={h} fill="#eac54f" />
+      ))}
+    </svg>
+  );
+}
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -13,6 +30,7 @@ export default function LoginPage() {
 
   const [username, setUsername] = React.useState("admin");
   const [password, setPassword] = React.useState("");
+  const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -42,24 +60,29 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen w-full">
+    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#05070c] px-4 py-10">
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 50% 0%, rgba(234,197,79,0.10), transparent 55%), radial-gradient(circle at 85% 85%, rgba(169,116,23,0.12), transparent 50%)",
+        }}
+      />
+
       {loading && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-5 bg-navy-950/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-5 bg-[#05070c]/85 backdrop-blur-sm">
           <div className="relative flex h-20 w-20 items-center justify-center">
             <div
               className="absolute inset-0 rounded-full"
               style={{
-                background:
-                  "conic-gradient(from 0deg, transparent 0%, rgba(52,104,240,0.9) 100%)",
+                background: "conic-gradient(from 0deg, transparent 0%, rgba(234,197,79,0.9) 100%)",
                 animation: "erp-ring-spin 1.1s linear infinite",
                 WebkitMask:
                   "radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px))",
                 mask: "radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px))",
               }}
             />
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-600 text-lg font-bold text-white shadow-lg shadow-brand-900/50">
-              H
-            </div>
+            <img src={hamdanLogo} alt="Hamdan" className="h-11 w-11 rounded-xl object-cover" />
           </div>
           <div className="text-center">
             <p className="text-sm font-medium text-white">Signing in</p>
@@ -72,79 +95,28 @@ export default function LoginPage() {
           `}</style>
         </div>
       )}
-      <div className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-navy-950 p-12 text-white lg:flex">
-        <div
-          className="pointer-events-none absolute inset-0 opacity-40"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 20% 20%, rgba(52,104,240,0.35), transparent 45%), radial-gradient(circle at 80% 70%, rgba(52,104,240,0.25), transparent 40%)",
-          }}
-        />
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-600 font-bold text-white shadow-lg shadow-brand-900/50">
-            H
-          </div>
-          <p className="text-lg font-semibold">Hamdan Associates</p>
-        </div>
 
-        <div className="relative z-10 space-y-6">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-300 ring-1 ring-inset ring-brand-400/30">
-            <Building2 className="h-3.5 w-3.5" />
-            Admin Panel
-          </span>
-          <h2 className="max-w-md text-3xl font-semibold leading-tight">
-            Run every project, booking and rupee from one place.
-          </h2>
-          <p className="max-w-sm text-sm text-slate-400">
-            The complete back office for Hamdan Associates &mdash; sales, accounts,
-            inventory and everything in between.
-          </p>
-          <ul className="space-y-3 text-sm text-slate-300">
-            <li className="flex items-center gap-2.5">
-              <Layers className="h-4 w-4 shrink-0 text-brand-400" />
-              Projects, units and bookings, floor to floor
-            </li>
-            <li className="flex items-center gap-2.5">
-              <Wallet className="h-4 w-4 shrink-0 text-brand-400" />
-              Receipts, vouchers and the full chart of accounts
-            </li>
-            <li className="flex items-center gap-2.5">
-              <Boxes className="h-4 w-4 shrink-0 text-brand-400" />
-              Material inventory, petty cash and partner shares
-            </li>
-          </ul>
-        </div>
+      <div className="relative z-10 w-full max-w-[360px]">
+        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#0d1017] to-[#070911] p-6 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7)]">
+          <SkylineBackdrop />
 
-        <div className="relative z-10 flex items-center gap-2 text-xs text-slate-500">
-          <ShieldCheck className="h-4 w-4 text-brand-400" />
-          Secured with role-based access control
-        </div>
-      </div>
+          <div className="relative z-10 flex flex-col items-center text-center">
+            <img src={hamdanLogo} alt="Hamdan Associates" className="h-16 w-16 rounded-xl object-cover" />
 
-      <div className="flex w-full flex-1 items-center justify-center bg-surface px-6 py-12 lg:w-1/2">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 lg:hidden">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 font-bold text-white">
-                H
-              </div>
-              <p className="text-base font-semibold text-navy-900 dark:text-white">Hamdan ERP</p>
-            </div>
+            <h1 className="mt-3 text-lg font-bold tracking-tight text-white">Welcome Back</h1>
+            <p className="mt-0.5 text-xs text-slate-400">Sign in to your dashboard</p>
           </div>
 
-          <h1 className="text-2xl font-semibold text-navy-950 dark:text-white">Welcome back</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Sign in to your account to continue.
-          </p>
-
-          <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+          <form onSubmit={handleSubmit} className="relative z-10 mt-5 space-y-3">
             <div>
-              <Label htmlFor="username">Username</Label>
-              <div className="relative">
-                <UserIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
-                <Input
+              <Label htmlFor="username" className="text-slate-300">
+                Username
+              </Label>
+              <div className="relative mt-1">
+                <UserIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <input
                   id="username"
-                  className="pl-9"
+                  className="h-10 w-full rounded-lg border border-white/10 bg-white/5 pl-9 pr-3 text-sm text-white placeholder:text-slate-500 outline-none transition-colors focus:border-[#eac54f]/50 focus:bg-white/[0.07] focus:ring-2 focus:ring-[#eac54f]/20"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   autoComplete="username"
@@ -154,53 +126,81 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
-                <Input
+              <Label htmlFor="password" className="text-slate-300">
+                Password
+              </Label>
+              <div className="relative mt-1">
+                <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <input
                   id="password"
-                  type="password"
-                  className="pl-9"
+                  type={showPassword ? "text" : "password"}
+                  className="h-10 w-full rounded-lg border border-white/10 bg-white/5 pl-9 pr-9 text-sm text-white placeholder:text-slate-500 outline-none transition-colors focus:border-[#eac54f]/50 focus:bg-white/[0.07] focus:ring-2 focus:ring-[#eac54f]/20"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
             </div>
 
             {error && (
-              <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">
+              <p className="rounded-lg border border-danger-500/20 bg-danger-500/10 px-3 py-2 text-sm text-danger-400">
                 {error}
               </p>
             )}
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="h-10 w-full rounded-lg border-0 bg-gradient-to-r from-[#eac54f] to-[#a97417] text-[#1a1408] font-bold shadow-lg shadow-[#a97417]/20 hover:brightness-105"
+            >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Sign in
+              Log In
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-xs text-slate-400 dark:text-slate-500">
-            Default admin:{" "}
-            <span className="font-medium text-slate-500 dark:text-slate-400">admin</span> /{" "}
-            <span className="font-medium text-slate-500 dark:text-slate-400">Admin@123</span>
-          </p>
-
-          <div className="mt-4 border-t border-slate-100 pt-4 dark:border-navy-800">
-            <p className="mb-2 text-center text-xs text-slate-400 dark:text-slate-500">
-              Are you a customer?
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={() => navigate("/portal/login")}
-            >
-              Access Customer Portal
-            </Button>
+          <div className="relative z-10 my-4 flex items-center gap-3">
+            <div className="h-px flex-1 bg-white/10" />
+            <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Or</span>
+            <div className="h-px flex-1 bg-white/10" />
           </div>
+
+          <Button
+            type="button"
+            onClick={() => navigate("/portal/login")}
+            className="relative z-10 h-10 w-full rounded-lg border border-white/15 bg-transparent text-sm font-medium text-slate-200 hover:bg-white/5"
+          >
+            Access Customer Portal
+          </Button>
+
+          <div className="relative z-10 mt-4 flex items-center justify-center gap-2 text-xs text-slate-500">
+            <ShieldCheck className="h-4 w-4 text-[#eac54f]" />
+            Secure &amp; Trusted Access
+          </div>
+
+          <p className="relative z-10 mt-3 text-center text-[11px] text-slate-600">
+            Default admin: <span className="text-slate-500">admin</span> /{" "}
+            <span className="text-slate-500">Admin@1123</span>
+          </p>
         </div>
+
+        <p className="mt-4 text-center text-xs text-slate-500">
+          Built by{" "}
+          <a
+            href="mailto:rafaysyed819@gmail.com"
+            className="font-medium text-slate-400 hover:text-[#eac54f] hover:underline"
+          >
+            Syed Rafay Ali
+          </a>
+        </p>
       </div>
     </div>
   );

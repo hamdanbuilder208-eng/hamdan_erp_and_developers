@@ -175,6 +175,26 @@ function PossessionLetter({ booking }: { booking: Booking }) {
   );
 }
 
+function CustomLetter({ booking }: { booking: Booking }) {
+  const draft = JSON.parse(
+    localStorage.getItem(`custom-letter-${booking.id}`) ?? "{}",
+  ) as { subject?: string; body?: string };
+
+  return (
+    <LetterShell title="Letter" refNo={booking.booking_ref_no} date={todayIso()}>
+      {draft.subject && (
+        <p>
+          <span className="font-semibold">Subject: {draft.subject}</span>
+        </p>
+      )}
+      {(draft.body ?? "").split("\n").map((line, i) => (
+        <p key={i}>{line || " "}</p>
+      ))}
+      <p className="pt-4">Yours truly,</p>
+    </LetterShell>
+  );
+}
+
 export default function BookingLetterPrintPage() {
   const { bookingId, type } = useParams();
 
@@ -215,6 +235,8 @@ export default function BookingLetterPrintPage() {
     }
     return <PossessionLetter booking={booking} />;
   }
+
+  if (type === "custom") return <CustomLetter booking={booking} />;
 
   return <p className="p-10 text-sm text-slate-400">Unknown letter type.</p>;
 }

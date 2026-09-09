@@ -2,6 +2,7 @@ import { LogOut } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useCustomerAuthStore } from "../../store/customerAuthStore";
 import { cn } from "../../lib/utils";
+import hamdanIcon from "../../assets/hamdan-icon.png";
 
 export function PortalShell() {
   const account = useCustomerAuthStore((s) => s.account);
@@ -18,9 +19,7 @@ export function PortalShell() {
       <header className="border-b border-slate-200 bg-white dark:border-navy-800 dark:bg-navy-900">
         <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-4">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 font-bold text-white">
-              H
-            </div>
+            <img src={hamdanIcon} alt="Hamdan" className="h-9 w-9 rounded-lg object-cover" />
             <div>
               <p className="text-sm font-semibold text-navy-900 dark:text-white">Hamdan ERP</p>
               <p className="text-[11px] text-slate-400 dark:text-slate-500">Customer Portal</p>

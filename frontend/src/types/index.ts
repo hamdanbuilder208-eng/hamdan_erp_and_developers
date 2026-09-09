@@ -61,11 +61,11 @@ export interface UnitCategory {
   base_price: number | null;
 }
 
-export type UnitStatus = "Available" | "Booked" | "Sold" | "Cancelled" | "On-Hold";
+export type UnitStatus = "Available" | "Booked" | "Sold" | "Cancelled" | "On-Hold" | "Rented";
 
 export type PropertyType = "Plot" | "Land" | "Commercial Shop" | "SR" | "Other";
 export type SizeUnit = "Sq. Yd." | "Sq. Ft." | "Marla" | "Kanal";
-export type LandPropertyStatus = "Available" | "Reserved" | "Sold";
+export type LandPropertyStatus = "Available" | "Reserved" | "Sold" | "Rented";
 
 export type AccountNature = "Asset" | "Liability" | "Capital" | "Revenue" | "Expense";
 export type PartyType = "Customer" | "Vendor" | "Other";
@@ -573,6 +573,15 @@ export type BookingStatus = "Booked" | "Confirmed" | "Cancelled" | "Possession G
 export type PaymentMode = "Cash" | "Cheque" | "Bank Transfer" | "Online";
 export type ScheduleFrequency = "Monthly" | "Quarterly" | "Half-Yearly" | "Yearly";
 
+export type ExtraChargesReason =
+  | "East Facing"
+  | "West Facing"
+  | "Open"
+  | "Road Facing"
+  | "Water"
+  | "Electricity"
+  | "Other";
+
 export interface PaymentScheduleLine {
   id: number;
   installment_no: number;
@@ -599,6 +608,8 @@ export interface Booking {
   booking_agent_id: number | null;
   agent_commission_percent: number | null;
   down_payment_amount: number;
+  extra_charges_amount: number;
+  extra_charges_reason: ExtraChargesReason | null;
   no_of_installments: number;
   frequency: ScheduleFrequency;
   project: Project;
@@ -657,6 +668,73 @@ export interface Allottee {
   nominee_relation: string | null;
   nominee_cnic: string | null;
   nominee_picture_url: string | null;
+}
+
+export interface Lead {
+  id: number;
+  name: string;
+  mobile: string;
+  source: string | null;
+  notes: string | null;
+}
+
+export interface LeadImportResult {
+  imported: number;
+  skipped_duplicates: number;
+  skipped_invalid: number;
+  total_rows: number;
+}
+
+export type RentAgreementStatus = "Active" | "Terminated" | "Expired";
+
+export interface Tenant {
+  id: number;
+  tenant_code: string;
+  name: string;
+  cnic: string | null;
+  mobile: string | null;
+  address: string | null;
+}
+
+export interface RentScheduleLine {
+  id: number;
+  month_no: number;
+  due_date: string;
+  amount: number;
+  paid_amount: number;
+}
+
+export interface RentAgreement {
+  id: number;
+  agreement_no: string;
+  agreement_date: string;
+  tenant_id: number;
+  unit_id: number | null;
+  land_property_id: number | null;
+  monthly_rent: number;
+  security_deposit: number;
+  start_date: string;
+  duration_months: number;
+  narration: string | null;
+  status: RentAgreementStatus;
+  tenant: Tenant;
+  unit: Unit | null;
+  land_property: LandProperty | null;
+  schedule_lines: RentScheduleLine[];
+}
+
+export interface RentReceipt {
+  id: number;
+  receipt_no: string;
+  receipt_date: string;
+  agreement_id: number;
+  credit_account_id: number;
+  amount: number;
+  mode_of_payment: string;
+  narration: string | null;
+  voucher_id: number | null;
+  credit_account: Account;
+  agreement: RentAgreement;
 }
 
 export interface LandProperty {

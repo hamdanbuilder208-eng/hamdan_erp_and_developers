@@ -7,6 +7,7 @@ import type {
   BookingStatus,
   PurchaseOrderStatus,
   MaterialIssueStatus,
+  RentAgreementStatus,
 } from "../../types";
 
 const badgeVariants = cva(
@@ -45,6 +46,7 @@ const unitStatusTone: Record<UnitStatus, VariantProps<typeof badgeVariants>["ton
   Sold: "info",
   Cancelled: "danger",
   "On-Hold": "purple",
+  Rented: "purple",
 };
 
 export function UnitStatusBadge({ status }: { status: UnitStatus }) {
@@ -64,6 +66,7 @@ const landStatusTone: Record<LandPropertyStatus, VariantProps<typeof badgeVarian
   Available: "success",
   Reserved: "warning",
   Sold: "info",
+  Rented: "purple",
 };
 
 export function LandPropertyStatusBadge({ status }: { status: LandPropertyStatus }) {
@@ -99,4 +102,14 @@ const materialIssueStatusTone: Record<MaterialIssueStatus, VariantProps<typeof b
 
 export function MaterialIssueStatusBadge({ status }: { status: MaterialIssueStatus }) {
   return <Badge tone={materialIssueStatusTone[status]}>{status}</Badge>;
+}
+
+const rentAgreementStatusTone: Record<RentAgreementStatus, VariantProps<typeof badgeVariants>["tone"]> = {
+  Active: "success",
+  Terminated: "danger",
+  Expired: "neutral",
+};
+
+export function RentAgreementStatusBadge({ status }: { status: RentAgreementStatus }) {
+  return <Badge tone={rentAgreementStatusTone[status]}>{status}</Badge>;
 }

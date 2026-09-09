@@ -75,7 +75,7 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
     if unit.status != UnitStatus.AVAILABLE:
         raise ValueError(f"Unit is not available (current status: {unit.status.value})")
 
-    total_price = float(unit.total_price) - booking_in.discount
+    total_price = float(unit.total_price) - booking_in.discount + booking_in.extra_charges_amount
 
     db_booking = Booking(
         booking_ref_no=_next_booking_ref_no(db),
@@ -91,6 +91,8 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
         booking_agent_id=booking_in.booking_agent_id,
         agent_commission_percent=booking_in.agent_commission_percent,
         down_payment_amount=booking_in.down_payment_amount,
+        extra_charges_amount=booking_in.extra_charges_amount,
+        extra_charges_reason=booking_in.extra_charges_reason,
         no_of_installments=booking_in.no_of_installments,
         frequency=booking_in.frequency,
     )
@@ -108,7 +110,18 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
             )
         )
 
-    remaining = total_price - booking_in.down_payment_amount
+    if booking_in.extra_charges_amount > 0:
+        db.add(
+            PaymentScheduleLine(
+                booking_id=db_booking.id,
+                installment_no=0,
+                label=f"Extra Charges — {booking_in.extra_charges_reason.value}",
+                due_date=booking_in.booking_date,
+                amount=booking_in.extra_charges_amount,
+            )
+        )
+
+    remaining = total_price - booking_in.down_payment_amount - booking_in.extra_charges_amount
     if booking_in.no_of_installments > 0 and remaining > 0:
         month_step = _FREQUENCY_MONTHS[booking_in.frequency]
         base_amount = round(remaining / booking_in.no_of_installments, 2)

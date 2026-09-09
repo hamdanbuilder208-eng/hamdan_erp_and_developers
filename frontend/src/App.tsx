@@ -10,6 +10,8 @@ import ProjectsListPage from "./pages/projects/ProjectsListPage";
 import ProjectDetailPage from "./pages/projects/ProjectDetailPage";
 import LandPlotsPage from "./pages/LandPlotsPage";
 import CustomersPage from "./pages/CustomersPage";
+import LeadsPage from "./pages/LeadsPage";
+import RentalsPage from "./pages/RentalsPage";
 import AccountsPage from "./pages/AccountsPage";
 import VouchersPage from "./pages/VouchersPage";
 import VoucherPrintPage from "./pages/VoucherPrintPage";
@@ -31,6 +33,8 @@ import MaterialInventoryPage from "./pages/MaterialInventoryPage";
 import PettyCashPage from "./pages/PettyCashPage";
 import PettyCashPrintPage from "./pages/PettyCashPrintPage";
 import BookingLetterPrintPage from "./pages/BookingLetterPrintPage";
+import RentAgreementPrintPage from "./pages/RentAgreementPrintPage";
+import PaymentSlipPage from "./pages/PaymentSlipPage";
 import InventoryPrintPage from "./pages/InventoryPrintPage";
 import WarehouseDispatchPage from "./pages/WarehouseDispatchPage";
 import ProjectDeliveriesPage from "./pages/ProjectDeliveriesPage";
@@ -107,6 +111,14 @@ export default function App() {
                 }
               />
               <Route
+                path="/leads"
+                element={
+                  <ModuleGate module="leads">
+                    <LeadsPage />
+                  </ModuleGate>
+                }
+              />
+              <Route
                 path="/customers"
                 element={
                   <ModuleGate module="allottees">
@@ -135,6 +147,14 @@ export default function App() {
                 element={
                   <ModuleGate module="bookings">
                     <BookingsPage />
+                  </ModuleGate>
+                }
+              />
+              <Route
+                path="/rentals"
+                element={
+                  <ModuleGate module="rentals">
+                    <RentalsPage />
                   </ModuleGate>
                 }
               />
@@ -220,6 +240,8 @@ export default function App() {
               element={<InvoicePrintPage />}
             />
             <Route path="/bookings/:bookingId/letter/:type/print" element={<BookingLetterPrintPage />} />
+            <Route path="/rentals/agreements/:agreementId/print" element={<RentAgreementPrintPage />} />
+            <Route path="/payment-slip" element={<PaymentSlipPage />} />
             <Route path="/reports/print/general-ledger/:accountId" element={<GeneralLedgerPrintPage />} />
             <Route path="/reports/print/:type" element={<ReportPrintPage />} />
             <Route path="/refunds/:id/print" element={<RefundPrintPage />} />

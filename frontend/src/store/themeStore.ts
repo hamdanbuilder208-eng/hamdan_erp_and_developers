@@ -21,7 +21,7 @@ function applyThemeClass(theme: Theme) {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
-      theme: "light",
+      theme: "dark",
       toggleTheme: () => {
         const next: Theme = get().theme === "light" ? "dark" : "light";
         applyThemeClass(next);

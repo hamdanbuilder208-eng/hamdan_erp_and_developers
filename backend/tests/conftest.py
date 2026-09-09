@@ -88,6 +88,41 @@ def cash_account(db: Session) -> Account:
 
 
 @pytest.fixture()
+def land_property(db: Session):
+    from app.models.land_property import LandProperty, LandPropertyStatus, PropertyType, SizeUnit
+
+    obj = LandProperty(
+        property_ref_no="LND-001",
+        property_type=PropertyType.COMMERCIAL_SHOP,
+        area_location="Main Boulevard",
+        size_number=500,
+        size_unit=SizeUnit.SQ_FT,
+        status=LandPropertyStatus.AVAILABLE,
+    )
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+@pytest.fixture()
+def tenant(db: Session):
+    from app.crud import rental as rental_crud
+    from app.schemas.rental import TenantCreate
+
+    return rental_crud.create_tenant(db, TenantCreate(name="Test Tenant", mobile="03001234567"))
+
+
+@pytest.fixture()
+def rental_income_account(db: Session) -> Account:
+    obj = Account(code="4030", name="Rental Income", nature=AccountNature.REVENUE)
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+@pytest.fixture()
 def partner(db: Session):
     from app.crud import partner as partner_crud
     from app.schemas.partner import PartnerCreate

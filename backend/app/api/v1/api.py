@@ -13,6 +13,8 @@ from app.api.v1.endpoints import (
     expenses,
     inventory,
     land_properties,
+    leads,
+    rentals,
     partner_contributions,
     partner_drawings,
     partner_expenses,
@@ -164,6 +166,18 @@ api_router.include_router(
     prefix="/communications",
     tags=["WhatsApp / SMS"],
     dependencies=[Depends(require_module_access("communications"))],
+)
+api_router.include_router(
+    leads.router,
+    prefix="/leads",
+    tags=["Leads"],
+    dependencies=[Depends(require_module_access("leads"))],
+)
+api_router.include_router(
+    rentals.router,
+    prefix="/rentals",
+    tags=["Rentals"],
+    dependencies=[Depends(require_module_access("rentals"))],
 )
 api_router.include_router(
     admin.router,

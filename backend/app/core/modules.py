@@ -21,4 +21,6 @@ MODULE_KEYS: dict[str, str] = {
     "inventory": "Material & Inventory",
     "petty_cash": "Petty Cash",
     "communications": "WhatsApp / SMS",
+    "leads": "Leads",
+    "rentals": "Rentals",
 }

@@ -25,6 +25,7 @@ class LandPropertyStatus(str, enum.Enum):
     AVAILABLE = "Available"
     RESERVED = "Reserved"
     SOLD = "Sold"
+    RENTED = "Rented"
 
 
 class LandProperty(Base, TimestampMixin):

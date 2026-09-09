@@ -1,8 +1,8 @@
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
-from app.models.booking import BookingStatus, PaymentMode, ScheduleFrequency
+from app.models.booking import BookingStatus, ExtraChargesReason, PaymentMode, ScheduleFrequency
 from app.schemas.allottee import AllotteeOut
 from app.schemas.booking_agent import BookingAgentOut
 from app.schemas.project import ProjectOut
@@ -39,12 +39,20 @@ class BookingBase(BaseModel):
     booking_agent_id: int | None = None
     agent_commission_percent: float | None = None
     down_payment_amount: float = 0
+    extra_charges_amount: float = 0
+    extra_charges_reason: ExtraChargesReason | None = None
     no_of_installments: int = 0
     frequency: ScheduleFrequency = ScheduleFrequency.MONTHLY
 
 
 class BookingCreate(BookingBase):
-    pass
+    @model_validator(mode="after")
+    def validate_extra_charges(self):
+        if self.extra_charges_amount > 0 and not self.extra_charges_reason:
+            raise ValueError("Select what the extra charges are for")
+        if self.extra_charges_amount < 0:
+            raise ValueError("Extra charges cannot be negative")
+        return self
 
 
 class BookingStatusUpdate(BaseModel):

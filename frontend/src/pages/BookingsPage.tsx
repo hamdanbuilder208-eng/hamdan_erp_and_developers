@@ -17,6 +17,7 @@ import type {
   BookingAgent,
   BookingStatus,
   BookingTransfer,
+  ExtraChargesReason,
   Project,
   ScheduleFrequency,
   Unit,
@@ -24,6 +25,15 @@ import type {
 
 const statuses: BookingStatus[] = ["Booked", "Confirmed", "Possession Given", "Cancelled"];
 const frequencies: ScheduleFrequency[] = ["Monthly", "Quarterly", "Half-Yearly", "Yearly"];
+const extraChargesReasons: ExtraChargesReason[] = [
+  "East Facing",
+  "West Facing",
+  "Open",
+  "Road Facing",
+  "Water",
+  "Electricity",
+  "Other",
+];
 
 const emptyForm = {
   project_id: "",
@@ -31,6 +41,9 @@ const emptyForm = {
   allottee_id: "",
   discount: "",
   down_payment_amount: "",
+  hasExtraCharges: false,
+  extra_charges_amount: "",
+  extra_charges_reason: "" as ExtraChargesReason | "",
   no_of_installments: "",
   frequency: "Monthly" as ScheduleFrequency,
   remarks: "",
@@ -91,10 +104,13 @@ export default function BookingsPage() {
   });
 
   const selectedUnit = units?.find((u) => u.id === Number(form.unit_id));
-  const previewTotal = selectedUnit ? Number(selectedUnit.total_price) - (Number(form.discount) || 0) : 0;
+  const previewExtraCharges = form.hasExtraCharges ? Number(form.extra_charges_amount) || 0 : 0;
+  const previewTotal = selectedUnit
+    ? Number(selectedUnit.total_price) - (Number(form.discount) || 0) + previewExtraCharges
+    : 0;
   const previewDownPayment = Number(form.down_payment_amount) || 0;
   const previewInstallmentCount = Number(form.no_of_installments) || 0;
-  const previewRemaining = Math.max(previewTotal - previewDownPayment, 0);
+  const previewRemaining = Math.max(previewTotal - previewDownPayment - previewExtraCharges, 0);
   const previewPerInstallment =
     previewInstallmentCount > 0 ? previewRemaining / previewInstallmentCount : 0;
 
@@ -114,6 +130,8 @@ export default function BookingsPage() {
           status_date: todayIso(),
           discount: form.discount ? Number(form.discount) : 0,
           down_payment_amount: form.down_payment_amount ? Number(form.down_payment_amount) : 0,
+          extra_charges_amount: form.hasExtraCharges && form.extra_charges_amount ? Number(form.extra_charges_amount) : 0,
+          extra_charges_reason: form.hasExtraCharges && form.extra_charges_reason ? form.extra_charges_reason : null,
           no_of_installments: form.no_of_installments ? Number(form.no_of_installments) : 0,
           frequency: form.frequency,
           remarks: form.remarks || null,
@@ -205,6 +223,8 @@ export default function BookingsPage() {
     top?: number;
     bottom?: number;
   }>({ left: 0 });
+  const [customLetterOpen, setCustomLetterOpen] = React.useState(false);
+  const [customLetterForm, setCustomLetterForm] = React.useState({ subject: "", body: "" });
 
   const createTransfer = useMutation({
     mutationFn: async () =>
@@ -377,6 +397,58 @@ export default function BookingsPage() {
               value={form.discount}
               onChange={(e) => setForm({ ...form, discount: e.target.value })}
             />
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-navy-700 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={form.hasExtraCharges}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    hasExtraCharges: e.target.checked,
+                    extra_charges_amount: e.target.checked ? form.extra_charges_amount : "",
+                    extra_charges_reason: e.target.checked ? form.extra_charges_reason : "",
+                  })
+                }
+                className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+              />
+              Extra Charges
+            </label>
+
+            {form.hasExtraCharges && (
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="b_extra_amount">Amount</Label>
+                  <Input
+                    id="b_extra_amount"
+                    type="number"
+                    required
+                    value={form.extra_charges_amount}
+                    onChange={(e) => setForm({ ...form, extra_charges_amount: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="b_extra_reason">For</Label>
+                  <Select
+                    id="b_extra_reason"
+                    required
+                    value={form.extra_charges_reason}
+                    onChange={(e) =>
+                      setForm({ ...form, extra_charges_reason: e.target.value as ExtraChargesReason })
+                    }
+                  >
+                    <option value="">Select reason</option>
+                    {extraChargesReasons.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+            )}
           </div>
 
           {selectedUnit && (
@@ -784,6 +856,20 @@ export default function BookingsPage() {
                         >
                           Possession Letter
                         </button>
+                        <div className="my-1 border-t border-slate-100 dark:border-navy-800" />
+                        <button
+                          onClick={() => {
+                            setCustomLetterForm({
+                              subject: `Regarding Unit ${detailBooking.unit.unit_number}, Booking Ref ${detailBooking.booking_ref_no}`,
+                              body: `Dear ${detailBooking.allottee.name},\n\n`,
+                            });
+                            setCustomLetterOpen(true);
+                            setLetterMenuOpen(false);
+                          }}
+                          className="block w-full px-3 py-2 text-left text-sm text-navy-800 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-navy-800"
+                        >
+                          Custom Letter…
+                        </button>
                       </div>
                     </>
                   )}
@@ -862,6 +948,55 @@ export default function BookingsPage() {
             <Button type="submit" disabled={createTransfer.isPending}>
               Transfer
             </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ---- Custom Letter Modal ---- */}
+      <Modal
+        open={customLetterOpen}
+        onClose={() => setCustomLetterOpen(false)}
+        title="Custom Letter"
+        description="Write your own letter for this booking — it prints on the same company letterhead."
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!detailBooking) return;
+            localStorage.setItem(
+              `custom-letter-${detailBooking.id}`,
+              JSON.stringify(customLetterForm),
+            );
+            window.open(`/bookings/${detailBooking.id}/letter/custom/print`, "_blank");
+            setCustomLetterOpen(false);
+          }}
+          className="space-y-4"
+        >
+          <div>
+            <Label htmlFor="custom_letter_subject">Subject</Label>
+            <Input
+              id="custom_letter_subject"
+              required
+              value={customLetterForm.subject}
+              onChange={(e) => setCustomLetterForm({ ...customLetterForm, subject: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="custom_letter_body">Letter Body</Label>
+            <textarea
+              id="custom_letter_body"
+              required
+              rows={10}
+              value={customLetterForm.body}
+              onChange={(e) => setCustomLetterForm({ ...customLetterForm, body: e.target.value })}
+              className="flex w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-navy-950 shadow-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:border-brand-500 dark:border-navy-700 dark:bg-navy-800 dark:text-slate-100"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setCustomLetterOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit">Print Letter</Button>
           </div>
         </form>
       </Modal>

@@ -12,6 +12,7 @@ class UnitStatus(str, enum.Enum):
     SOLD = "Sold"
     CANCELLED = "Cancelled"
     ON_HOLD = "On-Hold"
+    RENTED = "Rented"
 
 
 class UnitCategory(Base, TimestampMixin):
