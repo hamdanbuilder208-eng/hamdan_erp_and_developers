@@ -12,6 +12,7 @@ const boxVariants = cva(
         Sold: "border-info-500 bg-info-100 text-info-700",
         "On-Hold": "border-onhold-500 bg-onhold-100 text-onhold-700",
         Cancelled: "border-danger-500 bg-danger-100 text-danger-600 line-through opacity-80",
+        Rented: "border-onhold-500 bg-onhold-100 text-onhold-700",
       } satisfies Record<UnitStatus, string>,
     },
   },
@@ -23,6 +24,7 @@ const legendItems: { status: UnitStatus; label: string }[] = [
   { status: "Sold", label: "Sold" },
   { status: "On-Hold", label: "On-Hold" },
   { status: "Cancelled", label: "Cancelled" },
+  { status: "Rented", label: "Rented" },
 ];
 
 function floorSortKey(f: ProjectFloor): number {
