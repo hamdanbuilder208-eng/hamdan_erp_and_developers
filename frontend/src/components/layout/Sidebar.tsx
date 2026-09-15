@@ -37,14 +37,14 @@ const activeModules: {
   moduleKey?: string | null;
 }[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true, moduleKey: null },
-  { to: "/projects", label: "Projects & Units", icon: Building2, moduleKey: "projects" },
-  { to: "/land-plots", label: "Land / Plots", icon: MapPin, moduleKey: "land_properties" },
-  { to: "/leads", label: "Leads", icon: UserPlus, moduleKey: "leads" },
   { to: "/customers", label: "Customers & Allottees", icon: Users, moduleKey: "allottees" },
   { to: "/bookings", label: "Unit Booking", icon: Layers, moduleKey: "bookings" },
-  { to: "/rentals", label: "Rentals", icon: Key, moduleKey: "rentals" },
   { to: "/receipts", label: "Receipts", icon: Receipt, moduleKey: "receipts" },
+  { to: "/land-plots", label: "Land / Plots", icon: MapPin, moduleKey: "land_properties" },
+  { to: "/rentals", label: "Rentals", icon: Key, moduleKey: "rentals" },
   { to: "/refunds", label: "Refunds", icon: Undo2, moduleKey: "refunds" },
+  { to: "/projects", label: "Projects & Units", icon: Building2, moduleKey: "projects" },
+  { to: "/leads", label: "Leads", icon: UserPlus, moduleKey: "leads" },
   { to: "/accounts", label: "Chart of Accounts", icon: Wallet, moduleKey: "accounts" },
   { to: "/vouchers", label: "Vouchers", icon: FileText, moduleKey: "vouchers" },
   { to: "/brokers", label: "Broker Commissions", icon: Handshake, moduleKey: "booking_agents" },

@@ -12,7 +12,7 @@ class CompanySettings(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    company_name: Mapped[str] = mapped_column(String(150), default="Hamdan Associates")
+    company_name: Mapped[str] = mapped_column(String(150), default="Hamdan Builders and Developers")
     accountant_name: Mapped[str | None] = mapped_column(String(150))
     accountant_designation: Mapped[str | None] = mapped_column(String(100))
     signature_image_url: Mapped[str | None] = mapped_column(String(255))

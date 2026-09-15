@@ -23,19 +23,22 @@ import { toast, apiErrorMessage } from "../../lib/toast";
 import { confirm } from "../../lib/confirm";
 import type {
   Partner,
+  PaymentTemplate,
   ProjectDetail,
   ProjectFloor,
   ProjectPartnerShare,
+  ScheduleFrequency,
   Unit,
   UnitCategory,
   UnitStatus,
 } from "../../types";
 
-type Tab = "overview" | "floors" | "units" | "partners";
+type Tab = "overview" | "floors" | "units" | "partners" | "payment-plan";
 type UnitView = "grid" | "table";
 
 function floorNumberLabel(floorNo: string): string | null {
   const lower = floorNo.toLowerCase();
+  if (lower.includes("lower ground")) return "LG";
   if (lower.includes("ground")) return "0";
   const match = lower.match(/\d+/);
   return match ? match[0] : null;
@@ -55,6 +58,24 @@ function ordinalFloorLabel(n: number): string {
       return `${n}th Floor`;
   }
 }
+
+const templateFrequencies: ScheduleFrequency[] = ["Monthly", "Quarterly", "Half-Yearly", "Yearly"];
+
+type TemplateLineForm = {
+  label: string;
+  frequency: ScheduleFrequency;
+  no_of_installments: string;
+  percent: string;
+  months_after_booking: string;
+};
+
+const emptyTemplateLine = (): TemplateLineForm => ({
+  label: "Monthly Installments",
+  frequency: "Monthly",
+  no_of_installments: "",
+  percent: "",
+  months_after_booking: "0",
+});
 
 export default function ProjectDetailPage() {
   const { id } = useParams();
@@ -83,6 +104,91 @@ export default function ProjectDetailPage() {
   const { data: categories } = useQuery({
     queryKey: ["unit-categories"],
     queryFn: async () => (await api.get<UnitCategory[]>("/unit-categories/")).data,
+  });
+
+  // Payment plan template — the project's standard schedule (booking %,
+  // then a milestone/installment breakdown of the rest), pulled in to
+  // prefill a new booking instead of typing the same plan out every time.
+  const { data: paymentTemplate } = useQuery({
+    queryKey: ["payment-template", projectId],
+    queryFn: async () =>
+      (await api.get<PaymentTemplate | null>(`/projects/${projectId}/payment-template`)).data,
+    enabled: !!projectId,
+  });
+
+  const [templateForm, setTemplateForm] = React.useState<{
+    booking_percent: string;
+    lines: TemplateLineForm[];
+  }>({ booking_percent: "", lines: [] });
+  const [templateError, setTemplateError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (paymentTemplate) {
+      setTemplateForm({
+        booking_percent: String(paymentTemplate.booking_percent),
+        lines: paymentTemplate.lines.map((l) => ({
+          label: l.label,
+          frequency: l.frequency,
+          no_of_installments: String(l.no_of_installments),
+          percent: String(l.percent),
+          months_after_booking: String(l.months_after_booking),
+        })),
+      });
+    }
+  }, [paymentTemplate]);
+
+  const addTemplateLine = () =>
+    setTemplateForm((f) => ({ ...f, lines: [...f.lines, emptyTemplateLine()] }));
+  const removeTemplateLine = (idx: number) =>
+    setTemplateForm((f) => ({ ...f, lines: f.lines.filter((_, i) => i !== idx) }));
+  const updateTemplateLine = (idx: number, patch: Partial<TemplateLineForm>) =>
+    setTemplateForm((f) => ({
+      ...f,
+      lines: f.lines.map((l, i) => (i === idx ? { ...l, ...patch } : l)),
+    }));
+
+  const templateTotalPercent =
+    (Number(templateForm.booking_percent) || 0) +
+    templateForm.lines.reduce((s, l) => s + (Number(l.percent) || 0), 0);
+
+  const saveTemplate = useMutation({
+    mutationFn: async () =>
+      (
+        await api.put<PaymentTemplate>(`/projects/${projectId}/payment-template`, {
+          booking_percent: Number(templateForm.booking_percent) || 0,
+          lines: templateForm.lines.map((l) => ({
+            label: l.label || "Installments",
+            frequency: l.frequency,
+            no_of_installments: Number(l.no_of_installments) || 0,
+            percent: Number(l.percent) || 0,
+            months_after_booking: Number(l.months_after_booking) || 0,
+          })),
+        })
+      ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["payment-template", projectId] });
+      setTemplateError(null);
+      toast.success("Payment plan template saved.");
+    },
+    onError: (err: unknown) =>
+      setTemplateError(apiErrorMessage(err, "Failed to save payment plan template.")),
+  });
+
+  // Total budget
+  const [budgetModalOpen, setBudgetModalOpen] = React.useState(false);
+  const [budgetDraft, setBudgetDraft] = React.useState("");
+  const updateBudget = useMutation({
+    mutationFn: async () =>
+      (
+        await api.put(`/projects/${projectId}`, {
+          total_budget: budgetDraft ? Number(budgetDraft) : null,
+        })
+      ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      setBudgetModalOpen(false);
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to update budget.")),
   });
 
   // Total floors (must be set before floors/units can be added)
@@ -204,10 +310,11 @@ export default function ProjectDetailPage() {
 
   // Bulk generate units — one floor can mix categories in a single go, e.g.
   // 2x "2 Bed" + 1x "3 Bed" on a 3-unit floor, via one row per category.
-  type GenRow = { unit_category_id: string; quantity: string };
-  const emptyGenRow: GenRow = { unit_category_id: "", quantity: "" };
-  const [genForm, setGenForm] = React.useState<{ floor_id: string; rows: GenRow[] }>({
+  type GenRow = { unit_category_id: string; quantity: string; base_price: string };
+  const emptyGenRow: GenRow = { unit_category_id: "", quantity: "", base_price: "" };
+  const [genForm, setGenForm] = React.useState<{ floor_id: string; prefix: string; rows: GenRow[] }>({
     floor_id: "",
+    prefix: "",
     rows: [emptyGenRow],
   });
   const genFloor = project?.floors.find((f) => f.id === Number(genForm.floor_id));
@@ -219,7 +326,14 @@ export default function ProjectDetailPage() {
 
   React.useEffect(() => {
     if (genFloor) {
-      setGenForm((f) => ({ ...f, rows: [{ unit_category_id: "", quantity: String(genFloorRemaining) }] }));
+      const floorLabel = floorNumberLabel(genFloor.floor_no);
+      const joined = [genFloor.block, floorLabel].filter(Boolean).join("-");
+      const suggestedPrefix = joined ? `${joined}-` : "";
+      setGenForm((f) => ({
+        ...f,
+        prefix: suggestedPrefix,
+        rows: [{ unit_category_id: "", quantity: String(genFloorRemaining), base_price: "" }],
+      }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [genForm.floor_id]);
@@ -230,7 +344,10 @@ export default function ProjectDetailPage() {
   const addGenRow = () =>
     setGenForm((f) => ({
       ...f,
-      rows: [...f.rows, { unit_category_id: "", quantity: String(Math.max(genFloorRemaining - genRowsTotal, 0)) }],
+      rows: [
+        ...f.rows,
+        { unit_category_id: "", quantity: String(Math.max(genFloorRemaining - genRowsTotal, 0)), base_price: "" },
+      ],
     }));
 
   const removeGenRow = (index: number) =>
@@ -238,9 +355,7 @@ export default function ProjectDetailPage() {
 
   const generateUnits = useMutation({
     mutationFn: async () => {
-      const floor = project?.floors.find((f) => f.id === Number(genForm.floor_id));
-      const floorLabel = floor ? floorNumberLabel(floor.floor_no) : null;
-      const prefix = [floor?.block, floorLabel].filter(Boolean).join("-");
+      const prefix = genForm.prefix.trim();
       const results: Unit[] = [];
       // Sequential, not parallel — each batch's numbering picks up from
       // however many units the previous batch just created on this floor.
@@ -252,8 +367,8 @@ export default function ProjectDetailPage() {
             floor_id: Number(genForm.floor_id),
             unit_category_id: row.unit_category_id ? Number(row.unit_category_id) : null,
             quantity,
-            prefix: prefix ? `${prefix}-` : "",
-            base_price: 0,
+            prefix,
+            base_price: Number(row.base_price) || 0,
           })
         ).data;
         results.push(...created);
@@ -263,7 +378,7 @@ export default function ProjectDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["units", projectId] });
       setGenerateModalOpen(false);
-      setGenForm({ floor_id: "", rows: [emptyGenRow] });
+      setGenForm({ floor_id: "", prefix: "", rows: [emptyGenRow] });
     },
     onError: (err: unknown) => {
       toast.error(apiErrorMessage(err, "Failed to generate units."));
@@ -275,6 +390,28 @@ export default function ProjectDetailPage() {
     mutationFn: async ({ unitId, status }: { unitId: number; status: UnitStatus }) =>
       api.put(`/units/${unitId}`, { status }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["units", projectId] }),
+  });
+
+  const [unitNumberDraft, setUnitNumberDraft] = React.useState("");
+  const updateUnitNumber = useMutation({
+    mutationFn: async ({ unitId, unit_number }: { unitId: number; unit_number: string }) =>
+      api.put(`/units/${unitId}`, { unit_number }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["units", projectId] });
+      toast.success("Unit number updated.");
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to update unit number.")),
+  });
+
+  const [basePriceDraft, setBasePriceDraft] = React.useState("");
+  const updateUnitPrice = useMutation({
+    mutationFn: async ({ unitId, base_price }: { unitId: number; base_price: number }) =>
+      api.put(`/units/${unitId}`, { base_price }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["units", projectId] });
+      toast.success("Unit price updated.");
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to update unit price.")),
   });
 
   const deleteUnit = useMutation({
@@ -340,6 +477,13 @@ export default function ProjectDetailPage() {
     ? units?.find((u) => u.id === selectedUnit.id) ?? selectedUnit
     : null;
 
+  React.useEffect(() => {
+    setUnitNumberDraft(currentSelectedUnit?.unit_number ?? "");
+  }, [currentSelectedUnit?.id, currentSelectedUnit?.unit_number]);
+
+  React.useEffect(() => {
+    setBasePriceDraft(currentSelectedUnit ? String(currentSelectedUnit.base_price) : "");
+  }, [currentSelectedUnit?.id, currentSelectedUnit?.base_price]);
 
   if (!project) {
     return <div className="text-sm text-slate-400 dark:text-slate-500">Loading project...</div>;
@@ -369,7 +513,19 @@ export default function ProjectDetailPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <CardContent>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Total Budget</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Total Budget</p>
+              <button
+                onClick={() => {
+                  setBudgetDraft(project.total_budget ? String(project.total_budget) : "");
+                  setBudgetModalOpen(true);
+                }}
+                className="rounded-md p-1 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
+                title="Edit total budget"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </div>
             <p className="mt-1 text-lg font-semibold text-navy-950 dark:text-white">
               {project.total_budget ? `PKR ${Number(project.total_budget).toLocaleString()}` : "—"}
             </p>
@@ -412,7 +568,7 @@ export default function ProjectDetailPage() {
       </div>
 
       <div className="flex gap-1 border-b border-slate-200 dark:border-navy-700">
-        {(["overview", "floors", "units", "partners"] as Tab[]).map((t) => (
+        {(["overview", "floors", "units", "partners", "payment-plan"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -422,7 +578,7 @@ export default function ProjectDetailPage() {
                 : "text-slate-500 dark:text-slate-400 hover:text-navy-800 dark:text-slate-200"
             }`}
           >
-            {t === "floors" ? "Floors / Blocks" : t}
+            {t === "floors" ? "Floors / Blocks" : t === "payment-plan" ? "Payment Plan" : t}
           </button>
         ))}
       </div>
@@ -535,7 +691,7 @@ export default function ProjectDetailPage() {
               <Button
                 size="sm"
                 onClick={() => {
-                  setGenForm({ floor_id: "", rows: [emptyGenRow] });
+                  setGenForm({ floor_id: "", prefix: "", rows: [emptyGenRow] });
                   setGenerateModalOpen(true);
                 }}
               >
@@ -691,6 +847,172 @@ export default function ProjectDetailPage() {
         </Card>
       )}
 
+      {tab === "payment-plan" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Standard Payment Plan</CardTitle>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Defined as percentages of a unit's price, so the same plan applies whichever unit gets
+              booked — pulled in via "Use Standard Schedule" on New Booking.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {templateError && (
+              <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">{templateError}</p>
+            )}
+
+            <div className="w-48">
+              <Label htmlFor="tpl_booking_percent">Booking %</Label>
+              <Input
+                id="tpl_booking_percent"
+                type="number"
+                step="0.01"
+                value={templateForm.booking_percent}
+                onChange={(e) => setTemplateForm({ ...templateForm, booking_percent: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              {templateForm.lines.map((line, idx) => (
+                <div key={idx} className="rounded-lg border border-slate-200 p-3 dark:border-navy-700">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      Line {idx + 1}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeTemplateLine(idx)}
+                      className="rounded-md p-1 text-slate-400 hover:bg-danger-50 hover:text-danger-500"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor={`tpl_label_${idx}`}>Label</Label>
+                      <Input
+                        id={`tpl_label_${idx}`}
+                        value={line.label}
+                        onChange={(e) => updateTemplateLine(idx, { label: e.target.value })}
+                        placeholder="e.g. Allocation, Monthly Installments"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`tpl_frequency_${idx}`}>Frequency</Label>
+                      <Select
+                        id={`tpl_frequency_${idx}`}
+                        value={line.frequency}
+                        onChange={(e) =>
+                          updateTemplateLine(idx, { frequency: e.target.value as ScheduleFrequency })
+                        }
+                      >
+                        {templateFrequencies.map((f) => (
+                          <option key={f} value={f}>
+                            {f}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-3">
+                    <div>
+                      <Label htmlFor={`tpl_count_${idx}`}>No. of Installments</Label>
+                      <Input
+                        id={`tpl_count_${idx}`}
+                        type="number"
+                        value={line.no_of_installments}
+                        onChange={(e) => updateTemplateLine(idx, { no_of_installments: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`tpl_percent_${idx}`}>Percent</Label>
+                      <Input
+                        id={`tpl_percent_${idx}`}
+                        type="number"
+                        step="0.01"
+                        value={line.percent}
+                        onChange={(e) => updateTemplateLine(idx, { percent: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`tpl_months_${idx}`}>Starts (months after booking)</Label>
+                      <Input
+                        id={`tpl_months_${idx}`}
+                        type="number"
+                        value={line.months_after_booking}
+                        onChange={(e) => updateTemplateLine(idx, { months_after_booking: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  {Number(line.no_of_installments) === 1 && (
+                    <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+                      A single installment works as a one-off milestone payment (e.g. "Allocation").
+                    </p>
+                  )}
+                </div>
+              ))}
+              <Button type="button" variant="secondary" size="sm" onClick={addTemplateLine}>
+                <Plus className="h-3.5 w-3.5" />
+                Add Line
+              </Button>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg bg-brand-50 px-4 py-2.5 text-sm text-brand-800">
+              <span>
+                Total: <span className="font-semibold">{templateTotalPercent.toFixed(2)}%</span>
+              </span>
+              {templateTotalPercent !== 100 && (
+                <span className="font-semibold text-danger-700">Must add up to 100%</span>
+              )}
+              <Button
+                size="sm"
+                disabled={saveTemplate.isPending || templateTotalPercent !== 100}
+                onClick={() => saveTemplate.mutate()}
+              >
+                Save Payment Plan
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Edit Total Budget Modal */}
+      <Modal
+        open={budgetModalOpen}
+        onClose={() => setBudgetModalOpen(false)}
+        title="Edit Total Budget"
+        description="Update the overall budget for this project."
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            updateBudget.mutate();
+          }}
+          className="space-y-4"
+        >
+          <div>
+            <Label htmlFor="project_budget">Total Budget (PKR)</Label>
+            <Input
+              id="project_budget"
+              type="number"
+              step="0.01"
+              min="0"
+              value={budgetDraft}
+              onChange={(e) => setBudgetDraft(e.target.value)}
+              placeholder="Leave blank to clear budget"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setBudgetModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={updateBudget.isPending}>
+              Save Changes
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Add Partner Share Modal */}
       <Modal
         open={shareModalOpen}
@@ -826,6 +1148,9 @@ export default function ProjectDetailPage() {
             >
               <option value="">
                 {Number(totalFloorsDraft) ? "Select floor" : "Enter total floors first"}
+              </option>
+              <option value="Lower Ground" disabled={takenFloorNos.has("Lower Ground")}>
+                Lower Ground Floor{takenFloorNos.has("Lower Ground") ? " (already added)" : ""}
               </option>
               <option value="Ground" disabled={takenFloorNos.has("Ground")}>
                 Ground Floor{takenFloorNos.has("Ground") ? " (already added)" : ""}
@@ -1008,6 +1333,21 @@ export default function ProjectDetailPage() {
             </Select>
           </div>
 
+          <div>
+            <Label htmlFor="gen_prefix">Unit Number Prefix</Label>
+            <Input
+              id="gen_prefix"
+              disabled={!genForm.floor_id}
+              value={genForm.prefix}
+              onChange={(e) => setGenForm({ ...genForm, prefix: e.target.value })}
+              placeholder="e.g. A-10 for A-101, A-102..."
+            />
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              Generated unit numbers will be this prefix followed by a running number — edit it to get
+              whatever format you want (e.g. "A-10" → A-101, A-102...).
+            </p>
+          </div>
+
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="!mb-0">Categories &amp; Quantities</Label>
@@ -1029,7 +1369,17 @@ export default function ProjectDetailPage() {
                   aria-label="Unit category"
                   disabled={!genForm.floor_id}
                   value={row.unit_category_id}
-                  onChange={(e) => updateGenRow(i, { unit_category_id: e.target.value })}
+                  onChange={(e) => {
+                    const category = categories?.find((c) => c.id === Number(e.target.value));
+                    updateGenRow(i, {
+                      unit_category_id: e.target.value,
+                      // Suggest the category's price as a starting point — still
+                      // editable per project/floor, only pre-filled when blank so
+                      // it doesn't clobber a price the user already typed in.
+                      base_price:
+                        row.base_price || (category?.base_price ? String(category.base_price) : ""),
+                    });
+                  }}
                   className="flex-1"
                 >
                   <option value="">— None —</option>
@@ -1047,7 +1397,18 @@ export default function ProjectDetailPage() {
                   disabled={!genForm.floor_id}
                   value={row.quantity}
                   onChange={(e) => updateGenRow(i, { quantity: e.target.value })}
-                  className="w-24"
+                  className="w-20"
+                />
+                <Input
+                  aria-label="Price for this project"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Price"
+                  disabled={!genForm.floor_id}
+                  value={row.base_price}
+                  onChange={(e) => updateGenRow(i, { base_price: e.target.value })}
+                  className="w-32"
                 />
                 <button
                   type="button"
@@ -1075,8 +1436,9 @@ export default function ProjectDetailPage() {
             <Layers className="h-3.5 w-3.5" />
             {genForm.floor_id
               ? `Mix categories on this floor by giving each its own row — e.g. 2x "2 Bed" + ` +
-                `1x "3 Bed" — they're numbered on in the order listed here.`
-              : "Units are created using each category's price, numbered from wherever this floor already has."}
+                `1x "3 Bed" — they're numbered on in the order listed here. Price is pre-filled from ` +
+                `the category but editable per project — the category itself stays shared/unchanged.`
+              : "Units are created using each row's price, numbered from wherever this floor already has."}
           </p>
 
           <div className="flex justify-end gap-2 pt-2">
@@ -1107,6 +1469,32 @@ export default function ProjectDetailPage() {
       >
         {currentSelectedUnit && (
           <div className="space-y-4">
+            <div>
+              <Label htmlFor="unit_number_edit">Unit Number</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="unit_number_edit"
+                  value={unitNumberDraft}
+                  onChange={(e) => setUnitNumberDraft(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={
+                    updateUnitNumber.isPending ||
+                    !unitNumberDraft.trim() ||
+                    unitNumberDraft === currentSelectedUnit.unit_number
+                  }
+                  onClick={() =>
+                    updateUnitNumber.mutate({ unitId: currentSelectedUnit.id, unit_number: unitNumberDraft.trim() })
+                  }
+                >
+                  Save
+                </Button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">Category</p>
@@ -1121,10 +1509,38 @@ export default function ProjectDetailPage() {
                 </div>
               </div>
               <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Base Price</p>
-                <p className="mt-0.5 text-navy-900 dark:text-slate-100">
-                  PKR {Number(currentSelectedUnit.base_price).toLocaleString()}
-                </p>
+                <Label htmlFor="unit_base_price" className="mb-0.5">
+                  Base Price
+                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    id="unit_base_price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={basePriceDraft}
+                    onChange={(e) => setBasePriceDraft(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={
+                      updateUnitPrice.isPending ||
+                      !basePriceDraft.trim() ||
+                      Number(basePriceDraft) === Number(currentSelectedUnit.base_price)
+                    }
+                    onClick={() =>
+                      updateUnitPrice.mutate({
+                        unitId: currentSelectedUnit.id,
+                        base_price: Number(basePriceDraft),
+                      })
+                    }
+                  >
+                    Save
+                  </Button>
+                </div>
               </div>
               <div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">Extra Charges</p>

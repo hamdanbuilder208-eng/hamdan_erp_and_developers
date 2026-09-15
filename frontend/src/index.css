@@ -53,6 +53,11 @@
   --color-onhold-100: #f6d3f9;
   --color-onhold-500: #c026d3;
   --color-onhold-700: #a21caf;
+
+  --color-rented-50: #f0fdfa;
+  --color-rented-100: #b7f2e6;
+  --color-rented-500: #0d9488;
+  --color-rented-700: #0f766e;
 }
 
 .dark {
@@ -78,6 +83,10 @@
   --color-onhold-50: rgba(192, 38, 212, 0.14);
   --color-onhold-100: rgba(192, 38, 212, 0.24);
   --color-onhold-700: #e879f9;
+
+  --color-rented-50: rgba(13, 148, 136, 0.14);
+  --color-rented-100: rgba(13, 148, 136, 0.24);
+  --color-rented-700: #2dd4bf;
 
   /* Gold/bronze accent in dark mode, matching the login screens — 400 stays
      the bright highlight color (icons, small text), 600/700 are the deeper

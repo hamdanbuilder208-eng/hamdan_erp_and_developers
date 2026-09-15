@@ -12,6 +12,7 @@ from app.schemas.unit import UnitOut
 class PaymentScheduleLineOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    installment_plan_id: int | None
     installment_no: int
     label: str
     due_date: date
@@ -28,6 +29,55 @@ class PaymentScheduleLineUpdate(BaseModel):
     discount: float | None = None
 
 
+class InstallmentPlanCreate(BaseModel):
+    label: str = "Installments"
+    frequency: ScheduleFrequency = ScheduleFrequency.MONTHLY
+    no_of_installments: int
+    total_amount: float
+    start_date: date
+
+    @model_validator(mode="after")
+    def validate_plan(self):
+        if self.no_of_installments <= 0:
+            raise ValueError("Number of installments must be at least 1")
+        if self.total_amount <= 0:
+            raise ValueError("Installment plan amount must be greater than zero")
+        return self
+
+
+class InstallmentPlanOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    label: str
+    frequency: ScheduleFrequency
+    no_of_installments: int
+    total_amount: float
+    start_date: date
+
+
+class ExtraChargeCreate(BaseModel):
+    reason: ExtraChargesReason
+    amount: float
+    charge_date: date
+    narration: str | None = None
+
+    @model_validator(mode="after")
+    def validate_amount(self):
+        if self.amount <= 0:
+            raise ValueError("Extra charge amount must be greater than zero")
+        return self
+
+
+class ExtraChargeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    schedule_line_id: int
+    reason: ExtraChargesReason
+    amount: float
+    charge_date: date
+    narration: str | None
+
+
 class BookingBase(BaseModel):
     booking_date: date
     project_id: int
@@ -39,20 +89,11 @@ class BookingBase(BaseModel):
     booking_agent_id: int | None = None
     agent_commission_percent: float | None = None
     down_payment_amount: float = 0
-    extra_charges_amount: float = 0
-    extra_charges_reason: ExtraChargesReason | None = None
-    no_of_installments: int = 0
-    frequency: ScheduleFrequency = ScheduleFrequency.MONTHLY
 
 
 class BookingCreate(BookingBase):
-    @model_validator(mode="after")
-    def validate_extra_charges(self):
-        if self.extra_charges_amount > 0 and not self.extra_charges_reason:
-            raise ValueError("Select what the extra charges are for")
-        if self.extra_charges_amount < 0:
-            raise ValueError("Extra charges cannot be negative")
-        return self
+    installment_plans: list[InstallmentPlanCreate] = []
+    extra_charges: list[ExtraChargeCreate] = []
 
 
 class BookingStatusUpdate(BaseModel):
@@ -75,6 +116,8 @@ class BookingOut(BookingBase):
     unit: UnitOut
     allottee: AllotteeOut
     booking_agent: BookingAgentOut | None = None
+    installment_plans: list[InstallmentPlanOut]
+    extra_charges: list[ExtraChargeOut]
     schedule_lines: list[PaymentScheduleLineOut]
 
 

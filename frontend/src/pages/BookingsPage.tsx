@@ -6,7 +6,7 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
-import { BookingStatusBadge } from "../components/ui/Badge";
+import { Badge, BookingStatusBadge } from "../components/ui/Badge";
 import { SendMessageModal } from "../components/communication/SendMessageModal";
 import { TableRowsSkeleton } from "../components/ui/Skeleton";
 import { toast, apiErrorMessage } from "../lib/toast";
@@ -18,7 +18,9 @@ import type {
   BookingStatus,
   BookingTransfer,
   ExtraChargesReason,
+  PaymentTemplate,
   Project,
+  Refund,
   ScheduleFrequency,
   Unit,
 } from "../types";
@@ -30,10 +32,40 @@ const extraChargesReasons: ExtraChargesReason[] = [
   "West Facing",
   "Open",
   "Road Facing",
+  "Corner",
   "Water",
   "Electricity",
+  "Documents",
   "Other",
 ];
+
+type InstallmentPlanForm = {
+  label: string;
+  frequency: ScheduleFrequency;
+  no_of_installments: string;
+  total_amount: string;
+  start_date: string;
+};
+
+const emptyInstallmentPlan = (): InstallmentPlanForm => ({
+  label: "Monthly Installments",
+  frequency: "Monthly",
+  no_of_installments: "",
+  total_amount: "",
+  start_date: "",
+});
+
+type ExtraChargeForm = {
+  reason: ExtraChargesReason;
+  amount: string;
+  narration: string;
+};
+
+const emptyExtraCharge = (): ExtraChargeForm => ({
+  reason: "Road Facing",
+  amount: "",
+  narration: "",
+});
 
 const emptyForm = {
   project_id: "",
@@ -41,11 +73,8 @@ const emptyForm = {
   allottee_id: "",
   discount: "",
   down_payment_amount: "",
-  hasExtraCharges: false,
-  extra_charges_amount: "",
-  extra_charges_reason: "" as ExtraChargesReason | "",
-  no_of_installments: "",
-  frequency: "Monthly" as ScheduleFrequency,
+  extraCharges: [] as ExtraChargeForm[],
+  installmentPlans: [] as InstallmentPlanForm[],
   remarks: "",
   booking_agent_id: "",
   agent_commission_percent: "",
@@ -59,14 +88,21 @@ export default function BookingsPage() {
   const [detailBooking, setDetailBooking] = React.useState<Booking | null>(null);
   const [messageOpen, setMessageOpen] = React.useState(false);
   const [filterStatus, setFilterStatus] = React.useState("");
+  const [filterProject, setFilterProject] = React.useState("");
   const [form, setForm] = React.useState(emptyForm);
   const [formError, setFormError] = React.useState<string | null>(null);
 
   const { data: bookings, isLoading } = useQuery({
-    queryKey: ["bookings", filterStatus],
+    queryKey: ["bookings", filterStatus, filterProject],
     queryFn: async () =>
-      (await api.get<Booking[]>("/bookings/", { params: { status_filter: filterStatus || undefined } }))
-        .data,
+      (
+        await api.get<Booking[]>("/bookings/", {
+          params: {
+            status_filter: filterStatus || undefined,
+            project_id: filterProject ? Number(filterProject) : undefined,
+          },
+        })
+      ).data,
   });
 
   const { data: projects } = useQuery({
@@ -86,6 +122,13 @@ export default function BookingsPage() {
   });
   const availableUnitCount = units?.filter((u) => u.status === "Available").length ?? 0;
 
+  const { data: paymentTemplate } = useQuery({
+    queryKey: ["payment-template", form.project_id],
+    queryFn: async () =>
+      (await api.get<PaymentTemplate | null>(`/projects/${form.project_id}/payment-template`)).data,
+    enabled: !!form.project_id,
+  });
+
   const { data: allottees } = useQuery({
     queryKey: ["allottees"],
     queryFn: async () => (await api.get<Allottee[]>("/allottees/")).data,
@@ -103,21 +146,77 @@ export default function BookingsPage() {
     enabled: !!detailBooking,
   });
 
+  // Cancelled bookings that had payments made get an automatic refund
+  // record (see the backend's cancel flow) — surface it here so it's clear
+  // what the customer paid and whether that's been paid back yet.
+  const { data: bookingRefunds } = useQuery({
+    queryKey: ["refunds", "booking", detailBooking?.id],
+    queryFn: async () =>
+      (await api.get<Refund[]>("/refunds/", { params: { booking_id: detailBooking!.id } })).data,
+    enabled: !!detailBooking && detailBooking.status === "Cancelled",
+  });
+  const bookingRefund = bookingRefunds?.[0];
+
   const selectedUnit = units?.find((u) => u.id === Number(form.unit_id));
-  const previewExtraCharges = form.hasExtraCharges ? Number(form.extra_charges_amount) || 0 : 0;
+  const previewExtraCharges = form.extraCharges.reduce((s, c) => s + (Number(c.amount) || 0), 0);
   const previewTotal = selectedUnit
     ? Number(selectedUnit.total_price) - (Number(form.discount) || 0) + previewExtraCharges
     : 0;
   const previewDownPayment = Number(form.down_payment_amount) || 0;
-  const previewInstallmentCount = Number(form.no_of_installments) || 0;
-  const previewRemaining = Math.max(previewTotal - previewDownPayment - previewExtraCharges, 0);
-  const previewPerInstallment =
-    previewInstallmentCount > 0 ? previewRemaining / previewInstallmentCount : 0;
+  const previewPlansTotal = form.installmentPlans.reduce((s, p) => s + (Number(p.total_amount) || 0), 0);
+  const previewRemaining = previewTotal - previewDownPayment - previewExtraCharges;
+  const previewBalance = Math.round((previewRemaining - previewPlansTotal) * 100) / 100;
 
   const resetForm = () => {
     setForm(emptyForm);
     setFormError(null);
   };
+
+  const addInstallmentPlan = () =>
+    setForm({ ...form, installmentPlans: [...form.installmentPlans, emptyInstallmentPlan()] });
+  const removeInstallmentPlan = (idx: number) =>
+    setForm({ ...form, installmentPlans: form.installmentPlans.filter((_, i) => i !== idx) });
+  const updateInstallmentPlan = (idx: number, patch: Partial<InstallmentPlanForm>) =>
+    setForm({
+      ...form,
+      installmentPlans: form.installmentPlans.map((p, i) => (i === idx ? { ...p, ...patch } : p)),
+    });
+
+  const applyStandardSchedule = () => {
+    if (!paymentTemplate || !selectedUnit) return;
+    const basePrice = Number(selectedUnit.total_price) - (Number(form.discount) || 0);
+    const downPayment = Math.round(((basePrice * Number(paymentTemplate.booking_percent)) / 100) * 100) / 100;
+    const remaining = basePrice - downPayment;
+
+    let allocated = 0;
+    const plans = paymentTemplate.lines.map((line, idx) => {
+      let amount = Math.round(((basePrice * Number(line.percent)) / 100) * 100) / 100;
+      if (idx === paymentTemplate.lines.length - 1) {
+        amount = Math.round((remaining - allocated) * 100) / 100;
+      }
+      allocated += amount;
+      const startDate = new Date();
+      startDate.setMonth(startDate.getMonth() + line.months_after_booking);
+      return {
+        label: line.label,
+        frequency: line.frequency,
+        no_of_installments: String(line.no_of_installments),
+        total_amount: String(amount),
+        start_date: startDate.toISOString().slice(0, 10),
+      };
+    });
+
+    setForm({ ...form, down_payment_amount: String(downPayment), installmentPlans: plans });
+  };
+
+  const addExtraCharge = () => setForm({ ...form, extraCharges: [...form.extraCharges, emptyExtraCharge()] });
+  const removeExtraCharge = (idx: number) =>
+    setForm({ ...form, extraCharges: form.extraCharges.filter((_, i) => i !== idx) });
+  const updateExtraCharge = (idx: number, patch: Partial<ExtraChargeForm>) =>
+    setForm({
+      ...form,
+      extraCharges: form.extraCharges.map((c, i) => (i === idx ? { ...c, ...patch } : c)),
+    });
 
   const createBooking = useMutation({
     mutationFn: async () =>
@@ -130,10 +229,19 @@ export default function BookingsPage() {
           status_date: todayIso(),
           discount: form.discount ? Number(form.discount) : 0,
           down_payment_amount: form.down_payment_amount ? Number(form.down_payment_amount) : 0,
-          extra_charges_amount: form.hasExtraCharges && form.extra_charges_amount ? Number(form.extra_charges_amount) : 0,
-          extra_charges_reason: form.hasExtraCharges && form.extra_charges_reason ? form.extra_charges_reason : null,
-          no_of_installments: form.no_of_installments ? Number(form.no_of_installments) : 0,
-          frequency: form.frequency,
+          extra_charges: form.extraCharges.map((c) => ({
+            reason: c.reason,
+            amount: Number(c.amount) || 0,
+            charge_date: todayIso(),
+            narration: c.narration || null,
+          })),
+          installment_plans: form.installmentPlans.map((p) => ({
+            label: p.label || "Installments",
+            frequency: p.frequency,
+            no_of_installments: Number(p.no_of_installments) || 0,
+            total_amount: Number(p.total_amount) || 0,
+            start_date: p.start_date,
+          })),
           remarks: form.remarks || null,
           booking_agent_id: form.booking_agent_id ? Number(form.booking_agent_id) : null,
           agent_commission_percent: form.agent_commission_percent
@@ -196,6 +304,7 @@ export default function BookingsPage() {
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ["bookings"] });
       queryClient.invalidateQueries({ queryKey: ["units"] });
+      queryClient.invalidateQueries({ queryKey: ["refunds"] });
       setDetailBooking(updated);
     },
   });
@@ -210,6 +319,42 @@ export default function BookingsPage() {
     onError: (err: unknown) => {
       toast.error(apiErrorMessage(err, "Failed to delete booking."));
     },
+  });
+
+  // ---- Extra charges added after booking (e.g. utilities/documents, once known) ----
+  const [extraChargeModalOpen, setExtraChargeModalOpen] = React.useState(false);
+  const [extraChargeForm, setExtraChargeForm] = React.useState(emptyExtraCharge());
+  const [extraChargeError, setExtraChargeError] = React.useState<string | null>(null);
+
+  const addExtraChargeToBooking = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post<Booking>(`/bookings/${detailBooking!.id}/extra-charges`, {
+          reason: extraChargeForm.reason,
+          amount: Number(extraChargeForm.amount) || 0,
+          charge_date: todayIso(),
+          narration: extraChargeForm.narration || null,
+        })
+      ).data,
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      setDetailBooking(updated);
+      setExtraChargeModalOpen(false);
+      setExtraChargeForm(emptyExtraCharge());
+      setExtraChargeError(null);
+      toast.success("Extra charge added.");
+    },
+    onError: (err: unknown) => setExtraChargeError(apiErrorMessage(err, "Failed to add extra charge.")),
+  });
+
+  const deleteExtraCharge = useMutation({
+    mutationFn: async (chargeId: number) => api.delete(`/bookings/extra-charges/${chargeId}`),
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      const refreshed = (await api.get<Booking>(`/bookings/${detailBooking!.id}`)).data;
+      setDetailBooking(refreshed);
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to delete extra charge.")),
   });
 
   // ---- Transfer ----
@@ -262,14 +407,24 @@ export default function BookingsPage() {
         </Button>
       </div>
 
-      <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="w-48">
-        <option value="">All Statuses</option>
-        {statuses.map((s) => (
-          <option key={s} value={s}>
-            {s}
-          </option>
-        ))}
-      </Select>
+      <div className="flex flex-wrap gap-3">
+        <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="w-48">
+          <option value="">All Statuses</option>
+          {statuses.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </Select>
+        <Select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} className="w-48">
+          <option value="">All Projects</option>
+          {projects?.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.project_name}
+            </option>
+          ))}
+        </Select>
+      </div>
 
       <Card className="overflow-hidden">
         <table className="w-full text-left text-sm">
@@ -400,55 +555,50 @@ export default function BookingsPage() {
           </div>
 
           <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-navy-700 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={form.hasExtraCharges}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    hasExtraCharges: e.target.checked,
-                    extra_charges_amount: e.target.checked ? form.extra_charges_amount : "",
-                    extra_charges_reason: e.target.checked ? form.extra_charges_reason : "",
-                  })
-                }
-                className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-              />
-              Extra Charges
-            </label>
-
-            {form.hasExtraCharges && (
-              <div className="mt-2 grid grid-cols-2 gap-3">
-                <div>
-                  <Label htmlFor="b_extra_amount">Amount</Label>
-                  <Input
-                    id="b_extra_amount"
-                    type="number"
-                    required
-                    value={form.extra_charges_amount}
-                    onChange={(e) => setForm({ ...form, extra_charges_amount: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="b_extra_reason">For</Label>
-                  <Select
-                    id="b_extra_reason"
-                    required
-                    value={form.extra_charges_reason}
-                    onChange={(e) =>
-                      setForm({ ...form, extra_charges_reason: e.target.value as ExtraChargesReason })
-                    }
+            <Label>Extra Charges (optional)</Label>
+            <p className="mb-2 text-xs text-slate-400 dark:text-slate-500">
+              Add one line per charge — a flat can be corner-facing AND have separate utilities/documents
+              charges. Utilities and documents charges are usually only known later — add those from the
+              booking's detail view once the project reaches that stage instead of guessing now.
+            </p>
+            <div className="space-y-2">
+              {form.extraCharges.map((charge, idx) => (
+                <div key={idx} className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Select
+                      value={charge.reason}
+                      onChange={(e) => updateExtraCharge(idx, { reason: e.target.value as ExtraChargesReason })}
+                    >
+                      {extraChargesReasons.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div className="w-32">
+                    <Input
+                      type="number"
+                      required
+                      placeholder="Amount"
+                      value={charge.amount}
+                      onChange={(e) => updateExtraCharge(idx, { amount: e.target.value })}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeExtraCharge(idx)}
+                    className="mb-2 rounded-md p-1.5 text-slate-400 hover:bg-danger-50 hover:text-danger-500"
                   >
-                    <option value="">Select reason</option>
-                    {extraChargesReasons.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </Select>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-              </div>
-            )}
+              ))}
+              <Button type="button" variant="secondary" size="sm" onClick={addExtraCharge}>
+                <Plus className="h-3.5 w-3.5" />
+                Add Extra Charge
+              </Button>
+            </div>
           </div>
 
           {selectedUnit && (
@@ -501,59 +651,139 @@ export default function BookingsPage() {
           </div>
 
           <div className="border-t border-slate-100 dark:border-navy-800 pt-4">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-              Payment Plan
-            </p>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label htmlFor="b_down">Down Payment</Label>
-                <Input
-                  id="b_down"
-                  type="number"
-                  value={form.down_payment_amount}
-                  onChange={(e) => setForm({ ...form, down_payment_amount: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="b_installments">No. of Installments</Label>
-                <Input
-                  id="b_installments"
-                  type="number"
-                  value={form.no_of_installments}
-                  onChange={(e) => setForm({ ...form, no_of_installments: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="b_frequency">Frequency</Label>
-                <Select
-                  id="b_frequency"
-                  value={form.frequency}
-                  onChange={(e) => setForm({ ...form, frequency: e.target.value as ScheduleFrequency })}
-                >
-                  {frequencies.map((f) => (
-                    <option key={f} value={f}>
-                      {f}
-                    </option>
-                  ))}
-                </Select>
-              </div>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                Payment Plan
+              </p>
+              {paymentTemplate && selectedUnit && (
+                <Button type="button" size="sm" variant="secondary" onClick={applyStandardSchedule}>
+                  Use Standard Schedule
+                </Button>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="b_down">Down Payment</Label>
+              <Input
+                id="b_down"
+                type="number"
+                value={form.down_payment_amount}
+                onChange={(e) => setForm({ ...form, down_payment_amount: e.target.value })}
+              />
             </div>
 
-            {(previewDownPayment > 0 || previewInstallmentCount > 0) && (
-              <div className="mt-3 grid grid-cols-3 gap-3 rounded-lg bg-brand-50 px-4 py-2.5 text-sm text-brand-800">
+            <div className="mt-3 space-y-3">
+              {form.installmentPlans.map((plan, idx) => {
+                const count = Number(plan.no_of_installments) || 0;
+                const amount = Number(plan.total_amount) || 0;
+                return (
+                  <div
+                    key={idx}
+                    className="rounded-lg border border-slate-200 p-3 dark:border-navy-700"
+                  >
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        Installment Plan {idx + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeInstallmentPlan(idx)}
+                        className="rounded-md p-1 text-slate-400 hover:bg-danger-50 hover:text-danger-500"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor={`plan_label_${idx}`}>Label</Label>
+                        <Input
+                          id={`plan_label_${idx}`}
+                          required
+                          value={plan.label}
+                          onChange={(e) => updateInstallmentPlan(idx, { label: e.target.value })}
+                          placeholder="e.g. Monthly Installments"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`plan_frequency_${idx}`}>Frequency</Label>
+                        <Select
+                          id={`plan_frequency_${idx}`}
+                          value={plan.frequency}
+                          onChange={(e) =>
+                            updateInstallmentPlan(idx, { frequency: e.target.value as ScheduleFrequency })
+                          }
+                        >
+                          {frequencies.map((f) => (
+                            <option key={f} value={f}>
+                              {f}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-3">
+                      <div>
+                        <Label htmlFor={`plan_count_${idx}`}>No. of Installments</Label>
+                        <Input
+                          id={`plan_count_${idx}`}
+                          type="number"
+                          required
+                          value={plan.no_of_installments}
+                          onChange={(e) => updateInstallmentPlan(idx, { no_of_installments: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`plan_amount_${idx}`}>Total Amount</Label>
+                        <Input
+                          id={`plan_amount_${idx}`}
+                          type="number"
+                          required
+                          value={plan.total_amount}
+                          onChange={(e) => updateInstallmentPlan(idx, { total_amount: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`plan_start_${idx}`}>First Installment Due</Label>
+                        <Input
+                          id={`plan_start_${idx}`}
+                          type="date"
+                          required
+                          value={plan.start_date}
+                          onChange={(e) => updateInstallmentPlan(idx, { start_date: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    {count > 0 && amount > 0 && (
+                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                        PKR {(amount / count).toLocaleString(undefined, { maximumFractionDigits: 0 })} ×{" "}
+                        {count}, {plan.frequency.toLowerCase()}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+              <Button type="button" variant="secondary" size="sm" onClick={addInstallmentPlan}>
+                <Plus className="h-3.5 w-3.5" />
+                Add Installment Plan
+              </Button>
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Add one plan per installment frequency — e.g. a Monthly plan and a Half-Yearly plan
+                running side by side for a client paying both.
+              </p>
+            </div>
+
+            {(previewDownPayment > 0 || previewPlansTotal > 0) && (
+              <div className="mt-3 grid grid-cols-4 gap-3 rounded-lg bg-brand-50 px-4 py-2.5 text-sm text-brand-800">
+                <div>
+                  Total: <span className="font-semibold">PKR {previewTotal.toLocaleString()}</span>
+                </div>
                 <div>
                   Down Payment: <span className="font-semibold">PKR {previewDownPayment.toLocaleString()}</span>
                 </div>
                 <div>
-                  Remaining: <span className="font-semibold">PKR {previewRemaining.toLocaleString()}</span>
+                  Plans Total: <span className="font-semibold">PKR {previewPlansTotal.toLocaleString()}</span>
                 </div>
-                <div>
-                  Per Installment:{" "}
-                  <span className="font-semibold">
-                    {previewInstallmentCount > 0
-                      ? `PKR ${previewPerInstallment.toLocaleString(undefined, { maximumFractionDigits: 0 })} × ${previewInstallmentCount}`
-                      : "—"}
-                  </span>
+                <div className={previewBalance !== 0 ? "font-semibold text-danger-700" : "font-semibold"}>
+                  {previewBalance === 0 ? "Balanced" : `Unmatched: PKR ${previewBalance.toLocaleString()}`}
                 </div>
               </div>
             )}
@@ -621,6 +851,27 @@ export default function BookingsPage() {
               </div>
             </div>
 
+            {detailBooking.status === "Cancelled" && bookingRefund && (
+              <div className="rounded-lg border border-slate-200 px-4 py-3 text-sm dark:border-navy-700">
+                <div className="flex items-center justify-between">
+                  <span className="text-navy-900 dark:text-slate-100">
+                    Refund owed to {detailBooking.allottee.name}: PKR{" "}
+                    {Number(bookingRefund.gross_amount).toLocaleString()}
+                  </span>
+                  <Badge tone={bookingRefund.status === "Paid" ? "success" : "warning"}>
+                    {bookingRefund.status}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {bookingRefund.status === "Pending" &&
+                    "This was paid before cancellation and is tracked as a pending refund — pay it out from the Refunds tab."}
+                  {bookingRefund.status === "Partially Paid" &&
+                    `Partially paid out under ${bookingRefund.refund_no} — continue it from the Refunds tab.`}
+                  {bookingRefund.status === "Paid" && `Paid out in full as ${bookingRefund.refund_no}.`}
+                </p>
+              </div>
+            )}
+
             <div className="border-t border-slate-100 dark:border-navy-800 pt-3">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
                 Booking Agent
@@ -671,6 +922,56 @@ export default function BookingsPage() {
                   Save
                 </Button>
               </div>
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                  Extra Charges
+                </p>
+                {detailBooking.status !== "Cancelled" && (
+                  <Button size="sm" variant="secondary" onClick={() => setExtraChargeModalOpen(true)}>
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Extra Charge
+                  </Button>
+                )}
+              </div>
+              {detailBooking.extra_charges.length === 0 ? (
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  None yet — add one any time (e.g. once utilities/documents charges are known).
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {detailBooking.extra_charges.map((c) => {
+                    const line = detailBooking.schedule_lines.find((l) => l.id === c.schedule_line_id);
+                    const paid = line ? Number(line.paid_amount) > 0 : false;
+                    return (
+                      <div
+                        key={c.id}
+                        className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm dark:border-navy-800"
+                      >
+                        <span className="text-navy-900 dark:text-slate-100">
+                          {c.reason} · PKR {Number(c.amount).toLocaleString()} · {c.charge_date}
+                        </span>
+                        {!paid && (
+                          <button
+                            onClick={async () => {
+                              const ok = await confirm(`Remove "${c.reason}" charge?`, {
+                                danger: true,
+                                confirmLabel: "Remove",
+                              });
+                              if (ok) deleteExtraCharge.mutate(c.id);
+                            }}
+                            className="rounded-md p-1 text-slate-400 hover:bg-danger-50 hover:text-danger-500"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div>
@@ -753,8 +1054,14 @@ export default function BookingsPage() {
                     size="sm"
                     variant="danger"
                     onClick={async () => {
+                      const paidSoFar = detailBooking.schedule_lines.reduce(
+                        (s, l) => s + Number(l.paid_amount),
+                        0,
+                      );
                       const ok = await confirm(
-                        "Cancel this booking? The unit will become Available again.",
+                        paidSoFar > 0
+                          ? `Cancel this booking? The unit will become Available again, and a pending refund of PKR ${paidSoFar.toLocaleString()} will be tracked in the Refunds tab.`
+                          : "Cancel this booking? The unit will become Available again.",
                         { danger: true, confirmLabel: "Cancel booking" },
                       );
                       if (ok) updateStatus.mutate({ id: detailBooking.id, status: "Cancelled" });
@@ -952,6 +1259,73 @@ export default function BookingsPage() {
         </form>
       </Modal>
 
+      {/* ---- Add Extra Charge Modal ---- */}
+      <Modal
+        open={extraChargeModalOpen}
+        onClose={() => {
+          setExtraChargeModalOpen(false);
+          setExtraChargeError(null);
+        }}
+        title="Add Extra Charge"
+        description={detailBooking ? `${detailBooking.booking_ref_no} · ${detailBooking.unit.unit_number}` : undefined}
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            addExtraChargeToBooking.mutate();
+          }}
+          className="space-y-4"
+        >
+          {extraChargeError && (
+            <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">{extraChargeError}</p>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="ec_reason">For</Label>
+              <Select
+                id="ec_reason"
+                value={extraChargeForm.reason}
+                onChange={(e) =>
+                  setExtraChargeForm({ ...extraChargeForm, reason: e.target.value as ExtraChargesReason })
+                }
+              >
+                {extraChargesReasons.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="ec_amount">Amount (PKR)</Label>
+              <Input
+                id="ec_amount"
+                type="number"
+                required
+                value={extraChargeForm.amount}
+                onChange={(e) => setExtraChargeForm({ ...extraChargeForm, amount: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="ec_narration">Narration (optional)</Label>
+            <Input
+              id="ec_narration"
+              value={extraChargeForm.narration}
+              onChange={(e) => setExtraChargeForm({ ...extraChargeForm, narration: e.target.value })}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setExtraChargeModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={addExtraChargeToBooking.isPending}>
+              Add Charge
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
       {/* ---- Custom Letter Modal ---- */}
       <Modal
         open={customLetterOpen}
@@ -1009,7 +1383,7 @@ export default function BookingsPage() {
           defaultName={detailBooking.allottee.name}
           defaultMessage={`Dear ${detailBooking.allottee.name}, your booking ${detailBooking.booking_ref_no} for unit ${detailBooking.unit.unit_number} has been confirmed. Total price: PKR ${Number(
             detailBooking.total_price,
-          ).toLocaleString()}. Thank you — Hamdan Associates.`}
+          ).toLocaleString()}. Thank you — Hamdan Builders and Developers.`}
           relatedType="Booking"
           relatedId={detailBooking.id}
         />

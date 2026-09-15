@@ -9,6 +9,7 @@ from app.schemas.petty_cash import (
     PettyCashExpenseOut,
     PettyCashFloatCreate,
     PettyCashFloatOut,
+    PettyCashFloatUpdate,
     PettyCashTopupCreate,
     PettyCashTopupOut,
 )
@@ -30,6 +31,14 @@ def create_float(float_in: PettyCashFloatCreate, db: Session = Depends(get_db)):
         return petty_cash_crud.create_float(db, float_in)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.put("/floats/{float_id}", response_model=PettyCashFloatOut)
+def update_float(float_id: int, float_in: PettyCashFloatUpdate, db: Session = Depends(get_db)):
+    db_float = petty_cash_crud.get_float(db, float_id)
+    if not db_float:
+        raise HTTPException(status_code=404, detail="Float not found")
+    return petty_cash_crud.update_float(db, db_float, float_in)
 
 
 @router.delete("/floats/{float_id}", status_code=status.HTTP_204_NO_CONTENT)

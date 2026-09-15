@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Clock,
   MessageCircle,
+  Pencil,
   Plus,
   Printer,
   Receipt as ReceiptIcon,
@@ -19,7 +20,8 @@ import { SendMessageModal } from "../components/communication/SendMessageModal";
 import { TableRowsSkeleton } from "../components/ui/Skeleton";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
-import type { Account, Booking, Receipt, ReceiptPaymentType } from "../types";
+import { useAuthStore } from "../store/authStore";
+import type { Account, Booking, Project, Receipt, ReceiptPaymentType } from "../types";
 
 const paymentTypes: ReceiptPaymentType[] = [
   "Booking",
@@ -29,7 +31,10 @@ const paymentTypes: ReceiptPaymentType[] = [
 ];
 const paymentModes = ["Cash", "Cheque", "Bank Transfer", "Online"];
 
-const emptyForm = {
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+const makeEmptyForm = () => ({
+  receipt_date: todayIso(),
   booking_id: "",
   amount: "",
   payment_type: "Installment" as ReceiptPaymentType,
@@ -39,35 +44,46 @@ const emptyForm = {
   cheque_clearing_date: "",
   credit_account_id: "",
   narration: "",
-};
-
-const todayIso = () => new Date().toISOString().slice(0, 10);
+});
 
 function bookingSummary(booking: Booking) {
   const paid = booking.schedule_lines.reduce((s, l) => s + Number(l.paid_amount), 0);
   const outstanding = Number(booking.total_price) - paid;
   const nextDue = booking.schedule_lines
     .slice()
-    .sort((a, b) => a.installment_no - b.installment_no)
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))
     .find((l) => Number(l.paid_amount) < Number(l.amount));
   return { paid, outstanding, nextDue };
 }
 
 export default function ReceiptsPage() {
   const queryClient = useQueryClient();
+  const isAdmin = useAuthStore((s) => s.user?.role.is_admin) ?? false;
   const [modalOpen, setModalOpen] = React.useState(false);
-  const [form, setForm] = React.useState(emptyForm);
+  const [editingReceiptId, setEditingReceiptId] = React.useState<number | null>(null);
+  const [form, setForm] = React.useState(makeEmptyForm);
   const [formError, setFormError] = React.useState<string | null>(null);
   const [messageReceipt, setMessageReceipt] = React.useState<Receipt | null>(null);
+  const [filterProjectId, setFilterProjectId] = React.useState("");
 
   const { data: receipts, isLoading } = useQuery({
-    queryKey: ["receipts"],
-    queryFn: async () => (await api.get<Receipt[]>("/receipts/")).data,
+    queryKey: ["receipts", filterProjectId],
+    queryFn: async () =>
+      (
+        await api.get<Receipt[]>("/receipts/", {
+          params: { project_id: filterProjectId || undefined },
+        })
+      ).data,
   });
 
   const { data: bookings } = useQuery({
     queryKey: ["bookings"],
     queryFn: async () => (await api.get<Booking[]>("/bookings/")).data,
+  });
+
+  const { data: projects } = useQuery({
+    queryKey: ["projects"],
+    queryFn: async () => (await api.get<Project[]>("/projects/")).data,
   });
 
   const { data: accounts } = useQuery({
@@ -81,15 +97,35 @@ export default function ReceiptsPage() {
   const summary = selectedBooking ? bookingSummary(selectedBooking) : null;
 
   const resetForm = () => {
-    setForm(emptyForm);
+    setForm(makeEmptyForm());
     setFormError(null);
+    setEditingReceiptId(null);
+  };
+
+  const startEdit = (r: Receipt) => {
+    setForm({
+      receipt_date: r.receipt_date,
+      booking_id: String(r.booking_id),
+      amount: String(r.amount),
+      payment_type: r.payment_type,
+      mode_of_payment: r.mode_of_payment,
+      cheque_no: r.cheque_no ?? "",
+      cheque_date: r.cheque_date ?? "",
+      cheque_clearing_date: r.cheque_clearing_date ?? "",
+      credit_account_id: String(r.credit_account_id),
+      narration: r.narration ?? "",
+    });
+    setFormError(null);
+    setEditingReceiptId(r.id);
+    setModalOpen(true);
   };
 
   const selectBooking = (bookingId: string) => {
     const booking = bookableBookings.find((b) => b.id === Number(bookingId));
     const suggested = booking ? bookingSummary(booking).nextDue : undefined;
     setForm({
-      ...emptyForm,
+      ...makeEmptyForm(),
+      receipt_date: form.receipt_date,
       booking_id: bookingId,
       amount: suggested ? String(Number(suggested.amount) - Number(suggested.paid_amount)) : "",
       payment_type: suggested?.installment_no === 0 ? "Booking" : "Installment",
@@ -100,7 +136,7 @@ export default function ReceiptsPage() {
     mutationFn: async () =>
       (
         await api.post<Receipt>("/receipts/", {
-          receipt_date: todayIso(),
+          receipt_date: isAdmin ? form.receipt_date : todayIso(),
           booking_id: Number(form.booking_id),
           credit_account_id: Number(form.credit_account_id),
           amount: Number(form.amount),
@@ -125,6 +161,35 @@ export default function ReceiptsPage() {
       const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setFormError(message ?? "Failed to save receipt");
     },
+  });
+
+  const updateReceipt = useMutation({
+    mutationFn: async () =>
+      (
+        await api.put<Receipt>(`/receipts/${editingReceiptId}`, {
+          receipt_date: form.receipt_date,
+          booking_id: Number(form.booking_id),
+          credit_account_id: Number(form.credit_account_id),
+          amount: Number(form.amount),
+          payment_type: form.payment_type,
+          mode_of_payment: form.mode_of_payment,
+          cheque_no: form.mode_of_payment === "Cheque" ? form.cheque_no || null : null,
+          cheque_date: form.mode_of_payment === "Cheque" ? form.cheque_date || null : null,
+          cheque_clearing_date:
+            form.mode_of_payment === "Cheque" ? form.cheque_clearing_date || null : null,
+          narration: form.narration || null,
+        })
+      ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["receipts"] });
+      queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-cheques"] });
+      setModalOpen(false);
+      resetForm();
+      toast.success("Receipt updated.");
+    },
+    onError: (err: unknown) => setFormError(apiErrorMessage(err, "Failed to update receipt")),
   });
 
   const deleteReceipt = useMutation({
@@ -168,12 +233,22 @@ export default function ReceiptsPage() {
         </Button>
       </div>
 
+      <Select value={filterProjectId} onChange={(e) => setFilterProjectId(e.target.value)} className="w-56">
+        <option value="">All Projects</option>
+        {projects?.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.project_name}
+          </option>
+        ))}
+      </Select>
+
       <Card className="overflow-hidden">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
             <tr>
               <th className="px-5 py-3 font-medium">Receipt #</th>
               <th className="px-5 py-3 font-medium">Date</th>
+              <th className="px-5 py-3 font-medium">Project</th>
               <th className="px-5 py-3 font-medium">Booking / Unit</th>
               <th className="px-5 py-3 font-medium">Allottee</th>
               <th className="px-5 py-3 font-medium">Mode</th>
@@ -182,10 +257,10 @@ export default function ReceiptsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-            {isLoading && <TableRowsSkeleton rows={4} cols={7} />}
+            {isLoading && <TableRowsSkeleton rows={4} cols={8} />}
             {!isLoading && receipts?.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                <td colSpan={8} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
                   No receipts yet. Click "New Receipt" to record a payment.
                 </td>
               </tr>
@@ -194,6 +269,7 @@ export default function ReceiptsPage() {
               <tr key={r.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                 <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{r.receipt_no}</td>
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{r.receipt_date}</td>
+                <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{r.booking.project.project_name}</td>
                 <td className="px-5 py-3 text-navy-900 dark:text-slate-100">
                   {r.booking.booking_ref_no} · {r.booking.unit.unit_number}
                 </td>
@@ -304,6 +380,15 @@ export default function ReceiptsPage() {
                     >
                       <Printer className="h-3.5 w-3.5" />
                     </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => startEdit(r)}
+                        title="Edit receipt (admin only)"
+                        className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                     <button
                       onClick={async () => {
                         const ok = await confirm(`Delete receipt "${r.receipt_no}"? This cannot be undone.`, {
@@ -331,29 +416,58 @@ export default function ReceiptsPage() {
           setModalOpen(false);
           resetForm();
         }}
-        title="New Receipt"
-        description="Record a payment received against a booking's installment plan."
+        title={editingReceiptId ? "Edit Receipt" : "New Receipt"}
+        description={
+          editingReceiptId
+            ? "Correct a previously recorded receipt — admin only."
+            : "Record a payment received against a booking's installment plan."
+        }
       >
         <form
           onSubmit={(e) => {
             e.preventDefault();
             setFormError(null);
-            createReceipt.mutate();
+            if (editingReceiptId) {
+              updateReceipt.mutate();
+            } else {
+              createReceipt.mutate();
+            }
           }}
           className="space-y-4"
         >
+          {isAdmin && (
+            <div>
+              <Label htmlFor="r_receipt_date">Receipt Date</Label>
+              <Input
+                id="r_receipt_date"
+                type="date"
+                required
+                max={todayIso()}
+                value={form.receipt_date}
+                onChange={(e) => setForm({ ...form, receipt_date: e.target.value })}
+              />
+              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                Admin only — back-date a receipt if it couldn't be recorded on the day it was received.
+              </p>
+            </div>
+          )}
+
           <div>
             <Label htmlFor="r_booking">Booking</Label>
             <Select
               id="r_booking"
               required
               value={form.booking_id}
-              onChange={(e) => selectBooking(e.target.value)}
+              onChange={(e) =>
+                editingReceiptId
+                  ? setForm({ ...form, booking_id: e.target.value })
+                  : selectBooking(e.target.value)
+              }
             >
               <option value="">Select booking</option>
               {bookableBookings.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.booking_ref_no} · {b.unit.unit_number} · {b.allottee.name}
+                  {b.project.project_name} · {b.booking_ref_no} · {b.unit.unit_number} · {b.allottee.name}
                 </option>
               ))}
             </Select>
@@ -491,10 +605,12 @@ export default function ReceiptsPage() {
             <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{formError}</p>
           )}
 
-          <p className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
-            <ReceiptIcon className="h-3.5 w-3.5" />
-            The installment slip will open automatically after saving.
-          </p>
+          {!editingReceiptId && (
+            <p className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
+              <ReceiptIcon className="h-3.5 w-3.5" />
+              The installment slip will open automatically after saving.
+            </p>
+          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <Button
@@ -507,8 +623,8 @@ export default function ReceiptsPage() {
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={createReceipt.isPending}>
-              Save Receipt
+            <Button type="submit" disabled={createReceipt.isPending || updateReceipt.isPending}>
+              {editingReceiptId ? "Save Changes" : "Save Receipt"}
             </Button>
           </div>
         </form>
@@ -522,7 +638,7 @@ export default function ReceiptsPage() {
           defaultName={messageReceipt.booking.allottee.name}
           defaultMessage={`Dear ${messageReceipt.booking.allottee.name}, we've received your payment of PKR ${Number(
             messageReceipt.amount,
-          ).toLocaleString()} for booking ${messageReceipt.booking.booking_ref_no}. Thank you — Hamdan Associates.`}
+          ).toLocaleString()} for booking ${messageReceipt.booking.booking_ref_no}. Thank you — Hamdan Builders and Developers.`}
           relatedType="Receipt"
           relatedId={messageReceipt.id}
         />

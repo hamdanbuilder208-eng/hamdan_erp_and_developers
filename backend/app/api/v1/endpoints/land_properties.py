@@ -5,7 +5,13 @@ from app.core.errors import delete_with_fk_guard
 from app.crud import land_property as land_crud
 from app.db.session import get_db
 from app.models.land_property import LandPropertyStatus, PropertyType
-from app.schemas.land_property import LandPropertyCreate, LandPropertyOut, LandPropertyUpdate
+from app.schemas.land_property import (
+    LandPropertyCreate,
+    LandPropertyOut,
+    LandPropertyPaymentCreate,
+    LandPropertyPaymentOut,
+    LandPropertyUpdate,
+)
 
 router = APIRouter()
 
@@ -43,3 +49,23 @@ def delete_land_property(property_id: int, db: Session = Depends(get_db)):
     if not db_property:
         raise HTTPException(status_code=404, detail="Property not found")
     delete_with_fk_guard(db, lambda: land_crud.delete_land_property(db, db_property), "property")
+
+
+@router.post(
+    "/{property_id}/payments",
+    response_model=LandPropertyPaymentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_payment(property_id: int, payment_in: LandPropertyPaymentCreate, db: Session = Depends(get_db)):
+    db_property = land_crud.get_land_property(db, property_id)
+    if not db_property:
+        raise HTTPException(status_code=404, detail="Property not found")
+    return land_crud.create_payment(db, db_property, payment_in)
+
+
+@router.delete("/payments/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_payment(payment_id: int, db: Session = Depends(get_db)):
+    db_payment = land_crud.get_payment(db, payment_id)
+    if not db_payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    land_crud.delete_payment(db, db_payment)

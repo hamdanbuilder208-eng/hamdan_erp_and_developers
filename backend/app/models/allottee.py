@@ -12,7 +12,8 @@ class Allottee(Base, TimestampMixin):
 
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     father_name: Mapped[str | None] = mapped_column(String(150))
-    address: Mapped[str | None] = mapped_column(Text)
+    current_address: Mapped[str | None] = mapped_column(Text)
+    cnic_address: Mapped[str | None] = mapped_column(Text)
 
     mobile: Mapped[str | None] = mapped_column(String(30))
     tel_res: Mapped[str | None] = mapped_column(String(30))
@@ -27,4 +28,6 @@ class Allottee(Base, TimestampMixin):
     nominee_name: Mapped[str | None] = mapped_column(String(150))
     nominee_relation: Mapped[str | None] = mapped_column(String(80))
     nominee_cnic: Mapped[str | None] = mapped_column(String(20))
+    nominee_current_address: Mapped[str | None] = mapped_column(Text)
+    nominee_cnic_address: Mapped[str | None] = mapped_column(Text)
     nominee_picture_url: Mapped[str | None] = mapped_column(String(255))

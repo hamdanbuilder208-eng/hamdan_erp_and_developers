@@ -2,10 +2,22 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "erp-backend",
+      "runtimeExecutable": "backend\\venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "backend"],
+      "port": 8000
+    },
+    {
       "name": "erp-frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "frontend", "run", "dev", "--", "--host"],
       "port": 5173
+    },
+    {
+      "name": "hamdan-website",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "../hamdan-website", "run", "dev"],
+      "port": 5190
     }
   ]
 }

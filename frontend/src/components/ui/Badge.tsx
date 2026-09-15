@@ -21,6 +21,7 @@ const badgeVariants = cva(
         info: "bg-info-50 text-info-700",
         neutral: "bg-slate-100 text-slate-600 dark:bg-navy-800 dark:text-slate-300",
         purple: "bg-onhold-50 text-onhold-700",
+        teal: "bg-rented-50 text-rented-700",
       },
     },
     defaultVariants: { tone: "neutral" },
@@ -46,7 +47,7 @@ const unitStatusTone: Record<UnitStatus, VariantProps<typeof badgeVariants>["ton
   Sold: "info",
   Cancelled: "danger",
   "On-Hold": "purple",
-  Rented: "purple",
+  Rented: "teal",
 };
 
 export function UnitStatusBadge({ status }: { status: UnitStatus }) {
@@ -66,7 +67,7 @@ const landStatusTone: Record<LandPropertyStatus, VariantProps<typeof badgeVarian
   Available: "success",
   Reserved: "warning",
   Sold: "info",
-  Rented: "purple",
+  Rented: "teal",
 };
 
 export function LandPropertyStatusBadge({ status }: { status: LandPropertyStatus }) {

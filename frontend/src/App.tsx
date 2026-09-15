@@ -34,6 +34,7 @@ import PettyCashPage from "./pages/PettyCashPage";
 import PettyCashPrintPage from "./pages/PettyCashPrintPage";
 import BookingLetterPrintPage from "./pages/BookingLetterPrintPage";
 import RentAgreementPrintPage from "./pages/RentAgreementPrintPage";
+import RentReceiptPrintPage from "./pages/RentReceiptPrintPage";
 import PaymentSlipPage from "./pages/PaymentSlipPage";
 import InventoryPrintPage from "./pages/InventoryPrintPage";
 import WarehouseDispatchPage from "./pages/WarehouseDispatchPage";
@@ -241,6 +242,7 @@ export default function App() {
             />
             <Route path="/bookings/:bookingId/letter/:type/print" element={<BookingLetterPrintPage />} />
             <Route path="/rentals/agreements/:agreementId/print" element={<RentAgreementPrintPage />} />
+            <Route path="/rentals/receipts/:id/print" element={<RentReceiptPrintPage />} />
             <Route path="/payment-slip" element={<PaymentSlipPage />} />
             <Route path="/reports/print/general-ledger/:accountId" element={<GeneralLedgerPrintPage />} />
             <Route path="/reports/print/:type" element={<ReportPrintPage />} />

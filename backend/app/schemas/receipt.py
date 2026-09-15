@@ -24,6 +24,19 @@ class ReceiptCreate(ReceiptBase):
     pass
 
 
+class ReceiptUpdate(BaseModel):
+    receipt_date: date | None = None
+    booking_id: int | None = None
+    credit_account_id: int | None = None
+    amount: float | None = None
+    payment_type: ReceiptPaymentType | None = None
+    mode_of_payment: str | None = None
+    cheque_no: str | None = None
+    cheque_date: date | None = None
+    cheque_clearing_date: date | None = None
+    narration: str | None = None
+
+
 class ReceiptOut(ReceiptBase):
     model_config = ConfigDict(from_attributes=True)
     id: int

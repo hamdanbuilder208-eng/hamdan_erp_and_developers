@@ -21,7 +21,8 @@ const photoUrl = (path: string | null) => (path ? `${API_ORIGIN}${path}` : null)
 const emptyForm = {
   name: "",
   father_name: "",
-  address: "",
+  current_address: "",
+  cnic_address: "",
   mobile: "",
   tel_res: "",
   office_phone: "",
@@ -32,6 +33,8 @@ const emptyForm = {
   nominee_name: "",
   nominee_relation: "",
   nominee_cnic: "",
+  nominee_current_address: "",
+  nominee_cnic_address: "",
   nominee_picture_url: "" as string | null,
 };
 
@@ -111,7 +114,8 @@ export default function CustomersPage() {
         await api.post<Allottee>("/allottees/", {
           name: form.name,
           father_name: form.father_name || null,
-          address: form.address || null,
+          current_address: form.current_address || null,
+          cnic_address: form.cnic_address || null,
           mobile: form.mobile || null,
           tel_res: form.tel_res || null,
           office_phone: form.office_phone || null,
@@ -122,6 +126,8 @@ export default function CustomersPage() {
           nominee_name: form.nominee_name || null,
           nominee_relation: form.nominee_relation || null,
           nominee_cnic: form.nominee_cnic || null,
+          nominee_current_address: form.nominee_current_address || null,
+          nominee_cnic_address: form.nominee_cnic_address || null,
           nominee_picture_url: form.nominee_picture_url || null,
         })
       ).data,
@@ -286,13 +292,23 @@ export default function CustomersPage() {
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="address">Address</Label>
-            <Input
-              id="address"
-              value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })}
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="current_address">Current Address</Label>
+              <Input
+                id="current_address"
+                value={form.current_address}
+                onChange={(e) => setForm({ ...form, current_address: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="cnic_address">CNIC Address</Label>
+              <Input
+                id="cnic_address"
+                value={form.cnic_address}
+                onChange={(e) => setForm({ ...form, cnic_address: e.target.value })}
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -393,6 +409,24 @@ export default function CustomersPage() {
                 </div>
               </div>
             </div>
+            <div className="mt-3 grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="nominee_current_address">Nominee Current Address</Label>
+                <Input
+                  id="nominee_current_address"
+                  value={form.nominee_current_address}
+                  onChange={(e) => setForm({ ...form, nominee_current_address: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="nominee_cnic_address">Nominee CNIC Address</Label>
+                <Input
+                  id="nominee_cnic_address"
+                  value={form.nominee_cnic_address}
+                  onChange={(e) => setForm({ ...form, nominee_cnic_address: e.target.value })}
+                />
+              </div>
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
@@ -450,7 +484,7 @@ export default function CustomersPage() {
           onClose={() => setPortalMessageOpen(false)}
           defaultPhone={portalShareAllottee.mobile ?? ""}
           defaultName={portalShareAllottee.name}
-          defaultMessage={`Dear ${portalShareAllottee.name}, you can now track your booking, payment schedule and receipts online. Sign up here: ${portalUrl} — use your mobile number and CNIC (${portalShareAllottee.cnic ?? "on file"}) to create your account. — Hamdan Associates.`}
+          defaultMessage={`Dear ${portalShareAllottee.name}, you can now track your booking, payment schedule and receipts online. Sign up here: ${portalUrl} — use your mobile number and CNIC (${portalShareAllottee.cnic ?? "on file"}) to create your account. — Hamdan Builders and Developers.`}
           relatedType="Other"
           relatedId={portalShareAllottee.id}
         />

@@ -99,6 +99,14 @@ def create_receipt(receipt_in: RentReceiptCreate, db: Session = Depends(get_db))
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@router.get("/receipts/{receipt_id}", response_model=RentReceiptOut)
+def get_receipt(receipt_id: int, db: Session = Depends(get_db)):
+    db_receipt = rent_receipt_crud.get_receipt(db, receipt_id)
+    if not db_receipt:
+        raise HTTPException(status_code=404, detail="Rent receipt not found")
+    return db_receipt
+
+
 @router.delete("/receipts/{receipt_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_receipt(receipt_id: int, db: Session = Depends(get_db)):
     db_receipt = rent_receipt_crud.get_receipt(db, receipt_id)

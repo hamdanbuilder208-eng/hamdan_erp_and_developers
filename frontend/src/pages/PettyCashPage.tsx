@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Printer, Trash2, Wallet } from "lucide-react";
+import { Pencil, Plus, Printer, Trash2, Wallet } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -95,6 +95,33 @@ export default function PettyCashPage() {
     mutationFn: async (id: number) => api.delete(`/petty-cash/floats/${id}`),
     onSuccess: invalidateAll,
     onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to delete float.")),
+  });
+
+  // ---- Edit Float ----
+  const [editFloatId, setEditFloatId] = React.useState<number | null>(null);
+  const [editFloatForm, setEditFloatForm] = React.useState({ holder_name: "", balance: "" });
+  const [editFloatError, setEditFloatError] = React.useState<string | null>(null);
+
+  const startEditFloat = (f: PettyCashFloat) => {
+    setEditFloatId(f.id);
+    setEditFloatForm({ holder_name: f.holder_name, balance: String(f.account.balance) });
+    setEditFloatError(null);
+  };
+
+  const updateFloat = useMutation({
+    mutationFn: async () =>
+      (
+        await api.put<PettyCashFloat>(`/petty-cash/floats/${editFloatId}`, {
+          holder_name: editFloatForm.holder_name,
+          balance: Number(editFloatForm.balance),
+        })
+      ).data,
+    onSuccess: () => {
+      invalidateAll();
+      setEditFloatId(null);
+      setEditFloatError(null);
+    },
+    onError: (err: unknown) => setEditFloatError(apiErrorMessage(err, "Failed to update float")),
   });
 
   // ---- Top-up ----
@@ -272,19 +299,27 @@ export default function PettyCashPage() {
                     <td className="px-5 py-3 text-right font-medium text-navy-900 dark:text-slate-100">
                       PKR {f.account.balance.toLocaleString()}
                     </td>
-                    <td className="px-5 py-3 text-right">
-                      <button
-                        onClick={async () => {
-                          const ok = await confirm(`Delete float "${f.holder_name}"?`, {
-                            danger: true,
-                            confirmLabel: "Delete",
-                          });
-                          if (ok) deleteFloat.mutate(f.id);
-                        }}
-                        className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => startEditFloat(f)}
+                          className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const ok = await confirm(`Delete float "${f.holder_name}"?`, {
+                              danger: true,
+                              confirmLabel: "Delete",
+                            });
+                            if (ok) deleteFloat.mutate(f.id);
+                          }}
+                          className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -504,6 +539,57 @@ export default function PettyCashPage() {
             </Button>
             <Button type="submit" disabled={createFloat.isPending}>
               Create Float
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ---- Edit Float Modal ---- */}
+      <Modal
+        open={editFloatId !== null}
+        onClose={() => setEditFloatId(null)}
+        title="Edit Petty Cash Float"
+        description="Rename the holder or correct the current balance directly."
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            updateFloat.mutate();
+          }}
+          className="space-y-4"
+        >
+          {editFloatError && (
+            <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">{editFloatError}</p>
+          )}
+          <div>
+            <Label htmlFor="edit_float_holder">Holder Name</Label>
+            <Input
+              id="edit_float_holder"
+              required
+              value={editFloatForm.holder_name}
+              onChange={(e) => setEditFloatForm({ ...editFloatForm, holder_name: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="edit_float_balance">Current Balance</Label>
+            <Input
+              id="edit_float_balance"
+              type="number"
+              step="0.01"
+              required
+              value={editFloatForm.balance}
+              onChange={(e) => setEditFloatForm({ ...editFloatForm, balance: e.target.value })}
+            />
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              Changing this directly corrects the balance without adding a top-up or expense record.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setEditFloatId(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={updateFloat.isPending}>
+              Save Changes
             </Button>
           </div>
         </form>

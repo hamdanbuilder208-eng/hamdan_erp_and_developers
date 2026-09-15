@@ -6,13 +6,20 @@ from app.models.booking import Booking
 from app.models.expense import OfficeExpense
 from app.models.inventory import GRN
 from app.models.petty_cash import PettyCashExpense
-from app.models.project import Project, ProjectFloor, ProjectGroup
+from app.models.project import (
+    Project,
+    ProjectFloor,
+    ProjectGroup,
+    ProjectPaymentTemplate,
+    ProjectPaymentTemplateLine,
+)
 from app.models.unit import Unit
 from app.schemas.project import (
     ProjectCreate,
     ProjectFloorCreate,
     ProjectGroupCreate,
     ProjectUpdate,
+    PaymentTemplateUpsert,
 )
 
 
@@ -123,3 +130,36 @@ def delete_floor(db: Session, db_floor: ProjectFloor) -> None:
         )
     db.delete(db_floor)
     db.commit()
+
+
+# Payment Template
+
+
+def get_payment_template(db: Session, project_id: int) -> ProjectPaymentTemplate | None:
+    return (
+        db.query(ProjectPaymentTemplate)
+        .filter(ProjectPaymentTemplate.project_id == project_id)
+        .first()
+    )
+
+
+def upsert_payment_template(
+    db: Session, project_id: int, template_in: PaymentTemplateUpsert
+) -> ProjectPaymentTemplate:
+    template = get_payment_template(db, project_id)
+    if template:
+        db.query(ProjectPaymentTemplateLine).filter(
+            ProjectPaymentTemplateLine.template_id == template.id
+        ).delete()
+        template.booking_percent = template_in.booking_percent
+    else:
+        template = ProjectPaymentTemplate(project_id=project_id, booking_percent=template_in.booking_percent)
+        db.add(template)
+    db.flush()
+
+    for line_in in template_in.lines:
+        db.add(ProjectPaymentTemplateLine(template_id=template.id, **line_in.model_dump()))
+
+    db.commit()
+    db.refresh(template)
+    return template

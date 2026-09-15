@@ -176,7 +176,7 @@ export default function PaymentSlipPage() {
           <div className="text-center">
             <div className="w-48 border-t border-[#8683b8]" />
             <p className="mt-1 text-sm text-[#2d2a6b]">
-              For <span className="font-semibold">Hamdan Associates</span>
+              For <span className="font-semibold">Hamdan Builders and Developers</span>
             </p>
           </div>
         </div>

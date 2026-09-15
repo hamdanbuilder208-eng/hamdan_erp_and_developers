@@ -18,6 +18,14 @@ class PettyCashFloatCreate(PettyCashFloatBase):
     opening_balance: float = Field(default=0, ge=0)
 
 
+class PettyCashFloatUpdate(BaseModel):
+    holder_name: str | None = None
+    # Sets the float's current balance directly (e.g. to correct a mistake) by
+    # adjusting the underlying account's opening balance by the difference —
+    # it does not touch any top-up/expense history. Can go negative (overdrawn).
+    balance: float | None = None
+
+
 class PettyCashFloatOut(PettyCashFloatBase):
     model_config = ConfigDict(from_attributes=True)
     id: int

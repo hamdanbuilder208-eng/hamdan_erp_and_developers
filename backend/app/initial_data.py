@@ -17,6 +17,12 @@ _DEFAULT_COA = [
         ("1040", "Material / Inventory Stock", AccountNature.ASSET, False, []),
         ("1041", "Petty Cash", AccountNature.ASSET, True, []),
     ]),
+    ("1044", "Fixed Assets", AccountNature.ASSET, True, [
+        ("1045", "Furniture & Fixtures", AccountNature.ASSET, False, []),
+        ("1046", "Office Equipment", AccountNature.ASSET, False, []),
+        ("1047", "Generators & Machinery", AccountNature.ASSET, False, []),
+        ("1048", "Vehicles", AccountNature.ASSET, False, []),
+    ]),
     ("2000", "Liabilities", AccountNature.LIABILITY, True, [
         ("2010", "Accounts Payable", AccountNature.LIABILITY, False, []),
         ("2020", "Broker Commission Payable", AccountNature.LIABILITY, False, []),

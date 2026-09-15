@@ -17,6 +17,7 @@ from app.schemas.report import (
     MaterialSummaryRow,
     PartnerSummaryRow,
     ProfitLossReport,
+    RentalIncomeRow,
     SalesPurchaseReport,
     StockLedgerReport,
     TrialBalanceReport,
@@ -121,3 +122,8 @@ def materials_report(db: Session = Depends(get_db)):
 @router.get("/employees", response_model=list[EmployeeSummaryRow])
 def employees_report(db: Session = Depends(get_db)):
     return report_crud.get_employee_summary_report(db)
+
+
+@router.get("/rental-income", response_model=list[RentalIncomeRow])
+def rental_income_report(db: Session = Depends(get_db)):
+    return report_crud.get_rental_income_report(db)

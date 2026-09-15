@@ -35,7 +35,9 @@ function LetterShell({
       <div className="mx-auto w-full max-w-[210mm] bg-white p-10 shadow-sm print:shadow-none print:p-6">
         <div className="flex items-start justify-between border-b border-slate-200 pb-5">
           <div>
-            <p className="text-lg font-bold text-navy-950">Hamdan Associates</p>
+            <p className="text-lg font-bold text-navy-950">
+              {companySettings?.company_name ?? "Hamdan Builders and Developers"}
+            </p>
             <p className="text-xs text-slate-500">Real Estate Builder &amp; Developer</p>
           </div>
           <div className="text-right">
@@ -65,7 +67,7 @@ function AllotmentLetter({ booking }: { booking: Booking }) {
         {booking.allottee.name}
         {booking.allottee.father_name ? ` S/O, D/O, W/O ${booking.allottee.father_name}` : ""}
         <br />
-        {booking.allottee.address || "—"}
+        {booking.allottee.current_address || "—"}
         {booking.allottee.cnic ? (
           <>
             <br />
@@ -149,7 +151,7 @@ function PossessionLetter({ booking }: { booking: Booking }) {
       <p className="font-medium">
         {booking.allottee.name}
         <br />
-        {booking.allottee.address || "—"}
+        {booking.allottee.current_address || "—"}
       </p>
       <p>
         <span className="font-semibold">Subject: Handing Over of Possession — Unit {booking.unit.unit_number}</span>

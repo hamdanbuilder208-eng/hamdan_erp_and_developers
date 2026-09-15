@@ -11,6 +11,7 @@ from app.models.voucher import Voucher, VoucherLine, VoucherType
 from app.schemas.petty_cash import (
     PettyCashExpenseCreate,
     PettyCashFloatCreate,
+    PettyCashFloatUpdate,
     PettyCashTopupCreate,
 )
 
@@ -98,6 +99,23 @@ def create_float(db: Session, float_in: PettyCashFloatCreate) -> PettyCashFloat:
         account_id=account.id,
     )
     db.add(db_float)
+    db.commit()
+    return get_float(db, db_float.id)
+
+
+def update_float(db: Session, db_float: PettyCashFloat, float_in: PettyCashFloatUpdate) -> PettyCashFloat:
+    account = db.query(Account).filter(Account.id == db_float.account_id).first()
+
+    if float_in.holder_name is not None:
+        db_float.holder_name = float_in.holder_name
+        if account:
+            account.name = f"Petty Cash - {float_in.holder_name}"
+
+    if float_in.balance is not None and account:
+        current_balance = account_balance(db, account.id)
+        delta = float_in.balance - current_balance
+        account.opening_debit = float(account.opening_debit) + delta
+
     db.commit()
     return get_float(db, db_float.id)
 

@@ -1,10 +1,22 @@
+from datetime import date
+
 from sqlalchemy.orm import Session
 
 from app.core.sequences import next_sequence_number
-from app.models.booking import Booking
+from app.crud import booking as booking_crud
+from app.models.booking import Booking, BookingStatus
 from app.models.project import ProjectFloor
-from app.models.unit import Unit, UnitCategory
+from app.models.unit import Unit, UnitCategory, UnitStatus
 from app.schemas.unit import UnitBulkGenerate, UnitCategoryCreate, UnitCategoryUpdate, UnitCreate, UnitUpdate
+
+# Mirrors the unit-status side effects in booking_crud.update_booking_status,
+# in reverse — so changing a unit's status directly from the Units tab keeps
+# its booking (shown in the Unit Booking tab) in sync instead of going stale.
+_UNIT_TO_BOOKING_STATUS = {
+    UnitStatus.AVAILABLE: BookingStatus.CANCELLED,
+    UnitStatus.SOLD: BookingStatus.POSSESSION_GIVEN,
+    UnitStatus.BOOKED: BookingStatus.BOOKED,
+}
 
 
 def _next_unit_ref_no(db: Session) -> str:
@@ -101,9 +113,24 @@ def create_unit(db: Session, project_id: int, unit_in: UnitCreate) -> Unit:
 
 def update_unit(db: Session, db_unit: Unit, unit_in: UnitUpdate) -> Unit:
     data = unit_in.model_dump(exclude_unset=True)
+    new_status = data.get("status")
+
     for field, value in data.items():
         setattr(db_unit, field, value)
-    db_unit.total_price = db_unit.base_price + db_unit.extra_charges
+    db_unit.total_price = float(db_unit.base_price) + float(db_unit.extra_charges)
+
+    if new_status is not None:
+        mapped_status = _UNIT_TO_BOOKING_STATUS.get(new_status)
+        if mapped_status is not None:
+            active_booking = (
+                db.query(Booking)
+                .filter(Booking.unit_id == db_unit.id, Booking.status != BookingStatus.CANCELLED)
+                .order_by(Booking.id.desc())
+                .first()
+            )
+            if active_booking and active_booking.status != mapped_status:
+                booking_crud.update_booking_status(db, active_booking, mapped_status, date.today())
+
     db.commit()
     db.refresh(db_unit)
     return db_unit

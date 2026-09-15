@@ -188,6 +188,19 @@ class PartnerSummaryRow(BaseModel):
     total_current_account_balance: float
 
 
+# Rentals
+
+
+class RentalIncomeRow(BaseModel):
+    property_type: str
+    property_label: str
+    current_tenant: str | None
+    agreement_count: int
+    total_scheduled: float
+    total_received: float
+    outstanding: float
+
+
 # Material / Employee
 
 

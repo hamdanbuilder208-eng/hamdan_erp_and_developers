@@ -4,25 +4,21 @@ import { Printer } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
-import type { CompanySettings, Receipt } from "../types";
-
-const API_ORIGIN = new URL(api.defaults.baseURL ?? "", window.location.origin).origin;
-const photoUrl = (path: string | null) => (path ? `${API_ORIGIN}${path}` : null);
+import type { CompanySettings, RentReceipt } from "../types";
 
 const RECEIPT_TERMS = [
   "Payment received is subject to clearance and realization of the payment instrument, where applicable.",
-  "Any applicable documentation, utility, development, maintenance, taxes, government charges or other charges shall be payable separately as per the agreed terms.",
-  "The payment shall be adjusted against the buyer's outstanding balance/payment schedule.",
+  "This receipt is issued against the monthly rent schedule of the agreement referenced above.",
   "In case of any discrepancy, the company's official accounts and records shall prevail.",
   "This receipt is valid only when issued and authorized by the company.",
 ];
 
-export default function ReceiptPrintPage() {
+export default function RentReceiptPrintPage() {
   const { id } = useParams();
 
   const { data: receipt, isLoading } = useQuery({
-    queryKey: ["receipt", id],
-    queryFn: async () => (await api.get<Receipt>(`/receipts/${id}`)).data,
+    queryKey: ["rent-receipt", id],
+    queryFn: async () => (await api.get<RentReceipt>(`/rentals/receipts/${id}`)).data,
   });
 
   const { data: companySettings } = useQuery({
@@ -31,9 +27,10 @@ export default function ReceiptPrintPage() {
   });
 
   const { data: history } = useQuery({
-    queryKey: ["receipts", "booking", receipt?.booking_id],
+    queryKey: ["rentals", "receipts", receipt?.agreement_id],
     queryFn: async () =>
-      (await api.get<Receipt[]>("/receipts/", { params: { booking_id: receipt!.booking_id } })).data,
+      (await api.get<RentReceipt[]>("/rentals/receipts", { params: { agreement_id: receipt!.agreement_id } }))
+        .data,
     enabled: !!receipt,
   });
 
@@ -41,21 +38,24 @@ export default function ReceiptPrintPage() {
     return <div className="p-10 text-sm text-slate-400">Loading receipt...</div>;
   }
 
-  const booking = receipt.booking;
-  const totalPaid = booking.schedule_lines.reduce((s, l) => s + Number(l.paid_amount), 0);
-  const outstanding = Number(booking.total_price) - totalPaid;
-  const nextDue = booking.schedule_lines
+  const agreement = receipt.agreement;
+  const totalPaid = agreement.schedule_lines.reduce((s, l) => s + Number(l.paid_amount), 0);
+  const totalDue = agreement.schedule_lines.reduce((s, l) => s + Number(l.amount), 0);
+  const outstanding = totalDue - totalPaid;
+  const nextDue = agreement.schedule_lines
     .slice()
-    .sort((a, b) => a.due_date.localeCompare(b.due_date))
+    .sort((a, b) => a.month_no - b.month_no)
     .find((l) => Number(l.paid_amount) < Number(l.amount));
 
   const orderedHistory = (history ?? [])
     .slice()
     .sort((a, b) => a.receipt_date.localeCompare(b.receipt_date));
 
-  const facilities = [booking.unit.facility_1, booking.unit.facility_2, booking.unit.facility_3, booking.unit.facility_4]
-    .filter(Boolean)
-    .join(", ");
+  const propertyLabel = agreement.unit
+    ? agreement.unit.unit_number
+    : agreement.land_property
+      ? `${agreement.land_property.property_ref_no} · ${agreement.land_property.area_location}`
+      : "—";
 
   return (
     <div className="min-h-screen bg-slate-100 py-8 print:bg-white print:py-0">
@@ -75,67 +75,29 @@ export default function ReceiptPrintPage() {
             <p className="text-xs text-slate-500">Real Estate Builder &amp; Developer</p>
           </div>
           <div className="text-right">
-            <p className="text-xl font-bold uppercase tracking-wide text-navy-950">Installment Slip</p>
+            <p className="text-xl font-bold uppercase tracking-wide text-navy-950">Rent Receipt</p>
             <p className="mt-1 font-mono text-sm text-slate-500">{receipt.receipt_no}</p>
             <p className="text-xs text-slate-400">{receipt.receipt_date}</p>
           </div>
         </div>
 
-        <div className="flex gap-4 py-5">
-          <div className="grid flex-1 grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-xs text-slate-500">Allottee</p>
-              <p className="mt-0.5 font-medium text-navy-900">{booking.allottee.name}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">Booking Ref</p>
-              <p className="mt-0.5 font-medium text-navy-900">{booking.booking_ref_no}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">Project / Unit</p>
-              <p className="mt-0.5 font-medium text-navy-900">
-                {booking.project.project_name} · {booking.unit.unit_number}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">Facilities</p>
-              <p className="mt-0.5 font-medium text-navy-900">{facilities || "—"}</p>
-            </div>
-            {booking.allottee.nominee_name && (
-              <div className="col-span-2 border-t border-slate-100 pt-3">
-                <p className="text-xs text-slate-500">Nominee</p>
-                <p className="mt-0.5 font-medium text-navy-900">
-                  {booking.allottee.nominee_name}
-                  {booking.allottee.nominee_relation ? ` (${booking.allottee.nominee_relation})` : ""}
-                </p>
-              </div>
-            )}
+        <div className="grid grid-cols-2 gap-4 py-5 text-sm">
+          <div>
+            <p className="text-xs text-slate-500">Tenant</p>
+            <p className="mt-0.5 font-medium text-navy-900">{agreement.tenant.name}</p>
           </div>
-
-          {(booking.allottee.picture_url || booking.allottee.nominee_picture_url) && (
-            <div className="flex shrink-0 gap-3">
-              {booking.allottee.picture_url && (
-                <div className="text-center">
-                  <img
-                    src={photoUrl(booking.allottee.picture_url) ?? undefined}
-                    alt={booking.allottee.name}
-                    className="h-20 w-20 rounded-lg border border-slate-200 object-cover"
-                  />
-                  <p className="mt-1 text-[10px] text-slate-400">Allottee</p>
-                </div>
-              )}
-              {booking.allottee.nominee_picture_url && (
-                <div className="text-center">
-                  <img
-                    src={photoUrl(booking.allottee.nominee_picture_url) ?? undefined}
-                    alt={booking.allottee.nominee_name ?? "Nominee"}
-                    className="h-20 w-20 rounded-lg border border-slate-200 object-cover"
-                  />
-                  <p className="mt-1 text-[10px] text-slate-400">Nominee</p>
-                </div>
-              )}
-            </div>
-          )}
+          <div>
+            <p className="text-xs text-slate-500">Agreement Ref</p>
+            <p className="mt-0.5 font-medium text-navy-900">{agreement.agreement_no}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">Property</p>
+            <p className="mt-0.5 font-medium text-navy-900">{propertyLabel}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">Mode of Payment</p>
+            <p className="mt-0.5 font-medium text-navy-900">{receipt.mode_of_payment}</p>
+          </div>
         </div>
 
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Payment History</p>
@@ -178,9 +140,9 @@ export default function ReceiptPrintPage() {
               <span className="font-semibold text-navy-950">PKR {totalPaid.toLocaleString()}</span>
             </div>
             <div className="flex justify-between border-t border-slate-100 pt-2">
-              <span className="text-slate-500">Total Unit Price</span>
+              <span className="text-slate-500">Monthly Rent</span>
               <span className="font-semibold text-navy-950">
-                PKR {Number(booking.total_price).toLocaleString()}
+                PKR {Number(agreement.monthly_rent).toLocaleString()}
               </span>
             </div>
             <div className="flex justify-between">
@@ -193,7 +155,7 @@ export default function ReceiptPrintPage() {
             <p className="text-slate-500">Next Due</p>
             {nextDue ? (
               <>
-                <p className="mt-1 font-semibold text-navy-950">{nextDue.label}</p>
+                <p className="mt-1 font-semibold text-navy-950">Month {nextDue.month_no}</p>
                 <p className="text-slate-600">{nextDue.due_date}</p>
                 <p className="mt-2 text-lg font-bold text-navy-950">
                   PKR {(Number(nextDue.amount) - Number(nextDue.paid_amount)).toLocaleString()}

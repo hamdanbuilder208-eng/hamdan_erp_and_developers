@@ -49,7 +49,9 @@ export default function CommissionPayoutPrintPage() {
       <div className="mx-auto w-full max-w-[210mm] bg-white p-10 shadow-sm print:shadow-none print:p-6">
         <div className="flex items-start justify-between border-b border-slate-200 pb-5">
           <div>
-            <p className="text-lg font-bold text-navy-950">Hamdan Associates</p>
+            <p className="text-lg font-bold text-navy-950">
+              {companySettings?.company_name ?? "Hamdan Builders and Developers"}
+            </p>
             <p className="text-xs text-slate-500">Real Estate Builder &amp; Developer</p>
           </div>
           <div className="text-right">

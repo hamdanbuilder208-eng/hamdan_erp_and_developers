@@ -4,7 +4,8 @@ from pydantic import BaseModel, ConfigDict
 class AllotteeBase(BaseModel):
     name: str
     father_name: str | None = None
-    address: str | None = None
+    current_address: str | None = None
+    cnic_address: str | None = None
     mobile: str | None = None
     tel_res: str | None = None
     office_phone: str | None = None
@@ -16,6 +17,8 @@ class AllotteeBase(BaseModel):
     nominee_name: str | None = None
     nominee_relation: str | None = None
     nominee_cnic: str | None = None
+    nominee_current_address: str | None = None
+    nominee_cnic_address: str | None = None
     nominee_picture_url: str | None = None
 
 
@@ -26,7 +29,8 @@ class AllotteeCreate(AllotteeBase):
 class AllotteeUpdate(BaseModel):
     name: str | None = None
     father_name: str | None = None
-    address: str | None = None
+    current_address: str | None = None
+    cnic_address: str | None = None
     mobile: str | None = None
     tel_res: str | None = None
     office_phone: str | None = None
@@ -38,6 +42,8 @@ class AllotteeUpdate(BaseModel):
     nominee_name: str | None = None
     nominee_relation: str | None = None
     nominee_cnic: str | None = None
+    nominee_current_address: str | None = None
+    nominee_cnic_address: str | None = None
     nominee_picture_url: str | None = None
 
 

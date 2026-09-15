@@ -1,8 +1,8 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.sequences import next_sequence_number
-from app.models.land_property import LandProperty
-from app.schemas.land_property import LandPropertyCreate, LandPropertyUpdate
+from app.models.land_property import LandProperty, LandPropertyPayment
+from app.schemas.land_property import LandPropertyCreate, LandPropertyPaymentCreate, LandPropertyUpdate
 
 
 def _next_property_ref_no(db: Session) -> str:
@@ -15,7 +15,7 @@ def list_land_properties(
     status: str | None = None,
     area_location: str | None = None,
 ) -> list[LandProperty]:
-    query = db.query(LandProperty)
+    query = db.query(LandProperty).options(joinedload(LandProperty.payments))
     if property_type is not None:
         query = query.filter(LandProperty.property_type == property_type)
     if status is not None:
@@ -26,7 +26,12 @@ def list_land_properties(
 
 
 def get_land_property(db: Session, property_id: int) -> LandProperty | None:
-    return db.query(LandProperty).filter(LandProperty.id == property_id).first()
+    return (
+        db.query(LandProperty)
+        .options(joinedload(LandProperty.payments))
+        .filter(LandProperty.id == property_id)
+        .first()
+    )
 
 
 def create_land_property(db: Session, property_in: LandPropertyCreate) -> LandProperty:
@@ -52,4 +57,23 @@ def update_land_property(
 
 def delete_land_property(db: Session, db_property: LandProperty) -> None:
     db.delete(db_property)
+    db.commit()
+
+
+def get_payment(db: Session, payment_id: int) -> LandPropertyPayment | None:
+    return db.query(LandPropertyPayment).filter(LandPropertyPayment.id == payment_id).first()
+
+
+def create_payment(
+    db: Session, db_property: LandProperty, payment_in: LandPropertyPaymentCreate
+) -> LandPropertyPayment:
+    db_payment = LandPropertyPayment(land_property_id=db_property.id, **payment_in.model_dump())
+    db.add(db_payment)
+    db.commit()
+    db.refresh(db_payment)
+    return db_payment
+
+
+def delete_payment(db: Session, db_payment: LandPropertyPayment) -> None:
+    db.delete(db_payment)
     db.commit()

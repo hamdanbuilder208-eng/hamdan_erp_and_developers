@@ -40,7 +40,7 @@ export default function RentAgreementPrintPage() {
     return <div className="p-10 text-sm text-slate-400">Loading...</div>;
   }
 
-  const companyName = companySettings?.company_name || "Hamdan Associates";
+  const companyName = companySettings?.company_name || "Hamdan Builders and Developers";
 
   return (
     <div className="min-h-screen bg-slate-100 py-8 print:bg-white print:py-0">

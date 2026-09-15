@@ -85,7 +85,7 @@ const unitStatusColorVar: Record<UnitStatus, string> = {
   Sold: "var(--color-info-500)",
   "On-Hold": "var(--color-onhold-500)",
   Cancelled: "var(--color-danger-500)",
-  Rented: "var(--color-onhold-500)",
+  Rented: "var(--color-rented-500)",
 };
 
 const landStatusOrder: LandPropertyStatus[] = ["Available", "Reserved", "Sold"];
@@ -93,7 +93,7 @@ const landStatusColorVar: Record<LandPropertyStatus, string> = {
   Available: "var(--color-success-500)",
   Reserved: "var(--color-warning-500)",
   Sold: "var(--color-info-500)",
-  Rented: "var(--color-onhold-500)",
+  Rented: "var(--color-rented-500)",
 };
 
 const materialColorPalette = [

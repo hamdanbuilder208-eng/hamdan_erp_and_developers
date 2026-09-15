@@ -21,7 +21,7 @@ function bookingSummary(booking: Booking) {
   const percentPaid = Number(booking.total_price) > 0 ? (paid / Number(booking.total_price)) * 100 : 0;
   const nextDue = booking.schedule_lines
     .slice()
-    .sort((a, b) => a.installment_no - b.installment_no)
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))
     .find((l) => Number(l.paid_amount) < Number(l.amount));
   const isOverdue = nextDue ? nextDue.due_date < todayIso() : false;
   return { paid, outstanding, percentPaid, nextDue, isOverdue };

@@ -7,6 +7,8 @@ from app.core.sequences import next_sequence_number
 from app.models.account import Account
 from app.models.booking import (
     Booking,
+    BookingExtraCharge,
+    BookingInstallmentPlan,
     BookingStatus,
     BookingTransfer,
     PaymentScheduleLine,
@@ -17,7 +19,7 @@ from app.models.receipt import Receipt
 from app.models.refund import Refund
 from app.models.unit import Unit, UnitStatus
 from app.models.voucher import Voucher, VoucherLine, VoucherType
-from app.schemas.booking import BookingCreate, BookingTransferCreate
+from app.schemas.booking import BookingCreate, BookingTransferCreate, ExtraChargeCreate
 
 _FREQUENCY_MONTHS = {
     ScheduleFrequency.MONTHLY: 1,
@@ -44,6 +46,8 @@ def _load_query(db: Session):
         joinedload(Booking.unit),
         joinedload(Booking.allottee),
         joinedload(Booking.booking_agent),
+        joinedload(Booking.installment_plans),
+        joinedload(Booking.extra_charges),
         joinedload(Booking.schedule_lines),
     )
 
@@ -68,6 +72,106 @@ def get_booking(db: Session, booking_id: int) -> Booking | None:
     return _load_query(db).filter(Booking.id == booking_id).first()
 
 
+def _add_extra_charge(db: Session, db_booking: Booking, charge_in: ExtraChargeCreate) -> BookingExtraCharge:
+    """Posts one extra-charge line: its own one-off schedule line, its own
+    revenue-recognition voucher (kept separate from the booking's own so it
+    can be added and reversed independently), and bumps total_price. Used
+    both at booking creation and for charges added later (see add_extra_charge)."""
+    schedule_line = PaymentScheduleLine(
+        booking_id=db_booking.id,
+        installment_no=0,
+        label=f"Extra Charges — {charge_in.reason.value}",
+        due_date=charge_in.charge_date,
+        amount=charge_in.amount,
+    )
+    db.add(schedule_line)
+    db.flush()
+
+    voucher = None
+    receivable_account = db.query(Account).filter(Account.code == RECEIVABLE_ACCOUNT_CODE).first()
+    revenue_account = db.query(Account).filter(Account.code == UNIT_SALES_ACCOUNT_CODE).first()
+    if receivable_account and revenue_account:
+        voucher = Voucher(
+            voucher_no=_next_journal_voucher_no(db),
+            voucher_type=VoucherType.JOURNAL,
+            voucher_date=charge_in.charge_date,
+            project_id=db_booking.project_id,
+            narration=f"Extra charge ({charge_in.reason.value}) on booking {db_booking.booking_ref_no}",
+        )
+        db.add(voucher)
+        db.flush()
+        db.add(
+            VoucherLine(
+                voucher_id=voucher.id,
+                account_id=receivable_account.id,
+                debit=charge_in.amount,
+                credit=0,
+                narration=f"Extra charge ({charge_in.reason.value}) — {db_booking.booking_ref_no}",
+            )
+        )
+        db.add(
+            VoucherLine(
+                voucher_id=voucher.id,
+                account_id=revenue_account.id,
+                debit=0,
+                credit=charge_in.amount,
+                narration=f"Extra charge ({charge_in.reason.value}) — {db_booking.booking_ref_no}",
+            )
+        )
+
+    db_charge = BookingExtraCharge(
+        booking_id=db_booking.id,
+        schedule_line_id=schedule_line.id,
+        voucher_id=voucher.id if voucher else None,
+        reason=charge_in.reason,
+        amount=charge_in.amount,
+        charge_date=charge_in.charge_date,
+        narration=charge_in.narration,
+    )
+    db.add(db_charge)
+    db_booking.total_price = float(db_booking.total_price) + charge_in.amount
+    db.flush()
+    return db_charge
+
+
+def get_extra_charge(db: Session, charge_id: int) -> BookingExtraCharge | None:
+    return db.query(BookingExtraCharge).filter(BookingExtraCharge.id == charge_id).first()
+
+
+def add_extra_charge(db: Session, db_booking: Booking, charge_in: ExtraChargeCreate) -> Booking:
+    if db_booking.status == BookingStatus.CANCELLED:
+        raise ValueError("Cannot add a charge to a cancelled booking")
+    _add_extra_charge(db, db_booking, charge_in)
+    db.commit()
+    return get_booking(db, db_booking.id)
+
+
+def delete_extra_charge(db: Session, db_charge: BookingExtraCharge) -> None:
+    schedule_line = (
+        db.query(PaymentScheduleLine).filter(PaymentScheduleLine.id == db_charge.schedule_line_id).first()
+    )
+    if schedule_line and float(schedule_line.paid_amount) > 0:
+        raise ValueError(
+            "This charge has already been partly or fully paid and cannot be removed — "
+            "reverse the receipt against it first."
+        )
+
+    booking = db.query(Booking).filter(Booking.id == db_charge.booking_id).first()
+    if booking:
+        booking.total_price = float(booking.total_price) - float(db_charge.amount)
+
+    voucher_id = db_charge.voucher_id
+    db.delete(db_charge)
+    db.flush()
+    if schedule_line:
+        db.delete(schedule_line)
+    if voucher_id:
+        voucher = db.query(Voucher).filter(Voucher.id == voucher_id).first()
+        if voucher:
+            db.delete(voucher)
+    db.commit()
+
+
 def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
     unit = db.query(Unit).filter(Unit.id == booking_in.unit_id).first()
     if not unit:
@@ -75,7 +179,9 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
     if unit.status != UnitStatus.AVAILABLE:
         raise ValueError(f"Unit is not available (current status: {unit.status.value})")
 
-    total_price = float(unit.total_price) - booking_in.discount + booking_in.extra_charges_amount
+    # Extra charges are posted separately below (each its own line + voucher)
+    # and layered on top, so they don't factor into the installment-plan math.
+    base_price = float(unit.total_price) - booking_in.discount
 
     db_booking = Booking(
         booking_ref_no=_next_booking_ref_no(db),
@@ -86,15 +192,11 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
         status=BookingStatus.BOOKED,
         status_date=booking_in.status_date,
         discount=booking_in.discount,
-        total_price=total_price,
+        total_price=base_price,
         remarks=booking_in.remarks,
         booking_agent_id=booking_in.booking_agent_id,
         agent_commission_percent=booking_in.agent_commission_percent,
         down_payment_amount=booking_in.down_payment_amount,
-        extra_charges_amount=booking_in.extra_charges_amount,
-        extra_charges_reason=booking_in.extra_charges_reason,
-        no_of_installments=booking_in.no_of_installments,
-        frequency=booking_in.frequency,
     )
     db.add(db_booking)
     db.flush()
@@ -110,33 +212,43 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
             )
         )
 
-    if booking_in.extra_charges_amount > 0:
-        db.add(
-            PaymentScheduleLine(
-                booking_id=db_booking.id,
-                installment_no=0,
-                label=f"Extra Charges — {booking_in.extra_charges_reason.value}",
-                due_date=booking_in.booking_date,
-                amount=booking_in.extra_charges_amount,
-            )
+    remaining = base_price - booking_in.down_payment_amount
+    plans_total = sum(plan.total_amount for plan in booking_in.installment_plans)
+    if booking_in.installment_plans and round(plans_total, 2) != round(remaining, 2):
+        raise ValueError(
+            f"Installment plans total PKR {plans_total:,.2f} but PKR {remaining:,.2f} remains "
+            "after the down payment — they must add up to the same amount."
         )
 
-    remaining = total_price - booking_in.down_payment_amount - booking_in.extra_charges_amount
-    if booking_in.no_of_installments > 0 and remaining > 0:
-        month_step = _FREQUENCY_MONTHS[booking_in.frequency]
-        base_amount = round(remaining / booking_in.no_of_installments, 2)
+    installment_seq = 0
+    for plan_in in booking_in.installment_plans:
+        db_plan = BookingInstallmentPlan(
+            booking_id=db_booking.id,
+            label=plan_in.label,
+            frequency=plan_in.frequency,
+            no_of_installments=plan_in.no_of_installments,
+            total_amount=plan_in.total_amount,
+            start_date=plan_in.start_date,
+        )
+        db.add(db_plan)
+        db.flush()
+
+        month_step = _FREQUENCY_MONTHS[plan_in.frequency]
+        base_amount = round(plan_in.total_amount / plan_in.no_of_installments, 2)
         allocated = 0.0
-        for i in range(1, booking_in.no_of_installments + 1):
+        for i in range(1, plan_in.no_of_installments + 1):
             amount = base_amount
-            if i == booking_in.no_of_installments:
-                amount = round(remaining - allocated, 2)
+            if i == plan_in.no_of_installments:
+                amount = round(plan_in.total_amount - allocated, 2)
             allocated += amount
-            due_date = booking_in.booking_date + relativedelta(months=month_step * i)
+            installment_seq += 1
+            due_date = plan_in.start_date + relativedelta(months=month_step * (i - 1))
             db.add(
                 PaymentScheduleLine(
                     booking_id=db_booking.id,
-                    installment_no=i,
-                    label=f"Installment {i}",
+                    installment_plan_id=db_plan.id,
+                    installment_no=installment_seq,
+                    label=f"{plan_in.label} {i}",
                     due_date=due_date,
                     amount=amount,
                 )
@@ -146,7 +258,7 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
 
     receivable_account = db.query(Account).filter(Account.code == RECEIVABLE_ACCOUNT_CODE).first()
     revenue_account = db.query(Account).filter(Account.code == UNIT_SALES_ACCOUNT_CODE).first()
-    if receivable_account and revenue_account and total_price > 0:
+    if receivable_account and revenue_account and base_price > 0:
         voucher = Voucher(
             voucher_no=_next_journal_voucher_no(db),
             voucher_type=VoucherType.JOURNAL,
@@ -160,7 +272,7 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
             VoucherLine(
                 voucher_id=voucher.id,
                 account_id=receivable_account.id,
-                debit=total_price,
+                debit=base_price,
                 credit=0,
                 narration=f"Receivable for {db_booking.booking_ref_no}",
             )
@@ -170,11 +282,14 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
                 voucher_id=voucher.id,
                 account_id=revenue_account.id,
                 debit=0,
-                credit=total_price,
+                credit=base_price,
                 narration=f"Sale of {unit.unit_number}",
             )
         )
         db_booking.revenue_voucher_id = voucher.id
+
+    for charge_in in booking_in.extra_charges:
+        _add_extra_charge(db, db_booking, charge_in)
 
     db.commit()
     return get_booking(db, db_booking.id)
@@ -239,12 +354,31 @@ def update_booking_status(
         has_receipts = (
             db.query(Receipt).filter(Receipt.booking_id == db_booking.id).first() is not None
         )
-        if not has_receipts and db_booking.revenue_voucher_id:
-            voucher = db.query(Voucher).filter(Voucher.id == db_booking.revenue_voucher_id).first()
-            if voucher:
+        if not has_receipts:
+            voucher_ids = []
+            if db_booking.revenue_voucher_id:
+                voucher_ids.append(db_booking.revenue_voucher_id)
                 db_booking.revenue_voucher_id = None
-                db.flush()
-                db.delete(voucher)
+            for charge in db_booking.extra_charges:
+                if charge.voucher_id:
+                    voucher_ids.append(charge.voucher_id)
+                    charge.voucher_id = None
+            db.flush()
+            for voucher_id in voucher_ids:
+                voucher = db.query(Voucher).filter(Voucher.id == voucher_id).first()
+                if voucher:
+                    db.delete(voucher)
+        else:
+            # Money was already collected — track what's owed back as a
+            # Pending refund instead of letting it silently disappear.
+            # Deferred import: crud/refund.py imports update_booking_status
+            # from this module, so this stays a function-local import to
+            # avoid a circular import at module load time.
+            total_paid = sum(float(line.paid_amount) for line in db_booking.schedule_lines)
+            if total_paid > 0:
+                from app.crud.refund import create_pending_refund
+
+                create_pending_refund(db, db_booking, total_paid, status_date)
     elif new_status == BookingStatus.POSSESSION_GIVEN:
         if unit:
             unit.status = UnitStatus.SOLD
@@ -288,13 +422,22 @@ def delete_booking(db: Session, db_booking: Booking) -> None:
     if unit and db_booking.status != BookingStatus.CANCELLED:
         unit.status = UnitStatus.AVAILABLE
 
-    voucher = None
+    voucher_ids = []
     if db_booking.revenue_voucher_id:
-        voucher = db.query(Voucher).filter(Voucher.id == db_booking.revenue_voucher_id).first()
+        voucher_ids.append(db_booking.revenue_voucher_id)
         db_booking.revenue_voucher_id = None
-        db.flush()
+    for charge in db_booking.extra_charges:
+        if charge.voucher_id:
+            voucher_ids.append(charge.voucher_id)
+    db.flush()
 
+    # extra_charges rows cascade-delete along with the booking, so once it's
+    # gone nothing references their vouchers any more and those are safe to
+    # delete too.
     db.delete(db_booking)
-    if voucher:
-        db.delete(voucher)
+    db.flush()
+    for voucher_id in voucher_ids:
+        voucher = db.query(Voucher).filter(Voucher.id == voucher_id).first()
+        if voucher:
+            db.delete(voucher)
     db.commit()

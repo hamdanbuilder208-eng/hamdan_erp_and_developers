@@ -54,6 +54,22 @@ export interface ProjectDetail extends Project {
   total_spent: number;
 }
 
+export interface PaymentTemplateLine {
+  id: number;
+  label: string;
+  frequency: ScheduleFrequency;
+  no_of_installments: number;
+  percent: number;
+  months_after_booking: number;
+}
+
+export interface PaymentTemplate {
+  id: number;
+  project_id: number;
+  booking_percent: number;
+  lines: PaymentTemplateLine[];
+}
+
 export interface UnitCategory {
   id: number;
   name: string;
@@ -107,25 +123,34 @@ export interface Voucher {
 }
 
 export type RefundType = "Customer" | "Vendor" | "Employee";
+export type RefundStatus = "Pending" | "Partially Paid" | "Paid";
+
+export interface RefundPayment {
+  id: number;
+  refund_id: number;
+  payment_date: string;
+  amount: number;
+  voucher_id: number | null;
+  narration: string | null;
+  account: Account;
+  cash_account: Account;
+}
 
 export interface Refund {
   id: number;
   refund_no: string;
   refund_date: string;
   refund_type: RefundType;
+  status: RefundStatus;
   booking_id: number | null;
   party_name: string | null;
-  account_id: number;
-  cash_account_id: number;
   gross_amount: number;
   deduction_percent: number | null;
   deduction_amount: number;
   net_amount: number;
   narration: string | null;
-  voucher_id: number | null;
-  account: Account;
-  cash_account: Account;
   booking: Booking | null;
+  payments: RefundPayment[];
 }
 
 export interface OfficeExpense {
@@ -397,6 +422,16 @@ export interface PartnerSummaryRow {
   total_current_account_balance: number;
 }
 
+export interface RentalIncomeRow {
+  property_type: string;
+  property_label: string;
+  current_tenant: string | null;
+  agreement_count: number;
+  total_scheduled: number;
+  total_received: number;
+  outstanding: number;
+}
+
 export interface MaterialSummaryRow {
   material_id: number;
   material_code: string;
@@ -578,12 +613,15 @@ export type ExtraChargesReason =
   | "West Facing"
   | "Open"
   | "Road Facing"
+  | "Corner"
   | "Water"
   | "Electricity"
+  | "Documents"
   | "Other";
 
 export interface PaymentScheduleLine {
   id: number;
+  installment_plan_id: number | null;
   installment_no: number;
   label: string;
   due_date: string;
@@ -591,6 +629,24 @@ export interface PaymentScheduleLine {
   amount: number;
   discount: number;
   paid_amount: number;
+}
+
+export interface InstallmentPlan {
+  id: number;
+  label: string;
+  frequency: ScheduleFrequency;
+  no_of_installments: number;
+  total_amount: number;
+  start_date: string;
+}
+
+export interface BookingExtraCharge {
+  id: number;
+  schedule_line_id: number;
+  reason: ExtraChargesReason;
+  amount: number;
+  charge_date: string;
+  narration: string | null;
 }
 
 export interface Booking {
@@ -608,14 +664,12 @@ export interface Booking {
   booking_agent_id: number | null;
   agent_commission_percent: number | null;
   down_payment_amount: number;
-  extra_charges_amount: number;
-  extra_charges_reason: ExtraChargesReason | null;
-  no_of_installments: number;
-  frequency: ScheduleFrequency;
+  extra_charges: BookingExtraCharge[];
   project: Project;
   unit: Unit;
   allottee: Allottee;
   booking_agent: BookingAgent | null;
+  installment_plans: InstallmentPlan[];
   schedule_lines: PaymentScheduleLine[];
 }
 
@@ -655,7 +709,8 @@ export interface Allottee {
   allottee_code: string;
   name: string;
   father_name: string | null;
-  address: string | null;
+  current_address: string | null;
+  cnic_address: string | null;
   mobile: string | null;
   tel_res: string | null;
   office_phone: string | null;
@@ -667,6 +722,8 @@ export interface Allottee {
   nominee_name: string | null;
   nominee_relation: string | null;
   nominee_cnic: string | null;
+  nominee_current_address: string | null;
+  nominee_cnic_address: string | null;
   nominee_picture_url: string | null;
 }
 
@@ -737,6 +794,18 @@ export interface RentReceipt {
   agreement: RentAgreement;
 }
 
+export type LandPropertyPaymentDirection = "To Seller" | "From Buyer";
+
+export interface LandPropertyPayment {
+  id: number;
+  land_property_id: number;
+  direction: LandPropertyPaymentDirection;
+  amount: number;
+  payment_date: string;
+  mode_of_payment: PaymentMode;
+  narration: string | null;
+}
+
 export interface LandProperty {
   id: number;
   property_ref_no: string;
@@ -748,7 +817,10 @@ export interface LandProperty {
   purchase_rate: number | null;
   sale_rate: number | null;
   status: LandPropertyStatus;
+  seller_payment_due_date: string | null;
+  buyer_payment_due_date: string | null;
   remarks: string | null;
+  payments: LandPropertyPayment[];
 }
 
 export interface Vendor {

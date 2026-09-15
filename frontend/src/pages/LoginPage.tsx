@@ -101,7 +101,7 @@ export default function LoginPage() {
           <SkylineBackdrop />
 
           <div className="relative z-10 flex flex-col items-center text-center">
-            <img src={hamdanLogo} alt="Hamdan Associates" className="h-16 w-16 rounded-xl object-cover" />
+            <img src={hamdanLogo} alt="Hamdan Builders and Developers" className="h-16 w-16 rounded-xl object-cover" />
 
             <h1 className="mt-3 text-lg font-bold tracking-tight text-white">Welcome Back</h1>
             <p className="mt-0.5 text-xs text-slate-400">Sign in to your dashboard</p>
@@ -185,11 +185,6 @@ export default function LoginPage() {
             <ShieldCheck className="h-4 w-4 text-[#eac54f]" />
             Secure &amp; Trusted Access
           </div>
-
-          <p className="relative z-10 mt-3 text-center text-[11px] text-slate-600">
-            Default admin: <span className="text-slate-500">admin</span> /{" "}
-            <span className="text-slate-500">Admin@1123</span>
-          </p>
         </div>
 
         <p className="mt-4 text-center text-xs text-slate-500">

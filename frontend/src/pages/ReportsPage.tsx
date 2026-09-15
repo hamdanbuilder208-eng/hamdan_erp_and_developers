@@ -18,6 +18,7 @@ import type {
   PartnerSummaryRow,
   ProfitLossReport,
   Project,
+  RentalIncomeRow,
   SalesPurchaseReport,
   StockBalance,
   StockLedgerReport,
@@ -34,6 +35,7 @@ type ReportTab =
   | "stock"
   | "customer-wise"
   | "brokers-partners"
+  | "rental-income"
   | "material-employee";
 
 const tabs: { key: ReportTab; label: string }[] = [
@@ -46,6 +48,7 @@ const tabs: { key: ReportTab; label: string }[] = [
   { key: "stock", label: "Stock" },
   { key: "customer-wise", label: "Customer-wise" },
   { key: "brokers-partners", label: "Broker / Partner" },
+  { key: "rental-income", label: "Rental Income" },
   { key: "material-employee", label: "Material / Employee" },
 ];
 
@@ -154,6 +157,12 @@ export default function ReportsPage() {
     queryKey: ["reports", "partners"],
     queryFn: async () => (await api.get<PartnerSummaryRow[]>("/reports/partners")).data,
     enabled: tab === "brokers-partners",
+  });
+
+  const { data: rentalIncome } = useQuery({
+    queryKey: ["reports", "rental-income"],
+    queryFn: async () => (await api.get<RentalIncomeRow[]>("/reports/rental-income")).data,
+    enabled: tab === "rental-income",
   });
 
   const { data: materialsReport } = useQuery({
@@ -894,6 +903,63 @@ export default function ReportsPage() {
             </table>
           </Card>
         </div>
+      )}
+
+      {tab === "rental-income" && (
+        <Card>
+          <div className="border-b border-slate-100 dark:border-navy-800 px-5 py-4">
+            <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">
+              Rental Income by Property
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              Totals across every agreement a property has ever had, so a property that's changed
+              tenants still shows its full history in one row.
+            </p>
+          </div>
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <tr>
+                <th className="px-5 py-3 font-medium">Property</th>
+                <th className="px-5 py-3 font-medium">Type</th>
+                <th className="px-5 py-3 font-medium">Current Tenant</th>
+                <th className="px-5 py-3 text-right font-medium">Agreements</th>
+                <th className="px-5 py-3 text-right font-medium">Total Scheduled</th>
+                <th className="px-5 py-3 text-right font-medium">Received</th>
+                <th className="px-5 py-3 text-right font-medium">Outstanding</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
+              {rentalIncome?.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                    No rent agreements yet.
+                  </td>
+                </tr>
+              )}
+              {rentalIncome?.map((r) => (
+                <tr key={`${r.property_type}-${r.property_label}`}>
+                  <td className="px-5 py-2.5 text-navy-900 dark:text-slate-100">{r.property_label}</td>
+                  <td className="px-5 py-2.5 text-slate-500 dark:text-slate-400">{r.property_type}</td>
+                  <td className="px-5 py-2.5 text-slate-500 dark:text-slate-400">
+                    {r.current_tenant ?? "—"}
+                  </td>
+                  <td className="px-5 py-2.5 text-right tabular-nums text-navy-900 dark:text-slate-100">
+                    {r.agreement_count}
+                  </td>
+                  <td className="px-5 py-2.5 text-right tabular-nums text-navy-900 dark:text-slate-100">
+                    {r.total_scheduled.toLocaleString()}
+                  </td>
+                  <td className="px-5 py-2.5 text-right tabular-nums text-success-700">
+                    {r.total_received.toLocaleString()}
+                  </td>
+                  <td className="px-5 py-2.5 text-right tabular-nums font-medium text-warning-700">
+                    {r.outstanding.toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
       )}
 
       {tab === "material-employee" && (

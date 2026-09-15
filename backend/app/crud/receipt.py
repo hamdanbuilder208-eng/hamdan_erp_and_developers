@@ -7,7 +7,7 @@ from app.models.account import Account
 from app.models.booking import Booking, PaymentScheduleLine
 from app.models.receipt import ChequeStatus, Receipt, ReceiptAllocation
 from app.models.voucher import Voucher, VoucherLine, VoucherType
-from app.schemas.receipt import ReceiptCreate
+from app.schemas.receipt import ReceiptCreate, ReceiptUpdate
 
 RECEIVABLE_ACCOUNT_CODE = "1030"
 
@@ -30,10 +30,14 @@ def _load_query(db: Session):
     )
 
 
-def list_receipts(db: Session, booking_id: int | None = None) -> list[Receipt]:
+def list_receipts(
+    db: Session, booking_id: int | None = None, project_id: int | None = None
+) -> list[Receipt]:
     query = _load_query(db)
     if booking_id is not None:
         query = query.filter(Receipt.booking_id == booking_id)
+    if project_id is not None:
+        query = query.join(Booking).filter(Booking.project_id == project_id)
     return query.order_by(Receipt.id.desc()).all()
 
 
@@ -46,7 +50,7 @@ def _distribute_amount(db: Session, booking: Booking, receipt_id: int, amount: f
     exactly how much landed on each line as a ReceiptAllocation, so this specific
     receipt's contribution can be reversed precisely later — see delete_receipt."""
     remaining = amount
-    lines = sorted(booking.schedule_lines, key=lambda l: l.installment_no)
+    lines = sorted(booking.schedule_lines, key=lambda l: l.due_date)
     for line in lines:
         if remaining <= 0:
             break
@@ -144,6 +148,54 @@ def create_receipt(db: Session, receipt_in: ReceiptCreate) -> Receipt:
     db.flush()
 
     _apply_receipt_ledger(db, booking, db_receipt)
+
+    db.commit()
+    return get_receipt(db, db_receipt.id)
+
+
+def update_receipt(db: Session, db_receipt: Receipt, receipt_in: ReceiptUpdate) -> Receipt:
+    """Admin-only correction of a receipt already recorded (wrong amount, date,
+    booking, cheque details, etc). Reverses whatever this receipt currently has
+    booked (allocations + voucher — same pattern as mark_cheque_status), applies
+    the edited fields, then re-books it exactly like a fresh receipt would be."""
+    data = receipt_in.model_dump(exclude_unset=True)
+
+    new_booking_id = data.get("booking_id", db_receipt.booking_id)
+    booking = db.query(Booking).filter(Booking.id == new_booking_id).first()
+    if not booking:
+        raise ValueError("Booking not found")
+    if booking.status.value == "Cancelled":
+        raise ValueError("Cannot record a receipt against a cancelled booking")
+
+    was_applied = db_receipt.voucher_id is not None
+    if was_applied:
+        _reverse_receipt_allocations(db, db_receipt)
+        voucher_id = db_receipt.voucher_id
+        db_receipt.voucher_id = None
+        db.flush()
+        if voucher_id:
+            voucher = db.query(Voucher).filter(Voucher.id == voucher_id).first()
+            if voucher:
+                db.delete(voucher)
+
+    for field, value in data.items():
+        setattr(db_receipt, field, value)
+
+    if db_receipt.mode_of_payment == "Cheque":
+        if db_receipt.cheque_status is None:
+            db_receipt.cheque_status = ChequeStatus.PENDING
+        should_apply = db_receipt.cheque_status != ChequeStatus.BOUNCED
+    else:
+        db_receipt.cheque_status = None
+        db_receipt.cheque_no = None
+        db_receipt.cheque_date = None
+        db_receipt.cheque_clearing_date = None
+        should_apply = True
+
+    db.flush()
+
+    if should_apply:
+        _apply_receipt_ledger(db, booking, db_receipt)
 
     db.commit()
     return get_receipt(db, db_receipt.id)

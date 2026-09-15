@@ -12,6 +12,7 @@ from app.schemas.booking import (
     BookingStatusUpdate,
     BookingTransferCreate,
     BookingTransferOut,
+    ExtraChargeCreate,
 )
 
 router = APIRouter()
@@ -93,3 +94,27 @@ def delete_booking(booking_id: int, db: Session = Depends(get_db)):
     if not db_booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     delete_with_fk_guard(db, lambda: booking_crud.delete_booking(db, db_booking), "booking")
+
+
+@router.post(
+    "/{booking_id}/extra-charges", response_model=BookingOut, status_code=status.HTTP_201_CREATED
+)
+def add_extra_charge(booking_id: int, charge_in: ExtraChargeCreate, db: Session = Depends(get_db)):
+    db_booking = booking_crud.get_booking(db, booking_id)
+    if not db_booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    try:
+        return booking_crud.add_extra_charge(db, db_booking, charge_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.delete("/extra-charges/{charge_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_extra_charge(charge_id: int, db: Session = Depends(get_db)):
+    db_charge = booking_crud.get_extra_charge(db, charge_id)
+    if not db_charge:
+        raise HTTPException(status_code=404, detail="Extra charge not found")
+    try:
+        booking_crud.delete_extra_charge(db, db_charge)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

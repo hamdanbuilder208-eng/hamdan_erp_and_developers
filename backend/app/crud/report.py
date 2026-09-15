@@ -12,6 +12,7 @@ from app.models.booking import Booking, BookingStatus
 from app.models.expense import WagePayment
 from app.models.inventory import GRN, GRNLine, Material, MaterialIssueLine, StockLedger, StockMovementType
 from app.models.project import Project
+from app.models.rental import RentAgreement, RentAgreementStatus
 from app.models.voucher import Voucher, VoucherLine
 from app.schemas.report import (
     AgingReport,
@@ -28,6 +29,7 @@ from app.schemas.report import (
     PartnerSummaryRow,
     ProfitLossLine,
     ProfitLossReport,
+    RentalIncomeRow,
     SalesPurchaseReport,
     StockLedgerReport,
     StockLedgerRow,
@@ -522,6 +524,60 @@ def get_all_partner_summaries(db: Session) -> list[PartnerSummaryRow]:
             )
         )
     rows.sort(key=lambda r: -r.total_balance)
+    return rows
+
+
+def get_rental_income_report(db: Session) -> list[RentalIncomeRow]:
+    agreements = (
+        db.query(RentAgreement)
+        .options(
+            joinedload(RentAgreement.unit),
+            joinedload(RentAgreement.land_property),
+            joinedload(RentAgreement.tenant),
+            joinedload(RentAgreement.schedule_lines),
+        )
+        .all()
+    )
+
+    buckets: dict[tuple[str, int], dict] = {}
+    for a in agreements:
+        if a.unit_id:
+            key = ("Unit", a.unit_id)
+            label = a.unit.unit_number
+        else:
+            key = ("Land", a.land_property_id)
+            label = f"{a.land_property.property_ref_no} · {a.land_property.area_location}"
+
+        bucket = buckets.setdefault(
+            key,
+            {
+                "property_type": key[0],
+                "property_label": label,
+                "current_tenant": None,
+                "agreement_count": 0,
+                "total_scheduled": 0.0,
+                "total_received": 0.0,
+            },
+        )
+        bucket["agreement_count"] += 1
+        bucket["total_scheduled"] += sum(float(line.amount) for line in a.schedule_lines)
+        bucket["total_received"] += sum(float(line.paid_amount) for line in a.schedule_lines)
+        if a.status == RentAgreementStatus.ACTIVE:
+            bucket["current_tenant"] = a.tenant.name
+
+    rows = [
+        RentalIncomeRow(
+            property_type=v["property_type"],
+            property_label=v["property_label"],
+            current_tenant=v["current_tenant"],
+            agreement_count=v["agreement_count"],
+            total_scheduled=v["total_scheduled"],
+            total_received=v["total_received"],
+            outstanding=v["total_scheduled"] - v["total_received"],
+        )
+        for v in buckets.values()
+    ]
+    rows.sort(key=lambda r: -r.total_received)
     return rows
 
 

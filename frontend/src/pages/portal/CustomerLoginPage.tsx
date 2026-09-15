@@ -106,7 +106,7 @@ export default function CustomerLoginPage() {
           <SkylineBackdrop />
 
           <div className="relative z-10 flex flex-col items-center text-center">
-            <img src={hamdanLogo} alt="Hamdan Associates" className="h-16 w-16 rounded-xl object-cover" />
+            <img src={hamdanLogo} alt="Hamdan Builders and Developers" className="h-16 w-16 rounded-xl object-cover" />
 
             <h1 className="mt-3 text-lg font-bold tracking-tight text-white">Welcome Back</h1>
             <p className="mt-0.5 text-xs text-slate-400">Sign in to your customer portal</p>

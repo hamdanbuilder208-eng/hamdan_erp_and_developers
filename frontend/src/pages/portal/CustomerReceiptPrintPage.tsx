@@ -41,7 +41,7 @@ export default function CustomerReceiptPrintPage() {
   const outstanding = Number(booking.total_price) - totalPaid;
   const nextDue = booking.schedule_lines
     .slice()
-    .sort((a, b) => a.installment_no - b.installment_no)
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))
     .find((l) => Number(l.paid_amount) < Number(l.amount));
 
   const orderedHistory = (allMyReceipts ?? [])
@@ -66,7 +66,7 @@ export default function CustomerReceiptPrintPage() {
         <div className="flex items-start justify-between border-b border-slate-200 pb-5">
           <div>
             <p className="text-lg font-bold text-navy-950">
-              {companySettings?.company_name ?? "Hamdan Associates"}
+              {companySettings?.company_name ?? "Hamdan Builders and Developers"}
             </p>
             <p className="text-xs text-slate-500">Real Estate Builder &amp; Developer</p>
           </div>

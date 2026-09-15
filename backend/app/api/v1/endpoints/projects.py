@@ -7,6 +7,8 @@ from app.crud import project as project_crud
 from app.db.session import get_db
 from app.schemas.partner import ProjectPartnerShareCreate, ProjectPartnerShareOut
 from app.schemas.project import (
+    PaymentTemplateOut,
+    PaymentTemplateUpsert,
     ProjectCreate,
     ProjectDetailOut,
     ProjectFloorCreate,
@@ -88,6 +90,24 @@ def delete_floor(floor_id: int, db: Session = Depends(get_db)):
     if not db_floor:
         raise HTTPException(status_code=404, detail="Floor not found")
     delete_with_fk_guard(db, lambda: project_crud.delete_floor(db, db_floor), "floor")
+
+
+@router.get("/{project_id}/payment-template", response_model=PaymentTemplateOut | None)
+def get_payment_template(project_id: int, db: Session = Depends(get_db)):
+    return project_crud.get_payment_template(db, project_id)
+
+
+@router.put("/{project_id}/payment-template", response_model=PaymentTemplateOut)
+def upsert_payment_template(
+    project_id: int, template_in: PaymentTemplateUpsert, db: Session = Depends(get_db)
+):
+    db_project = project_crud.get_project(db, project_id)
+    if not db_project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    try:
+        return project_crud.upsert_payment_template(db, project_id, template_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/{project_id}/partner-shares", response_model=list[ProjectPartnerShareOut])

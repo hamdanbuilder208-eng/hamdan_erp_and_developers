@@ -24,7 +24,7 @@ const emptyAgreementForm = {
   monthly_rent: "",
   security_deposit: "",
   start_date: todayIso(),
-  duration_months: "12",
+  duration_months: "11",
   narration: "",
 };
 const emptyReceiptForm = { amount: "", credit_account_id: "", mode_of_payment: "Cash" };
@@ -691,15 +691,24 @@ export default function RentalsPage() {
                       <span className="text-navy-900 dark:text-slate-100">
                         {r.receipt_no} · {r.receipt_date} · PKR {Number(r.amount).toLocaleString()}
                       </span>
-                      <button
-                        onClick={async () => {
-                          const ok = await confirm("Delete this receipt?", { danger: true, confirmLabel: "Delete" });
-                          if (ok) deleteReceipt.mutate(r.id);
-                        }}
-                        className="rounded-md p-1 text-slate-400 hover:bg-danger-50 hover:text-danger-500"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => window.open(`/rentals/receipts/${r.id}/print`, "_blank")}
+                          title="Print receipt"
+                          className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-navy-700 dark:hover:bg-navy-800"
+                        >
+                          <Printer className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const ok = await confirm("Delete this receipt?", { danger: true, confirmLabel: "Delete" });
+                            if (ok) deleteReceipt.mutate(r.id);
+                          }}
+                          className="rounded-md p-1 text-slate-400 hover:bg-danger-50 hover:text-danger-500"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
