@@ -494,6 +494,24 @@ export default function ReceiptsPage() {
                   {(Number(summary.nextDue.amount) - Number(summary.nextDue.paid_amount)).toLocaleString()}
                 </div>
               )}
+              {summary.outstanding > 0 && (
+                <div className="col-span-3 border-t border-brand-100 pt-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        amount: String(summary.outstanding),
+                        payment_type: "Installment",
+                      })
+                    }
+                    className="font-semibold underline hover:text-brand-600"
+                  >
+                    Pay full outstanding (PKR {summary.outstanding.toLocaleString()})
+                  </button>{" "}
+                  — for a client settling everything early instead of installment by installment.
+                </div>
+              )}
             </div>
           )}
 
