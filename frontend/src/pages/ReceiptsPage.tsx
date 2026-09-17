@@ -586,36 +586,28 @@ export default function ReceiptsPage() {
 
           {selectedBooking && !editingReceiptId && unpaidLines.length > 0 && (
             <div>
-              <Label htmlFor="r_target_line">Custom Payment — Target Installment</Label>
-              <Select
-                id="r_target_line"
-                value={form.schedule_line_id}
+              <Label htmlFor="r_custom_count">Custom Payment — Pay N Installments at Once</Label>
+              <Input
+                id="r_custom_count"
+                type="number"
+                min="1"
+                max={unpaidLines.length}
+                placeholder={`e.g. ${Math.min(6, unpaidLines.length)}`}
                 onChange={(e) => {
-                  const lineId = e.target.value;
-                  const line = unpaidLines.find((l) => l.id === Number(lineId));
+                  const n = Number(e.target.value) || 0;
+                  const combined = unpaidLines
+                    .slice(0, n)
+                    .reduce((s, l) => s + (Number(l.amount) - Number(l.paid_amount)), 0);
                   setForm({
                     ...form,
-                    schedule_line_id: lineId,
-                    amount: line ? String(Number(line.amount) - Number(line.paid_amount)) : form.amount,
-                    payment_type: line
-                      ? line.installment_no === 0
-                        ? "Booking"
-                        : "Installment"
-                      : form.payment_type,
+                    schedule_line_id: "",
+                    amount: n > 0 ? String(Math.round(combined * 100) / 100) : form.amount,
                   });
                 }}
-              >
-                <option value="">— Auto (oldest due first) —</option>
-                {unpaidLines.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.label} — due {l.due_date} — balance PKR{" "}
-                    {(Number(l.amount) - Number(l.paid_amount)).toLocaleString()}
-                  </option>
-                ))}
-              </Select>
+              />
               <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                Pick a specific installment to settle it first (e.g. the 2nd installment even if
-                the 1st isn't fully paid yet) — leave on Auto to keep paying oldest-due-first.
+                Type how many upcoming installments to pay in one go (oldest first) and the Amount
+                fills in for you — or just type any amount yourself below, it's your call.
               </p>
             </div>
           )}
