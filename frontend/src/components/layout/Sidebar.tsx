@@ -36,26 +36,30 @@ const activeModules: {
   icon: typeof LayoutDashboard;
   end?: boolean;
   moduleKey?: string | null;
+  adminOnly?: boolean;
 }[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true, moduleKey: null },
+  { to: "/land-plots", label: "Land / Plots", icon: MapPin, moduleKey: "land_properties" },
+  { to: "/projects", label: "Projects", icon: Building2, moduleKey: "projects" },
+  { to: "/units", label: "Units", icon: Grid3x3, moduleKey: "projects" },
+  { to: "/partners", label: "Investor / Partners", icon: Landmark, moduleKey: "partners" },
+  { to: "/brokers", label: "Broker Commissions", icon: Handshake, moduleKey: "booking_agents" },
   { to: "/customers", label: "Customers & Allottees", icon: Users, moduleKey: "allottees" },
   { to: "/bookings", label: "Unit Booking", icon: Layers, moduleKey: "bookings" },
   { to: "/receipts", label: "Receipts", icon: Receipt, moduleKey: "receipts" },
-  { to: "/land-plots", label: "Land / Plots", icon: MapPin, moduleKey: "land_properties" },
-  { to: "/rentals", label: "Rentals", icon: Key, moduleKey: "rentals" },
   { to: "/refunds", label: "Refunds", icon: Undo2, moduleKey: "refunds" },
-  { to: "/projects", label: "Projects", icon: Building2, moduleKey: "projects" },
-  { to: "/units", label: "Units", icon: Grid3x3, moduleKey: "projects" },
+  { to: "/vouchers", label: "Vouchers", icon: FileText, moduleKey: "vouchers" },
+  { to: "/petty-cash", label: "Petty Cash", icon: Wallet, moduleKey: "petty_cash" },
+  { to: "/payment-slip", label: "Payment Slip", icon: ScrollText, adminOnly: true },
+  { to: "/material-inventory", label: "Material & Inventory", icon: Boxes, moduleKey: "inventory" },
+  { to: "/rentals", label: "Rentals", icon: Key, moduleKey: "rentals" },
   { to: "/leads", label: "Leads", icon: UserPlus, moduleKey: "leads" },
   { to: "/accounts", label: "Chart of Accounts", icon: Wallet, moduleKey: "accounts" },
-  { to: "/vouchers", label: "Vouchers", icon: FileText, moduleKey: "vouchers" },
-  { to: "/brokers", label: "Broker Commissions", icon: Handshake, moduleKey: "booking_agents" },
-  { to: "/partners", label: "Investor / Partners", icon: Landmark, moduleKey: "partners" },
-  { to: "/reports", label: "Financial Reports", icon: BarChart3, moduleKey: "reports" },
   { to: "/expenses", label: "Expense Management", icon: Wallet2, moduleKey: "expenses" },
-  { to: "/petty-cash", label: "Petty Cash", icon: Wallet, moduleKey: "petty_cash" },
-  { to: "/material-inventory", label: "Material & Inventory", icon: Boxes, moduleKey: "inventory" },
+  { to: "/reports", label: "Financial Reports", icon: BarChart3, moduleKey: "reports" },
   { to: "/communications", label: "WhatsApp / SMS", icon: MessageCircle, moduleKey: "communications" },
+  { to: "/users", label: "Users & Roles", icon: UserCog, adminOnly: true },
+  { to: "/admin", label: "Admin Utilities", icon: Settings, adminOnly: true },
 ];
 
 const upcomingModules: { label: string; icon: typeof Boxes }[] = [];
@@ -70,17 +74,11 @@ export function Sidebar({
   const role = useAuthStore((s) => s.user?.role);
   const isAdmin = role?.is_admin;
 
-  const modules = activeModules.filter(
-    (item) => isAdmin || !item.moduleKey || role?.allowed_modules.includes(item.moduleKey),
-  );
-  const withAdminEntries = isAdmin
-    ? [
-        ...modules,
-        { to: "/payment-slip", label: "Payment Slip", icon: ScrollText },
-        { to: "/users", label: "Users & Roles", icon: UserCog },
-        { to: "/admin", label: "Admin Utilities", icon: Settings },
-      ]
-    : modules;
+  const modules = activeModules.filter((item) => {
+    if (item.adminOnly) return isAdmin;
+    if (!item.moduleKey) return true;
+    return isAdmin || role?.allowed_modules.includes(item.moduleKey);
+  });
 
   return (
     <aside
@@ -121,7 +119,7 @@ export function Sidebar({
           </p>
         )}
         <ul className="space-y-0.5">
-          {withAdminEntries.map((item) => (
+          {modules.map((item) => (
             <li key={item.label}>
               <NavLink
                 to={item.to}
