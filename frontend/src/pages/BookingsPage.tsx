@@ -197,30 +197,27 @@ export default function BookingsPage() {
     });
 
   const applyStandardSchedule = () => {
-    if (!paymentTemplate || !selectedUnit) return;
+    if (!paymentTemplate || !selectedUnit || paymentTemplate.lines.length === 0) return;
     const basePrice = Number(selectedUnit.total_price) - (Number(form.discount) || 0);
     const downPayment = Math.round(((basePrice * Number(paymentTemplate.booking_percent)) / 100) * 100) / 100;
-    const remaining = basePrice - downPayment;
+    const remaining = Math.round((basePrice - downPayment) * 100) / 100;
 
-    let allocated = 0;
-    const plans = paymentTemplate.lines.map((line, idx) => {
-      let amount = Math.round(((basePrice * Number(line.percent)) / 100) * 100) / 100;
-      if (idx === paymentTemplate.lines.length - 1) {
-        amount = Math.round((remaining - allocated) * 100) / 100;
-      }
-      allocated += amount;
-      const startDate = new Date();
-      startDate.setMonth(startDate.getMonth() + line.months_after_booking);
-      return {
-        label: line.label,
-        frequency: line.frequency,
-        no_of_installments: String(line.no_of_installments),
-        total_amount: String(amount),
-        start_date: startDate.toISOString().slice(0, 10),
-      };
-    });
+    // Only one installment section is ever shown, so a multi-line template
+    // (e.g. "Allocation" + "Monthly Installments") only contributes its
+    // first line's schedule — sized to the full remaining balance so the
+    // plan still balances to zero unmatched.
+    const line = paymentTemplate.lines[0];
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() + line.months_after_booking);
+    const plan: InstallmentPlanForm = {
+      label: line.label,
+      frequency: line.frequency,
+      no_of_installments: String(line.no_of_installments),
+      total_amount: String(remaining),
+      start_date: startDate.toISOString().slice(0, 10),
+    };
 
-    setForm({ ...form, down_payment_amount: String(downPayment), installmentPlans: plans });
+    setForm({ ...form, down_payment_amount: String(downPayment), installmentPlans: [plan] });
   };
 
   const addExtraCharge = () => setForm({ ...form, extraCharges: [...form.extraCharges, emptyExtraCharge()] });
@@ -696,7 +693,7 @@ export default function BookingsPage() {
                   >
                     <div className="mb-2 flex items-center justify-between">
                       <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        Installment Plan {idx + 1}
+                        Installment
                       </span>
                       <button
                         type="button"
@@ -776,14 +773,12 @@ export default function BookingsPage() {
                   </div>
                 );
               })}
-              <Button type="button" variant="secondary" size="sm" onClick={addInstallmentPlan}>
-                <Plus className="h-3.5 w-3.5" />
-                Add Installment Plan
-              </Button>
-              <p className="text-xs text-slate-400 dark:text-slate-500">
-                Add one plan per installment frequency — e.g. a Monthly plan and a Half-Yearly plan
-                running side by side for a client paying both.
-              </p>
+              {form.installmentPlans.length === 0 && (
+                <Button type="button" variant="secondary" size="sm" onClick={addInstallmentPlan}>
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Installment
+                </Button>
+              )}
             </div>
 
             {(previewDownPayment > 0 || previewPlansTotal > 0) && (
