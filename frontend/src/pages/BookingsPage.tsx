@@ -172,7 +172,8 @@ export default function BookingsPage() {
     setFormError(null);
   };
 
-  const useCustomPlan = () => setForm({ ...form, installmentPlans: [emptyInstallmentPlan()] });
+  const addInstallmentPlan = () =>
+    setForm({ ...form, installmentPlans: [...form.installmentPlans, emptyInstallmentPlan()] });
   const removeInstallmentPlan = (idx: number) =>
     setForm({ ...form, installmentPlans: form.installmentPlans.filter((_, i) => i !== idx) });
   const updateInstallmentPlan = (idx: number, patch: Partial<InstallmentPlanForm>) =>
@@ -196,27 +197,30 @@ export default function BookingsPage() {
     });
 
   const applyStandardSchedule = () => {
-    if (!paymentTemplate || !selectedUnit || paymentTemplate.lines.length === 0) return;
+    if (!paymentTemplate || !selectedUnit) return;
     const basePrice = Number(selectedUnit.total_price) - (Number(form.discount) || 0);
     const downPayment = Math.round(((basePrice * Number(paymentTemplate.booking_percent)) / 100) * 100) / 100;
-    const remaining = Math.round((basePrice - downPayment) * 100) / 100;
+    const remaining = basePrice - downPayment;
 
-    // Only one installment section is ever shown, so a multi-line template
-    // (e.g. "Allocation" + "Monthly Installments") only contributes its
-    // first line's schedule — sized to the full remaining balance so the
-    // plan still balances to zero unmatched.
-    const line = paymentTemplate.lines[0];
-    const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() + line.months_after_booking);
-    const plan: InstallmentPlanForm = {
-      label: line.label,
-      frequency: line.frequency,
-      no_of_installments: String(line.no_of_installments),
-      total_amount: String(remaining),
-      start_date: startDate.toISOString().slice(0, 10),
-    };
+    let allocated = 0;
+    const plans = paymentTemplate.lines.map((line, idx) => {
+      let amount = Math.round(((basePrice * Number(line.percent)) / 100) * 100) / 100;
+      if (idx === paymentTemplate.lines.length - 1) {
+        amount = Math.round((remaining - allocated) * 100) / 100;
+      }
+      allocated += amount;
+      const startDate = new Date();
+      startDate.setMonth(startDate.getMonth() + line.months_after_booking);
+      return {
+        label: line.label,
+        frequency: line.frequency,
+        no_of_installments: String(line.no_of_installments),
+        total_amount: String(amount),
+        start_date: startDate.toISOString().slice(0, 10),
+      };
+    });
 
-    setForm({ ...form, down_payment_amount: String(downPayment), installmentPlans: [plan] });
+    setForm({ ...form, down_payment_amount: String(downPayment), installmentPlans: plans });
   };
 
   const addExtraCharge = () => setForm({ ...form, extraCharges: [...form.extraCharges, emptyExtraCharge()] });
@@ -671,7 +675,7 @@ export default function BookingsPage() {
                     Use Standard Schedule
                   </Button>
                 )}
-                <Button type="button" size="sm" variant="secondary" onClick={useCustomPlan}>
+                <Button type="button" size="sm" variant="secondary" onClick={addInstallmentPlan}>
                   <Plus className="h-3.5 w-3.5" />
                   Custom Payment Plan
                 </Button>
@@ -698,7 +702,7 @@ export default function BookingsPage() {
                   >
                     <div className="mb-2 flex items-center justify-between">
                       <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        Installment
+                        Installment {idx + 1}
                       </span>
                       <button
                         type="button"
@@ -778,13 +782,10 @@ export default function BookingsPage() {
                   </div>
                 );
               })}
-              {form.installmentPlans.length === 0 && (
-                <p className="text-xs text-slate-400 dark:text-slate-500">
-                  {paymentTemplate
-                    ? 'Pick "Use Standard Schedule" for the project\'s usual plan, or "Custom Payment Plan" to set one for this booking.'
-                    : 'Click "Custom Payment Plan" above to set an installment schedule for this booking.'}
-                </p>
-              )}
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Add one plan per installment schedule — e.g. a Monthly plan and a separate custom
+                one running side by side for a client paying both.
+              </p>
             </div>
 
             {(previewDownPayment > 0 || previewPlansTotal > 0) && (
