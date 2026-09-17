@@ -19,7 +19,12 @@ from app.models.receipt import Receipt
 from app.models.refund import Refund
 from app.models.unit import Unit, UnitStatus
 from app.models.voucher import Voucher, VoucherLine, VoucherType
-from app.schemas.booking import BookingCreate, BookingTransferCreate, ExtraChargeCreate
+from app.schemas.booking import (
+    BookingCreate,
+    BookingTransferCreate,
+    ExtraChargeCreate,
+    InstallmentPlanCreate,
+)
 
 _FREQUENCY_MONTHS = {
     ScheduleFrequency.MONTHLY: 1,
@@ -172,6 +177,67 @@ def delete_extra_charge(db: Session, db_charge: BookingExtraCharge) -> None:
     db.commit()
 
 
+def _add_installment_plan_lines(
+    db: Session, booking_id: int, plan_in: InstallmentPlanCreate, installment_seq: int
+) -> int:
+    """Creates one BookingInstallmentPlan + its PaymentScheduleLines, evenly
+    splitting total_amount across no_of_installments (remainder on the last
+    one). installment_seq is the running installment number across every plan
+    on this booking so far — returns it advanced past the lines just added."""
+    db_plan = BookingInstallmentPlan(
+        booking_id=booking_id,
+        label=plan_in.label,
+        frequency=plan_in.frequency,
+        no_of_installments=plan_in.no_of_installments,
+        total_amount=plan_in.total_amount,
+        start_date=plan_in.start_date,
+    )
+    db.add(db_plan)
+    db.flush()
+
+    month_step = _FREQUENCY_MONTHS[plan_in.frequency]
+    base_amount = round(plan_in.total_amount / plan_in.no_of_installments, 2)
+    allocated = 0.0
+    for i in range(1, plan_in.no_of_installments + 1):
+        amount = base_amount
+        if i == plan_in.no_of_installments:
+            amount = round(plan_in.total_amount - allocated, 2)
+        allocated += amount
+        installment_seq += 1
+        due_date = plan_in.start_date + relativedelta(months=month_step * (i - 1))
+        db.add(
+            PaymentScheduleLine(
+                booking_id=booking_id,
+                installment_plan_id=db_plan.id,
+                installment_no=installment_seq,
+                label=f"{plan_in.label} {i}",
+                due_date=due_date,
+                amount=amount,
+            )
+        )
+    return installment_seq
+
+
+def add_installment_plan(db: Session, booking: Booking, plan_in: InstallmentPlanCreate) -> Booking:
+    """Attaches a new installment plan to a booking that already exists —
+    e.g. one created with no plan yet (down payment only), now getting one
+    set up from the Receipts screen once the client decides how to pay the
+    rest. Rejects a plan that would schedule more than what's still
+    unaccounted for across the booking's existing schedule lines."""
+    already_scheduled = sum(float(line.amount) for line in booking.schedule_lines)
+    remaining = float(booking.total_price) - already_scheduled
+    if round(plan_in.total_amount, 2) > round(remaining, 2) + 0.01:
+        raise ValueError(
+            f"Plan amount PKR {plan_in.total_amount:,.2f} exceeds the PKR {remaining:,.2f} "
+            "still unscheduled on this booking."
+        )
+
+    installment_seq = max((line.installment_no for line in booking.schedule_lines), default=0)
+    _add_installment_plan_lines(db, booking.id, plan_in, installment_seq)
+    db.commit()
+    return get_booking(db, booking.id)
+
+
 def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
     unit = db.query(Unit).filter(Unit.id == booking_in.unit_id).first()
     if not unit:
@@ -222,37 +288,7 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
 
     installment_seq = 0
     for plan_in in booking_in.installment_plans:
-        db_plan = BookingInstallmentPlan(
-            booking_id=db_booking.id,
-            label=plan_in.label,
-            frequency=plan_in.frequency,
-            no_of_installments=plan_in.no_of_installments,
-            total_amount=plan_in.total_amount,
-            start_date=plan_in.start_date,
-        )
-        db.add(db_plan)
-        db.flush()
-
-        month_step = _FREQUENCY_MONTHS[plan_in.frequency]
-        base_amount = round(plan_in.total_amount / plan_in.no_of_installments, 2)
-        allocated = 0.0
-        for i in range(1, plan_in.no_of_installments + 1):
-            amount = base_amount
-            if i == plan_in.no_of_installments:
-                amount = round(plan_in.total_amount - allocated, 2)
-            allocated += amount
-            installment_seq += 1
-            due_date = plan_in.start_date + relativedelta(months=month_step * (i - 1))
-            db.add(
-                PaymentScheduleLine(
-                    booking_id=db_booking.id,
-                    installment_plan_id=db_plan.id,
-                    installment_no=installment_seq,
-                    label=f"{plan_in.label} {i}",
-                    due_date=due_date,
-                    amount=amount,
-                )
-            )
+        installment_seq = _add_installment_plan_lines(db, db_booking.id, plan_in, installment_seq)
 
     unit.status = UnitStatus.BOOKED
 

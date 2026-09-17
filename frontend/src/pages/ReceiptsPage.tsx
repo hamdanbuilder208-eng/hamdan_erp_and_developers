@@ -21,7 +21,7 @@ import { TableRowsSkeleton } from "../components/ui/Skeleton";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
 import { useAuthStore } from "../store/authStore";
-import type { Account, Booking, Project, Receipt, ReceiptPaymentType } from "../types";
+import type { Account, Booking, Project, Receipt, ReceiptPaymentType, ScheduleFrequency } from "../types";
 
 const paymentTypes: ReceiptPaymentType[] = [
   "Booking",
@@ -30,8 +30,15 @@ const paymentTypes: ReceiptPaymentType[] = [
   "Documentation Charges",
 ];
 const paymentModes = ["Cash", "Cheque", "Bank Transfer", "Online"];
+const frequencies: ScheduleFrequency[] = ["Monthly", "Quarterly", "Half-Yearly", "Yearly"];
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+
+const emptyNewPlanForm = () => ({
+  no_of_installments: "",
+  frequency: "Monthly" as ScheduleFrequency,
+  start_date: todayIso(),
+});
 
 const makeEmptyForm = () => ({
   receipt_date: todayIso(),
@@ -102,11 +109,45 @@ export default function ReceiptsPage() {
         .slice()
         .sort((a, b) => a.due_date.localeCompare(b.due_date))
     : [];
+  // What's left on this booking with no schedule line covering it yet — e.g.
+  // a booking created with only a down payment and no installment plan.
+  const unscheduledRemaining = selectedBooking
+    ? Math.round(
+        (Number(selectedBooking.total_price) -
+          selectedBooking.schedule_lines.reduce((s, l) => s + Number(l.amount), 0)) *
+          100,
+      ) / 100
+    : 0;
+
+  const [newPlanForm, setNewPlanForm] = React.useState(emptyNewPlanForm);
+  const [newPlanOpen, setNewPlanOpen] = React.useState(false);
+
+  const createInstallmentPlan = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post(`/bookings/${form.booking_id}/installment-plans`, {
+          label: "Installments",
+          frequency: newPlanForm.frequency,
+          no_of_installments: Number(newPlanForm.no_of_installments),
+          total_amount: unscheduledRemaining,
+          start_date: newPlanForm.start_date,
+        })
+      ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      setNewPlanForm(emptyNewPlanForm());
+      setNewPlanOpen(false);
+      toast.success("Installment plan created for the remaining balance.");
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to create installment plan.")),
+  });
 
   const resetForm = () => {
     setForm(makeEmptyForm());
     setFormError(null);
     setEditingReceiptId(null);
+    setNewPlanForm(emptyNewPlanForm());
+    setNewPlanOpen(false);
   };
 
   const startEdit = (r: Receipt) => {
@@ -138,6 +179,8 @@ export default function ReceiptsPage() {
       amount: suggested ? String(Number(suggested.amount) - Number(suggested.paid_amount)) : "",
       payment_type: suggested?.installment_no === 0 ? "Booking" : "Installment",
     });
+    setNewPlanForm(emptyNewPlanForm());
+    setNewPlanOpen(false);
   };
 
   const createReceipt = useMutation({
@@ -574,6 +617,93 @@ export default function ReceiptsPage() {
                 Pick a specific installment to settle it first (e.g. the 2nd installment even if
                 the 1st isn't fully paid yet) — leave on Auto to keep paying oldest-due-first.
               </p>
+            </div>
+          )}
+
+          {selectedBooking && !editingReceiptId && unscheduledRemaining > 0 && (
+            <div className="rounded-lg border border-slate-200 p-3 dark:border-navy-700">
+              {!newPlanOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setNewPlanOpen(true)}
+                  className="text-sm font-semibold text-brand-700 underline hover:text-brand-600"
+                >
+                  + Create an installment plan for the unscheduled PKR{" "}
+                  {unscheduledRemaining.toLocaleString()}
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                    New Installment Plan — PKR {unscheduledRemaining.toLocaleString()}
+                  </p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <Label htmlFor="np_count">No. of Installments</Label>
+                      <Input
+                        id="np_count"
+                        type="number"
+                        min="1"
+                        required
+                        value={newPlanForm.no_of_installments}
+                        onChange={(e) =>
+                          setNewPlanForm({ ...newPlanForm, no_of_installments: e.target.value })
+                        }
+                        placeholder="e.g. 6"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="np_frequency">Frequency</Label>
+                      <Select
+                        id="np_frequency"
+                        value={newPlanForm.frequency}
+                        onChange={(e) =>
+                          setNewPlanForm({
+                            ...newPlanForm,
+                            frequency: e.target.value as ScheduleFrequency,
+                          })
+                        }
+                      >
+                        {frequencies.map((f) => (
+                          <option key={f} value={f}>
+                            {f}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="np_start">First Installment Due</Label>
+                      <Input
+                        id="np_start"
+                        type="date"
+                        required
+                        value={newPlanForm.start_date}
+                        onChange={(e) => setNewPlanForm({ ...newPlanForm, start_date: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setNewPlanOpen(false);
+                        setNewPlanForm(emptyNewPlanForm());
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={createInstallmentPlan.isPending || !newPlanForm.no_of_installments}
+                      onClick={() => createInstallmentPlan.mutate()}
+                    >
+                      Create Plan
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

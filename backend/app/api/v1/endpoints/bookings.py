@@ -13,6 +13,7 @@ from app.schemas.booking import (
     BookingTransferCreate,
     BookingTransferOut,
     ExtraChargeCreate,
+    InstallmentPlanCreate,
 )
 
 router = APIRouter()
@@ -105,6 +106,19 @@ def add_extra_charge(booking_id: int, charge_in: ExtraChargeCreate, db: Session 
         raise HTTPException(status_code=404, detail="Booking not found")
     try:
         return booking_crud.add_extra_charge(db, db_booking, charge_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post(
+    "/{booking_id}/installment-plans", response_model=BookingOut, status_code=status.HTTP_201_CREATED
+)
+def add_installment_plan(booking_id: int, plan_in: InstallmentPlanCreate, db: Session = Depends(get_db)):
+    db_booking = booking_crud.get_booking(db, booking_id)
+    if not db_booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    try:
+        return booking_crud.add_installment_plan(db, db_booking, plan_in)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
