@@ -172,8 +172,7 @@ export default function BookingsPage() {
     setFormError(null);
   };
 
-  const addInstallmentPlan = () =>
-    setForm({ ...form, installmentPlans: [...form.installmentPlans, emptyInstallmentPlan()] });
+  const useCustomPlan = () => setForm({ ...form, installmentPlans: [emptyInstallmentPlan()] });
   const removeInstallmentPlan = (idx: number) =>
     setForm({ ...form, installmentPlans: form.installmentPlans.filter((_, i) => i !== idx) });
   const updateInstallmentPlan = (idx: number, patch: Partial<InstallmentPlanForm>) =>
@@ -672,12 +671,10 @@ export default function BookingsPage() {
                     Use Standard Schedule
                   </Button>
                 )}
-                {form.installmentPlans.length === 0 && (
-                  <Button type="button" size="sm" variant="secondary" onClick={addInstallmentPlan}>
-                    <Plus className="h-3.5 w-3.5" />
-                    Custom Payment Plan
-                  </Button>
-                )}
+                <Button type="button" size="sm" variant="secondary" onClick={useCustomPlan}>
+                  <Plus className="h-3.5 w-3.5" />
+                  Custom Payment Plan
+                </Button>
               </div>
             </div>
             <div>
