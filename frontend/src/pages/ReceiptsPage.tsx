@@ -119,6 +119,36 @@ export default function ReceiptsPage() {
       ) / 100
     : 0;
 
+  // Live readout for whatever's typed in Amount — how much of it lands on
+  // which installments, what (if anything) is left outstanding after, and a
+  // clear warning if it's more than the booking actually owes.
+  const amountBreakdown = (() => {
+    if (!summary) return null;
+    const amt = Number(form.amount) || 0;
+    if (amt <= 0) return null;
+    const exceeds = Math.round((amt - summary.outstanding) * 100) / 100;
+    if (exceeds > 0) return { exceeds, coveredCount: 0, partialLabel: null, leftoverAfter: 0 };
+
+    let remaining = amt;
+    let coveredCount = 0;
+    let partialLabel: string | null = null;
+    for (const line of unpaidLines) {
+      const due = Number(line.amount) - Number(line.paid_amount);
+      if (remaining >= due) {
+        coveredCount += 1;
+        remaining -= due;
+      } else if (remaining > 0) {
+        partialLabel = line.label;
+        remaining = 0;
+        break;
+      } else {
+        break;
+      }
+    }
+    const leftoverAfter = Math.round((summary.outstanding - amt) * 100) / 100;
+    return { exceeds: 0, coveredCount, partialLabel, leftoverAfter };
+  })();
+
   const [newPlanForm, setNewPlanForm] = React.useState(emptyNewPlanForm);
   const [newPlanOpen, setNewPlanOpen] = React.useState(false);
 
@@ -725,6 +755,29 @@ export default function ReceiptsPage() {
               </Select>
             </div>
           </div>
+
+          {amountBreakdown && (
+            <div
+              className={`rounded-lg px-4 py-2.5 text-xs ${
+                amountBreakdown.exceeds > 0
+                  ? "bg-danger-50 font-semibold text-danger-700"
+                  : "bg-slate-50 text-slate-600 dark:bg-navy-800/60 dark:text-slate-300"
+              }`}
+            >
+              {amountBreakdown.exceeds > 0 ? (
+                <>This is PKR {amountBreakdown.exceeds.toLocaleString()} more than what's outstanding.</>
+              ) : (
+                <>
+                  Covers {amountBreakdown.coveredCount} installment
+                  {amountBreakdown.coveredCount === 1 ? "" : "s"} in full
+                  {amountBreakdown.partialLabel ? `, plus part of ${amountBreakdown.partialLabel}` : ""}.{" "}
+                  {amountBreakdown.leftoverAfter > 0
+                    ? `PKR ${amountBreakdown.leftoverAfter.toLocaleString()} will remain outstanding.`
+                    : "This fully clears the booking."}
+                </>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
