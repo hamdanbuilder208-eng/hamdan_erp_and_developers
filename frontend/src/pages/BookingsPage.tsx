@@ -666,11 +666,19 @@ export default function BookingsPage() {
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
                 Payment Plan
               </p>
-              {paymentTemplate && selectedUnit && (
-                <Button type="button" size="sm" variant="secondary" onClick={applyStandardSchedule}>
-                  Use Standard Schedule
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {paymentTemplate && selectedUnit && (
+                  <Button type="button" size="sm" variant="secondary" onClick={applyStandardSchedule}>
+                    Use Standard Schedule
+                  </Button>
+                )}
+                {form.installmentPlans.length === 0 && (
+                  <Button type="button" size="sm" variant="secondary" onClick={addInstallmentPlan}>
+                    <Plus className="h-3.5 w-3.5" />
+                    Custom Payment Plan
+                  </Button>
+                )}
+              </div>
             </div>
             <div>
               <Label htmlFor="b_down">Down Payment</Label>
@@ -774,10 +782,11 @@ export default function BookingsPage() {
                 );
               })}
               {form.installmentPlans.length === 0 && (
-                <Button type="button" variant="secondary" size="sm" onClick={addInstallmentPlan}>
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Installment
-                </Button>
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  {paymentTemplate
+                    ? 'Pick "Use Standard Schedule" for the project\'s usual plan, or "Custom Payment Plan" to set one for this booking.'
+                    : 'Click "Custom Payment Plan" above to set an installment schedule for this booking.'}
+                </p>
               )}
             </div>
 
