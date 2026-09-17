@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
   Building2,
+  Grid3x3,
   Layers,
   Users,
   UserCog,
@@ -43,7 +44,8 @@ const activeModules: {
   { to: "/land-plots", label: "Land / Plots", icon: MapPin, moduleKey: "land_properties" },
   { to: "/rentals", label: "Rentals", icon: Key, moduleKey: "rentals" },
   { to: "/refunds", label: "Refunds", icon: Undo2, moduleKey: "refunds" },
-  { to: "/projects", label: "Projects & Units", icon: Building2, moduleKey: "projects" },
+  { to: "/projects", label: "Projects", icon: Building2, moduleKey: "projects" },
+  { to: "/units", label: "Units", icon: Grid3x3, moduleKey: "projects" },
   { to: "/leads", label: "Leads", icon: UserPlus, moduleKey: "leads" },
   { to: "/accounts", label: "Chart of Accounts", icon: Wallet, moduleKey: "accounts" },
   { to: "/vouchers", label: "Vouchers", icon: FileText, moduleKey: "vouchers" },

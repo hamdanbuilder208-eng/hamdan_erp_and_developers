@@ -8,6 +8,7 @@ import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import ProjectsListPage from "./pages/projects/ProjectsListPage";
 import ProjectDetailPage from "./pages/projects/ProjectDetailPage";
+import UnitsPage from "./pages/projects/UnitsPage";
 import LandPlotsPage from "./pages/LandPlotsPage";
 import CustomersPage from "./pages/CustomersPage";
 import LeadsPage from "./pages/LeadsPage";
@@ -100,6 +101,14 @@ export default function App() {
                 element={
                   <ModuleGate module="projects">
                     <ProjectDetailPage />
+                  </ModuleGate>
+                }
+              />
+              <Route
+                path="/units"
+                element={
+                  <ModuleGate module="projects">
+                    <UnitsPage />
                   </ModuleGate>
                 }
               />
