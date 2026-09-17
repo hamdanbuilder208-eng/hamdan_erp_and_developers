@@ -91,6 +91,7 @@ export default function ProjectsListPage() {
         project_group_id: "",
       });
     },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to create project.")),
   });
 
   return (
