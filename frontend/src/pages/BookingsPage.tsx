@@ -174,6 +174,21 @@ export default function BookingsPage() {
 
   const addInstallmentPlan = () =>
     setForm({ ...form, installmentPlans: [...form.installmentPlans, emptyInstallmentPlan()] });
+  // "Normal" plan — one click, amount pre-filled from whatever's left
+  // unallocated so staff only has to type the installment count. "Custom"
+  // (addInstallmentPlan) starts fully blank for anything less standard.
+  const addNormalPlan = () =>
+    setForm((f) => {
+      const othersTotal = f.installmentPlans.reduce((s, p) => s + (Number(p.total_amount) || 0), 0);
+      const remaining = Math.round((previewRemaining - othersTotal) * 100) / 100;
+      return {
+        ...f,
+        installmentPlans: [
+          ...f.installmentPlans,
+          { ...emptyInstallmentPlan(), total_amount: remaining > 0 ? String(remaining) : "" },
+        ],
+      };
+    });
   const removeInstallmentPlan = (idx: number) =>
     setForm({ ...form, installmentPlans: form.installmentPlans.filter((_, i) => i !== idx) });
   const updateInstallmentPlan = (idx: number, patch: Partial<InstallmentPlanForm>) =>
@@ -675,6 +690,10 @@ export default function BookingsPage() {
                     Use Standard Schedule
                   </Button>
                 )}
+                <Button type="button" size="sm" variant="secondary" onClick={addNormalPlan}>
+                  <Plus className="h-3.5 w-3.5" />
+                  Normal Payment Plan
+                </Button>
                 <Button type="button" size="sm" variant="secondary" onClick={addInstallmentPlan}>
                   <Plus className="h-3.5 w-3.5" />
                   Custom Payment Plan

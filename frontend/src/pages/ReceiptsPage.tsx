@@ -500,7 +500,23 @@ export default function ReceiptsPage() {
                 <div className="col-span-3 border-t border-brand-100 pt-2">
                   Next due: <span className="font-semibold">{summary.nextDue.label}</span> on{" "}
                   {summary.nextDue.due_date} — PKR{" "}
-                  {(Number(summary.nextDue.amount) - Number(summary.nextDue.paid_amount)).toLocaleString()}
+                  {(Number(summary.nextDue.amount) - Number(summary.nextDue.paid_amount)).toLocaleString()}{" "}
+                  ·{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextDue = summary.nextDue!;
+                      setForm({
+                        ...form,
+                        amount: String(Number(nextDue.amount) - Number(nextDue.paid_amount)),
+                        payment_type: nextDue.installment_no === 0 ? "Booking" : "Installment",
+                        schedule_line_id: "",
+                      });
+                    }}
+                    className="font-semibold underline hover:text-brand-600"
+                  >
+                    Normal Payment
+                  </button>
                 </div>
               )}
               {summary.outstanding > 0 && (
