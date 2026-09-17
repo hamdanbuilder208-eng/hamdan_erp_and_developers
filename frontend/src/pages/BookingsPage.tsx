@@ -177,9 +177,23 @@ export default function BookingsPage() {
   const removeInstallmentPlan = (idx: number) =>
     setForm({ ...form, installmentPlans: form.installmentPlans.filter((_, i) => i !== idx) });
   const updateInstallmentPlan = (idx: number, patch: Partial<InstallmentPlanForm>) =>
-    setForm({
-      ...form,
-      installmentPlans: form.installmentPlans.map((p, i) => (i === idx ? { ...p, ...patch } : p)),
+    setForm((f) => {
+      const plans = f.installmentPlans.map((p, i) => (i === idx ? { ...p, ...patch } : p));
+      // Typing in the installment count with no Total Amount typed yet —
+      // auto-fill it with whatever's left unallocated, so the user doesn't
+      // have to work the PKR figure out by hand. A manually typed amount is
+      // never overwritten.
+      if ("no_of_installments" in patch && plans[idx].no_of_installments && !plans[idx].total_amount) {
+        const othersTotal = plans.reduce(
+          (s, p, i) => (i === idx ? s : s + (Number(p.total_amount) || 0)),
+          0,
+        );
+        const autoAmount = Math.round((previewRemaining - othersTotal) * 100) / 100;
+        if (autoAmount > 0) {
+          plans[idx] = { ...plans[idx], total_amount: String(autoAmount) };
+        }
+      }
+      return { ...f, installmentPlans: plans };
     });
 
   const applyStandardSchedule = () => {
@@ -739,6 +753,7 @@ export default function BookingsPage() {
                           required
                           value={plan.total_amount}
                           onChange={(e) => updateInstallmentPlan(idx, { total_amount: e.target.value })}
+                          placeholder="Auto-filled from remaining balance"
                         />
                       </div>
                       <div>
