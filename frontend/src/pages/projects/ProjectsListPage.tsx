@@ -214,8 +214,11 @@ export default function ProjectsListPage() {
                 id="commission_percent"
                 type="number"
                 step="0.01"
+                min="0"
+                max="100"
                 value={form.commission_percent}
                 onChange={(e) => setForm({ ...form, commission_percent: e.target.value })}
+                placeholder="e.g. 5 for 5%"
               />
             </div>
           </div>

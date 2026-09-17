@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.booking import ScheduleFrequency
 from app.models.project import ProjectStatus
@@ -37,7 +37,7 @@ class ProjectBase(BaseModel):
     project_name: str
     address: str | None = None
     total_budget: float | None = None
-    commission_percent: float | None = 0
+    commission_percent: float | None = Field(default=0, ge=0, le=100)
     total_floors: int | None = 0
     status: ProjectStatus = ProjectStatus.ACTIVE
     project_group_id: int | None = None
@@ -51,7 +51,7 @@ class ProjectUpdate(BaseModel):
     project_name: str | None = None
     address: str | None = None
     total_budget: float | None = None
-    commission_percent: float | None = None
+    commission_percent: float | None = Field(default=None, ge=0, le=100)
     total_floors: int | None = None
     status: ProjectStatus | None = None
     project_group_id: int | None = None

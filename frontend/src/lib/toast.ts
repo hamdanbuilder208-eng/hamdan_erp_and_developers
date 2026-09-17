@@ -7,6 +7,13 @@ export const toast = {
 };
 
 export function apiErrorMessage(err: unknown, fallback: string): string {
-  const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-  return message ?? fallback;
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((d) => (d && typeof d === "object" && "msg" in d ? String((d as { msg: unknown }).msg) : null))
+      .filter((m): m is string => !!m);
+    if (messages.length > 0) return messages.join("; ");
+  }
+  return fallback;
 }
