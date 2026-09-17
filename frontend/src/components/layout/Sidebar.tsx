@@ -41,7 +41,7 @@ const activeModules: {
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true, moduleKey: null },
   { to: "/land-plots", label: "Land / Plots", icon: MapPin, moduleKey: "land_properties" },
   { to: "/projects", label: "Projects", icon: Building2, moduleKey: "projects" },
-  { to: "/units", label: "Units", icon: Grid3x3, moduleKey: "projects" },
+  { to: "/units", label: "Units", icon: Grid3x3, moduleKey: "units" },
   { to: "/partners", label: "Investor / Partners", icon: Landmark, moduleKey: "partners" },
   { to: "/brokers", label: "Broker Commissions", icon: Handshake, moduleKey: "booking_agents" },
   { to: "/customers", label: "Customers & Allottees", icon: Users, moduleKey: "allottees" },

@@ -107,7 +107,7 @@ export default function App() {
               <Route
                 path="/units"
                 element={
-                  <ModuleGate module="projects">
+                  <ModuleGate module="units">
                     <UnitsPage />
                   </ModuleGate>
                 }

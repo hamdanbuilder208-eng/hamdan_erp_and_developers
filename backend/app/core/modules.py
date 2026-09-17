@@ -6,7 +6,8 @@ User/role management and Admin Utilities are deliberately NOT here — those sta
 is_admin-only always, never individually grantable to a custom role."""
 
 MODULE_KEYS: dict[str, str] = {
-    "projects": "Projects & Units",
+    "projects": "Projects",
+    "units": "Units",
     "land_properties": "Land / Plots",
     "allottees": "Customers & Allottees",
     "bookings": "Unit Booking",

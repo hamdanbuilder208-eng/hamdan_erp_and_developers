@@ -51,13 +51,13 @@ api_router.include_router(
     unit_categories.router,
     prefix="/unit-categories",
     tags=["Unit Categories"],
-    dependencies=[Depends(require_module_access("projects"))],
+    dependencies=[Depends(require_module_access("units"))],
 )
 api_router.include_router(
     units.router,
     prefix="/units",
     tags=["Units"],
-    dependencies=[Depends(require_module_access("projects"))],
+    dependencies=[Depends(require_module_access("units"))],
 )
 api_router.include_router(
     land_properties.router,
