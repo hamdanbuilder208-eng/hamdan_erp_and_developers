@@ -44,6 +44,7 @@ const makeEmptyForm = () => ({
   cheque_clearing_date: "",
   credit_account_id: "",
   narration: "",
+  schedule_line_id: "",
 });
 
 function bookingSummary(booking: Booking) {
@@ -95,6 +96,12 @@ export default function ReceiptsPage() {
   const bookableBookings = bookings?.filter((b) => b.status !== "Cancelled") ?? [];
   const selectedBooking = bookableBookings.find((b) => b.id === Number(form.booking_id));
   const summary = selectedBooking ? bookingSummary(selectedBooking) : null;
+  const unpaidLines = selectedBooking
+    ? selectedBooking.schedule_lines
+        .filter((l) => Number(l.paid_amount) < Number(l.amount))
+        .slice()
+        .sort((a, b) => a.due_date.localeCompare(b.due_date))
+    : [];
 
   const resetForm = () => {
     setForm(makeEmptyForm());
@@ -114,6 +121,7 @@ export default function ReceiptsPage() {
       cheque_clearing_date: r.cheque_clearing_date ?? "",
       credit_account_id: String(r.credit_account_id),
       narration: r.narration ?? "",
+      schedule_line_id: "",
     });
     setFormError(null);
     setEditingReceiptId(r.id);
@@ -147,6 +155,7 @@ export default function ReceiptsPage() {
           cheque_clearing_date:
             form.mode_of_payment === "Cheque" ? form.cheque_clearing_date || null : null,
           narration: form.narration || null,
+          schedule_line_id: form.schedule_line_id ? Number(form.schedule_line_id) : null,
         })
       ).data,
     onSuccess: (created) => {
@@ -503,6 +512,7 @@ export default function ReceiptsPage() {
                         ...form,
                         amount: String(summary.outstanding),
                         payment_type: "Installment",
+                        schedule_line_id: "",
                       })
                     }
                     className="font-semibold underline hover:text-brand-600"
@@ -512,6 +522,42 @@ export default function ReceiptsPage() {
                   — for a client settling everything early instead of installment by installment.
                 </div>
               )}
+            </div>
+          )}
+
+          {selectedBooking && !editingReceiptId && unpaidLines.length > 0 && (
+            <div>
+              <Label htmlFor="r_target_line">Custom Payment — Target Installment</Label>
+              <Select
+                id="r_target_line"
+                value={form.schedule_line_id}
+                onChange={(e) => {
+                  const lineId = e.target.value;
+                  const line = unpaidLines.find((l) => l.id === Number(lineId));
+                  setForm({
+                    ...form,
+                    schedule_line_id: lineId,
+                    amount: line ? String(Number(line.amount) - Number(line.paid_amount)) : form.amount,
+                    payment_type: line
+                      ? line.installment_no === 0
+                        ? "Booking"
+                        : "Installment"
+                      : form.payment_type,
+                  });
+                }}
+              >
+                <option value="">— Auto (oldest due first) —</option>
+                {unpaidLines.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.label} — due {l.due_date} — balance PKR{" "}
+                    {(Number(l.amount) - Number(l.paid_amount)).toLocaleString()}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                Pick a specific installment to settle it first (e.g. the 2nd installment even if
+                the 1st isn't fully paid yet) — leave on Auto to keep paying oldest-due-first.
+              </p>
             </div>
           )}
 

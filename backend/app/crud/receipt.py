@@ -45,12 +45,26 @@ def get_receipt(db: Session, receipt_id: int) -> Receipt | None:
     return _load_query(db).filter(Receipt.id == receipt_id).first()
 
 
-def _distribute_amount(db: Session, booking: Booking, receipt_id: int, amount: float) -> None:
+def _distribute_amount(
+    db: Session,
+    booking: Booking,
+    receipt_id: int,
+    amount: float,
+    schedule_line_id: int | None = None,
+) -> None:
     """Applies `amount` to schedule lines in due order (oldest first) and records
     exactly how much landed on each line as a ReceiptAllocation, so this specific
-    receipt's contribution can be reversed precisely later — see delete_receipt."""
+    receipt's contribution can be reversed precisely later — see delete_receipt.
+
+    When schedule_line_id is given, that line is settled first (out of due-date
+    order if needed) — e.g. targeting the 2nd installment specifically — and any
+    amount left over still spills into the rest, oldest first."""
     remaining = amount
     lines = sorted(booking.schedule_lines, key=lambda l: l.due_date)
+    if schedule_line_id is not None:
+        target = next((l for l in lines if l.id == schedule_line_id), None)
+        if target:
+            lines = [target] + [l for l in lines if l.id != schedule_line_id]
     for line in lines:
         if remaining <= 0:
             break
@@ -78,7 +92,9 @@ def _reverse_receipt_allocations(db: Session, db_receipt: Receipt) -> None:
         db.delete(allocation)
 
 
-def _apply_receipt_ledger(db: Session, booking: Booking, db_receipt: Receipt) -> None:
+def _apply_receipt_ledger(
+    db: Session, booking: Booking, db_receipt: Receipt, schedule_line_id: int | None = None
+) -> None:
     """Books the receipt's amount for real: installment allocation + a Receipt
     voucher (debit the cash/bank account, credit Accounts Receivable). Used both
     when a receipt is first created and when a previously-bounced cheque is
@@ -120,7 +136,7 @@ def _apply_receipt_ledger(db: Session, booking: Booking, db_receipt: Receipt) ->
 
     db_receipt.voucher_id = voucher.id
     db.flush()
-    _distribute_amount(db, booking, db_receipt.id, float(db_receipt.amount))
+    _distribute_amount(db, booking, db_receipt.id, float(db_receipt.amount), schedule_line_id)
 
 
 def create_receipt(db: Session, receipt_in: ReceiptCreate) -> Receipt:
@@ -147,7 +163,7 @@ def create_receipt(db: Session, receipt_in: ReceiptCreate) -> Receipt:
     db.add(db_receipt)
     db.flush()
 
-    _apply_receipt_ledger(db, booking, db_receipt)
+    _apply_receipt_ledger(db, booking, db_receipt, receipt_in.schedule_line_id)
 
     db.commit()
     return get_receipt(db, db_receipt.id)

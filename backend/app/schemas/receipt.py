@@ -21,7 +21,11 @@ class ReceiptBase(BaseModel):
 
 
 class ReceiptCreate(ReceiptBase):
-    pass
+    # Which schedule line to settle first — lets staff target e.g. the 2nd
+    # installment specifically instead of the default oldest-due-first
+    # allocation. Any amount left over after that line still spills into the
+    # rest, oldest first. None keeps the old always-oldest-first behavior.
+    schedule_line_id: int | None = None
 
 
 class ReceiptUpdate(BaseModel):
