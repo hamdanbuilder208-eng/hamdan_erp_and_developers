@@ -17,7 +17,7 @@ from app.models.voucher import VoucherType
 from app.schemas.account import AccountCreate
 from app.schemas.allottee import AllotteeCreate, AllotteeUpdate
 from app.schemas.booking import BookingCreate
-from app.schemas.project import ProjectCreate
+from app.schemas.project import ProjectCreate, ProjectFloorCreate, ProjectUpdate
 from app.schemas.unit import UnitCategoryCreate, UnitCreate
 from app.schemas.user import RoleCreate, UserCreate
 from app.schemas.voucher import VoucherCreate, VoucherLineCreate
@@ -295,3 +295,27 @@ def test_allottee_rejects_letters_in_number_fields():
         AllotteeCreate(name="A", cnic="42101-12345x7-1")
     with pytest.raises(ValidationError):
         AllotteeCreate(name="A", cnic="12345")
+
+
+# ---------------------------------------------------------------------------
+# Project edit
+# ---------------------------------------------------------------------------
+
+def test_project_update_changes_name_and_floors(db: Session, project):
+    updated = project_crud.update_project(
+        db, project, ProjectUpdate(project_name="Renamed", total_floors=8)
+    )
+    assert updated.project_name == "Renamed"
+    assert updated.total_floors == 8
+
+
+def test_project_update_rejects_empty_name(db: Session, project):
+    with pytest.raises(ValueError, match="cannot be empty"):
+        project_crud.update_project(db, project, ProjectUpdate(project_name="  "))
+
+
+def test_project_total_floors_cannot_drop_below_added_floors(db: Session, project):
+    project_crud.create_floor(db, project.id, ProjectFloorCreate(floor_no="1"))
+    project_crud.create_floor(db, project.id, ProjectFloorCreate(floor_no="2"))
+    with pytest.raises(ValueError, match="already has 2 floor"):
+        project_crud.update_project(db, project, ProjectUpdate(total_floors=1))

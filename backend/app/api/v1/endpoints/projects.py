@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
 from app.core.errors import delete_with_fk_guard
 from app.crud import partner as partner_crud
 from app.crud import project as project_crud
 from app.db.session import get_db
+from app.models.user import User
 from app.schemas.partner import ProjectPartnerShareCreate, ProjectPartnerShareOut
 from app.schemas.project import (
     PaymentTemplateOut,
@@ -52,11 +54,26 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{project_id}", response_model=ProjectOut)
-def update_project(project_id: int, project_in: ProjectUpdate, db: Session = Depends(get_db)):
+def update_project(
+    project_id: int,
+    project_in: ProjectUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     db_project = project_crud.get_project(db, project_id)
     if not db_project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return project_crud.update_project(db, db_project, project_in)
+    changes = project_in.model_dump(exclude_unset=True)
+    # Only admins may edit a project after it is created. The one exception:
+    # setting the floor count for the first time (Units > Add Floor), which is
+    # part of initial setup rather than an edit.
+    first_floor_setup = set(changes) == {"total_floors"} and not db_project.total_floors
+    if not current_user.role.is_admin and not first_floor_setup:
+        raise HTTPException(status_code=403, detail="Only an admin can edit project details")
+    try:
+        return project_crud.update_project(db, db_project, project_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)

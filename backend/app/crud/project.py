@@ -69,7 +69,21 @@ def create_project(db: Session, project_in: ProjectCreate) -> Project:
 
 
 def update_project(db: Session, db_project: Project, project_in: ProjectUpdate) -> Project:
-    for field, value in project_in.model_dump(exclude_unset=True).items():
+    changes = project_in.model_dump(exclude_unset=True)
+    if "project_name" in changes:
+        changes["project_name"] = (changes["project_name"] or "").strip()
+        if not changes["project_name"]:
+            raise ValueError("Project name cannot be empty")
+    if changes.get("total_floors") is not None:
+        if changes["total_floors"] < 0:
+            raise ValueError("Total floors cannot be negative")
+        floor_count = db.query(ProjectFloor).filter(ProjectFloor.project_id == db_project.id).count()
+        if changes["total_floors"] < floor_count:
+            raise ValueError(
+                f"This project already has {floor_count} floor(s) added — total floors can't be less than that. "
+                "Remove floors first (Units > Floors)."
+            )
+    for field, value in changes.items():
         setattr(db_project, field, value)
     db.commit()
     db.refresh(db_project)

@@ -11,6 +11,7 @@ import { UnitStatusBadge } from "../../components/ui/Badge";
 import { UnitAvailabilityGrid } from "../../components/units/UnitAvailabilityGrid";
 import { toast, apiErrorMessage } from "../../lib/toast";
 import { confirm } from "../../lib/confirm";
+import { useAuthStore } from "../../store/authStore";
 import type { Project, ProjectDetail, Unit, UnitCategory, UnitStatus } from "../../types";
 
 type SubTab = "floors" | "units";
@@ -90,8 +91,11 @@ export default function UnitsPage() {
     queryFn: async () => (await api.get<UnitCategory[]>("/unit-categories/")).data,
   });
 
-  // Total floors (must be set before floors/units can be added)
+  // Total floors (must be set before floors/units can be added). Once set,
+  // only an admin can change it.
   const [totalFloorsDraft, setTotalFloorsDraft] = React.useState("");
+  const isAdmin = useAuthStore((s) => s.user?.role.is_admin) ?? false;
+  const floorsLocked = !isAdmin && !!project?.total_floors;
   const setTotalFloors = useMutation({
     mutationFn: async () =>
       (
@@ -588,12 +592,15 @@ export default function UnitsPage() {
               type="number"
               min="1"
               required
+              disabled={floorsLocked}
               value={totalFloorsDraft}
               onChange={(e) => setTotalFloorsDraft(e.target.value)}
               placeholder="e.g. 5"
             />
             <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-              Enter this first — it determines which floor numbers you can pick below.
+              {floorsLocked
+                ? "Only an admin can change the total floors (Project > Edit Project)."
+                : "Enter this first — it determines which floor numbers you can pick below."}
             </p>
           </div>
 

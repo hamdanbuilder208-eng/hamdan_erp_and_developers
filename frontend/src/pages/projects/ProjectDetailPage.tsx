@@ -13,11 +13,13 @@ import type {
   Partner,
   PaymentTemplate,
   ProjectDetail,
+  ProjectGroup,
   ProjectPartnerShare,
   ScheduleFrequency,
   Unit,
 } from "../../types";
 import { confirm } from "../../lib/confirm";
+import { useAuthStore } from "../../store/authStore";
 
 type Tab = "overview" | "partners" | "payment-plan";
 
@@ -125,21 +127,53 @@ export default function ProjectDetailPage() {
       setTemplateError(apiErrorMessage(err, "Failed to save payment plan template.")),
   });
 
-  // Total budget
-  const [budgetModalOpen, setBudgetModalOpen] = React.useState(false);
-  const [budgetDraft, setBudgetDraft] = React.useState("");
-  const updateBudget = useMutation({
+  // Edit project details — admin only (the backend enforces this too).
+  const isAdmin = useAuthStore((s) => s.user?.role.is_admin) ?? false;
+  const { data: groups } = useQuery({
+    queryKey: ["project-groups"],
+    queryFn: async () => (await api.get<ProjectGroup[]>("/projects/groups")).data,
+    enabled: isAdmin,
+  });
+  const [editModalOpen, setEditModalOpen] = React.useState(false);
+  const [editForm, setEditForm] = React.useState({
+    project_name: "",
+    address: "",
+    total_budget: "",
+    total_floors: "",
+    project_group_id: "",
+    status: "Active" as ProjectDetail["status"],
+  });
+  const openEditModal = () => {
+    if (!project) return;
+    setEditForm({
+      project_name: project.project_name,
+      address: project.address ?? "",
+      total_budget: project.total_budget ? String(project.total_budget) : "",
+      total_floors: project.total_floors ? String(project.total_floors) : "",
+      project_group_id: project.project_group_id ? String(project.project_group_id) : "",
+      status: project.status,
+    });
+    setEditModalOpen(true);
+  };
+  const updateProject = useMutation({
     mutationFn: async () =>
       (
         await api.put(`/projects/${projectId}`, {
-          total_budget: budgetDraft ? Number(budgetDraft) : null,
+          project_name: editForm.project_name,
+          address: editForm.address || null,
+          total_budget: editForm.total_budget ? Number(editForm.total_budget) : null,
+          total_floors: editForm.total_floors ? Number(editForm.total_floors) : 0,
+          project_group_id: editForm.project_group_id ? Number(editForm.project_group_id) : null,
+          status: editForm.status,
         })
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
-      setBudgetModalOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      setEditModalOpen(false);
+      toast.success("Project updated.");
     },
-    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to update budget.")),
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to update project.")),
   });
 
   // Partner shares
@@ -209,6 +243,12 @@ export default function ProjectDetailPage() {
             <h2 className="text-xl font-semibold text-navy-950 dark:text-white">{project.project_name}</h2>
             <ProjectStatusBadge status={project.status} />
           </div>
+          {isAdmin && (
+            <Button size="sm" variant="secondary" onClick={openEditModal}>
+              <Pencil className="h-4 w-4" />
+              Edit Project
+            </Button>
+          )}
         </div>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           {project.project_code} {project.address ? `· ${project.address}` : ""}
@@ -220,16 +260,15 @@ export default function ProjectDetailPage() {
           <CardContent>
             <div className="flex items-center justify-between">
               <p className="text-xs text-slate-500 dark:text-slate-400">Total Budget</p>
-              <button
-                onClick={() => {
-                  setBudgetDraft(project.total_budget ? String(project.total_budget) : "");
-                  setBudgetModalOpen(true);
-                }}
-                className="rounded-md p-1 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
-                title="Edit total budget"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={openEditModal}
+                  className="rounded-md p-1 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
+                  title="Edit project"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
             <p className="mt-1 text-lg font-semibold text-navy-950 dark:text-white">
               {project.total_budget ? `PKR ${Number(project.total_budget).toLocaleString()}` : "—"}
@@ -507,37 +546,101 @@ export default function ProjectDetailPage() {
         </Card>
       )}
 
-      {/* Edit Total Budget Modal */}
+      {/* Edit Project Modal (admin only) */}
       <Modal
-        open={budgetModalOpen}
-        onClose={() => setBudgetModalOpen(false)}
-        title="Edit Total Budget"
-        description="Update the overall budget for this project."
+        open={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        title="Edit Project"
+        description="Only admins can change project details."
       >
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            updateBudget.mutate();
+            updateProject.mutate();
           }}
           className="space-y-4"
         >
           <div>
-            <Label htmlFor="project_budget">Total Budget (PKR)</Label>
+            <Label htmlFor="edit_project_name">Project Name</Label>
             <Input
-              id="project_budget"
-              type="number"
-              step="0.01"
-              min="0"
-              value={budgetDraft}
-              onChange={(e) => setBudgetDraft(e.target.value)}
-              placeholder="Leave blank to clear budget"
+              id="edit_project_name"
+              required
+              value={editForm.project_name}
+              onChange={(e) => setEditForm({ ...editForm, project_name: e.target.value })}
             />
           </div>
+          <div>
+            <Label htmlFor="edit_address">Address</Label>
+            <Input
+              id="edit_address"
+              value={editForm.address}
+              onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="project_budget">Total Budget (PKR)</Label>
+              <Input
+                id="project_budget"
+                type="number"
+                step="0.01"
+                min="0"
+                value={editForm.total_budget}
+                onChange={(e) => setEditForm({ ...editForm, total_budget: e.target.value })}
+                placeholder="Leave blank to clear budget"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit_total_floors">Total Floors</Label>
+              <Input
+                id="edit_total_floors"
+                type="number"
+                min={project.floors.length}
+                value={editForm.total_floors}
+                onChange={(e) => setEditForm({ ...editForm, total_floors: e.target.value })}
+              />
+              {project.floors.length > 0 && (
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                  {project.floors.length} floor(s) already added — can't go below that.
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="edit_group">Project Group</Label>
+              <Select
+                id="edit_group"
+                value={editForm.project_group_id}
+                onChange={(e) => setEditForm({ ...editForm, project_group_id: e.target.value })}
+              >
+                <option value="">— None —</option>
+                {groups?.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="edit_status">Status</Label>
+              <Select
+                id="edit_status"
+                value={editForm.status}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, status: e.target.value as ProjectDetail["status"] })
+                }
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </Select>
+            </div>
+          </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setBudgetModalOpen(false)}>
+            <Button type="button" variant="secondary" onClick={() => setEditModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={updateBudget.isPending}>
+            <Button type="submit" disabled={updateProject.isPending}>
               Save Changes
             </Button>
           </div>
