@@ -34,14 +34,19 @@ def _next_office_expense_no(db: Session) -> str:
     return next_sequence_number(db, OfficeExpense.expense_no, "OFE-", 5)
 
 
-def list_office_expenses(db: Session, project_id: int | None = None) -> list[OfficeExpense]:
+def list_office_expenses(
+    db: Session, project_id: int | None = None, land_property_id: int | None = None
+) -> list[OfficeExpense]:
     query = db.query(OfficeExpense).options(
         joinedload(OfficeExpense.expense_head),
         joinedload(OfficeExpense.paid_from),
         joinedload(OfficeExpense.project),
+        joinedload(OfficeExpense.land_property),
     )
     if project_id is not None:
         query = query.filter(OfficeExpense.project_id == project_id)
+    if land_property_id is not None:
+        query = query.filter(OfficeExpense.land_property_id == land_property_id)
     return query.order_by(OfficeExpense.id.desc()).all()
 
 

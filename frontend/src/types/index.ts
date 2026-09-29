@@ -159,6 +159,7 @@ export interface OfficeExpense {
   expense_date: string;
   expense_head_id: number;
   project_id: number | null;
+  land_property_id: number | null;
   paid_from_id: number;
   amount: number;
   narration: string | null;
@@ -166,6 +167,7 @@ export interface OfficeExpense {
   expense_head: Account;
   paid_from: Account;
   project: Project | null;
+  land_property: { id: number; property_ref_no: string; property_type: string; area_location: string } | null;
 }
 
 export interface PettyCashFloat {

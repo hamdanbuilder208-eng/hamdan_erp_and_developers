@@ -10,6 +10,7 @@ import { confirm } from "../lib/confirm";
 import type {
   Account,
   Employee,
+  LandProperty,
   OfficeExpense,
   OwnerPersonalExpense,
   Project,
@@ -59,10 +60,15 @@ export default function ExpensesPage() {
   const [officeModalOpen, setOfficeModalOpen] = React.useState(false);
   const [officeForm, setOfficeForm] = React.useState({
     expense_head_id: "",
-    project_id: "",
+    charge_to: "",
     paid_from_id: "",
     amount: "",
     narration: "",
+  });
+  const { data: landProperties } = useQuery({
+    queryKey: ["land-properties", "", ""],
+    queryFn: async () => (await api.get<LandProperty[]>("/land-properties/")).data,
+    enabled: officeModalOpen,
   });
 
   const { data: officeExpenses, isLoading: officeLoading } = useQuery({
@@ -78,7 +84,9 @@ export default function ExpensesPage() {
         await api.post<OfficeExpense>("/expenses/office", {
           expense_date: todayIso(),
           expense_head_id: Number(officeForm.expense_head_id),
-          project_id: officeForm.project_id ? Number(officeForm.project_id) : null,
+          // charge_to is "p:<id>" (a project) or "l:<id>" (a standalone land/plot, kept off project books).
+          project_id: officeForm.charge_to.startsWith("p:") ? Number(officeForm.charge_to.slice(2)) : null,
+          land_property_id: officeForm.charge_to.startsWith("l:") ? Number(officeForm.charge_to.slice(2)) : null,
           paid_from_id: Number(officeForm.paid_from_id),
           amount: Number(officeForm.amount),
           narration: officeForm.narration || null,
@@ -88,7 +96,7 @@ export default function ExpensesPage() {
       queryClient.invalidateQueries({ queryKey: ["office-expenses"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       setOfficeModalOpen(false);
-      setOfficeForm({ expense_head_id: "", project_id: "", paid_from_id: "", amount: "", narration: "" });
+      setOfficeForm({ expense_head_id: "", charge_to: "", paid_from_id: "", amount: "", narration: "" });
       setOfficeError(null);
     },
     onError: (err: unknown) => setOfficeError(errorMessage(err, "Failed to save office expense")),
@@ -270,7 +278,13 @@ export default function ExpensesPage() {
       id: e.id,
       expense_no: e.expense_no,
       date: e.expense_date,
-      description: e.expense_head.name + (e.project ? ` · ${e.project.project_name}` : ""),
+      description:
+        e.expense_head.name +
+        (e.project
+          ? ` · ${e.project.project_name}`
+          : e.land_property
+            ? ` · Land/Plot ${e.land_property.property_ref_no} (${e.land_property.area_location})`
+            : ""),
       amount: Number(e.amount),
     })),
     ...(wagePayments ?? []).map((w) => ({
@@ -434,18 +448,29 @@ export default function ExpensesPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="oe_project">Project (optional)</Label>
+              <Label htmlFor="oe_project">Charged To (optional)</Label>
               <Select
                 id="oe_project"
-                value={officeForm.project_id}
-                onChange={(e) => setOfficeForm({ ...officeForm, project_id: e.target.value })}
+                value={officeForm.charge_to}
+                onChange={(e) => setOfficeForm({ ...officeForm, charge_to: e.target.value })}
               >
                 <option value="">— General —</option>
-                {projects?.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.project_name}
-                  </option>
-                ))}
+                <optgroup label="Projects">
+                  {projects?.map((p) => (
+                    <option key={p.id} value={`p:${p.id}`}>
+                      {p.project_name}
+                    </option>
+                  ))}
+                </optgroup>
+                {(landProperties?.length ?? 0) > 0 && (
+                  <optgroup label="Land / Plots (kept separate from projects)">
+                    {landProperties?.map((l) => (
+                      <option key={l.id} value={`l:${l.id}`}>
+                        {l.property_ref_no} — {l.property_type}, {l.area_location}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </Select>
             </div>
             <div>

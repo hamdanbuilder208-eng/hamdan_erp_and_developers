@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MapPin, Plus, Trash2, Wallet } from "lucide-react";
+import { MapPin, Pencil, Plus, Trash2, Wallet } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -57,32 +57,77 @@ export default function LandPlotsPage() {
       ).data,
   });
 
-  const createProperty = useMutation({
-    mutationFn: async () =>
-      (
-        await api.post<LandProperty>("/land-properties/", {
-          property_type: form.property_type,
-          area_location: form.area_location,
-          size_number: form.size_number ? Number(form.size_number) : 0,
-          size_unit: form.size_unit,
-          owner_vendor: form.owner_vendor || null,
-          purchase_rate: form.purchase_rate ? Number(form.purchase_rate) : null,
-          sale_rate: form.sale_rate ? Number(form.sale_rate) : null,
-          remarks: form.remarks || null,
-        })
-      ).data,
+  // Same form for adding and editing a property (edit fixes rates entered
+  // wrong or before the deal was final).
+  const [editingId, setEditingId] = React.useState<number | null>(null);
+  const openCreate = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setModalOpen(true);
+  };
+  const openEdit = (p: LandProperty) => {
+    setEditingId(p.id);
+    setForm({
+      property_type: p.property_type,
+      area_location: p.area_location,
+      size_number: String(p.size_number ?? ""),
+      size_unit: p.size_unit,
+      owner_vendor: p.owner_vendor ?? "",
+      purchase_rate: p.purchase_rate != null ? String(p.purchase_rate) : "",
+      sale_rate: p.sale_rate != null ? String(p.sale_rate) : "",
+      remarks: p.remarks ?? "",
+    });
+    setModalOpen(true);
+  };
+
+  const saveProperty = useMutation({
+    mutationFn: async () => {
+      const body = {
+        property_type: form.property_type,
+        area_location: form.area_location,
+        size_number: form.size_number ? Number(form.size_number) : 0,
+        size_unit: form.size_unit,
+        owner_vendor: form.owner_vendor || null,
+        purchase_rate: form.purchase_rate ? Number(form.purchase_rate) : null,
+        sale_rate: form.sale_rate ? Number(form.sale_rate) : null,
+        remarks: form.remarks || null,
+      };
+      return editingId
+        ? (await api.put<LandProperty>(`/land-properties/${editingId}`, body)).data
+        : (await api.post<LandProperty>("/land-properties/", body)).data;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["land-properties"] });
       setModalOpen(false);
       setForm(emptyForm);
+      toast.success(editingId ? "Property updated." : "Property added.");
+      setEditingId(null);
     },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to save property.")),
   });
 
   const updateStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: number; status: LandPropertyStatus }) =>
-      api.put(`/land-properties/${id}`, { status }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["land-properties"] }),
+    mutationFn: async ({ id, status, sale_rate }: { id: number; status: LandPropertyStatus; sale_rate?: number }) =>
+      api.put(`/land-properties/${id}`, sale_rate !== undefined ? { status, sale_rate } : { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["land-properties"] });
+      setSellProperty(null);
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to update status.")),
   });
+
+  // Marking Sold asks for the price it actually sold for — it often differs
+  // from the rate hoped for at entry (e.g. planned 15 lac, sold at 11 lac).
+  const [sellProperty, setSellProperty] = React.useState<LandProperty | null>(null);
+  const [sellPrice, setSellPrice] = React.useState("");
+  const changeStatus = (p: LandProperty, status: LandPropertyStatus) => {
+    if (status === "Sold") {
+      setSellProperty(p);
+      setSellPrice(p.sale_rate != null ? String(p.sale_rate) : "");
+    } else {
+      updateStatus.mutate({ id: p.id, status });
+    }
+  };
 
   const [detailPropertyId, setDetailPropertyId] = React.useState<number | null>(null);
   const detailProperty = properties?.find((p) => p.id === detailPropertyId) ?? null;
@@ -143,7 +188,7 @@ export default function LandPlotsPage() {
             Non-flat inventory — open plots, land and commercial shops handled as a dealer.
           </p>
         </div>
-        <Button onClick={() => setModalOpen(true)}>
+        <Button onClick={openCreate}>
           <Plus className="h-4 w-4" />
           New Property
         </Button>
@@ -176,16 +221,17 @@ export default function LandPlotsPage() {
               <th className="px-5 py-3 font-medium">Type</th>
               <th className="px-5 py-3 font-medium">Area / Location</th>
               <th className="px-5 py-3 font-medium">Size</th>
-              <th className="px-5 py-3 font-medium">Sale Rate</th>
+              <th className="px-5 py-3 font-medium">Purchase</th>
+              <th className="px-5 py-3 font-medium">Sale Price</th>
               <th className="px-5 py-3 font-medium">Status</th>
               <th className="px-5 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-            {isLoading && <TableRowsSkeleton rows={4} cols={7} />}
+            {isLoading && <TableRowsSkeleton rows={4} cols={8} />}
             {!isLoading && properties?.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                <td colSpan={8} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
                   No properties yet. Click "New Property" to add plots/land/commercial units.
                 </td>
               </tr>
@@ -204,25 +250,49 @@ export default function LandPlotsPage() {
                   {Number(p.size_number).toLocaleString()} {p.size_unit}
                 </td>
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
+                  {p.purchase_rate ? `PKR ${Number(p.purchase_rate).toLocaleString()}` : "—"}
+                </td>
+                <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
                   {p.sale_rate ? `PKR ${Number(p.sale_rate).toLocaleString()}` : "—"}
+                  {p.status === "Sold" && p.sale_rate && p.purchase_rate && (
+                    <span
+                      className={`block text-xs ${
+                        Number(p.sale_rate) >= Number(p.purchase_rate) ? "text-success-700" : "text-danger-600"
+                      }`}
+                    >
+                      {Number(p.sale_rate) >= Number(p.purchase_rate) ? "Profit" : "Loss"} PKR{" "}
+                      {Math.abs(Number(p.sale_rate) - Number(p.purchase_rate)).toLocaleString()}
+                    </span>
+                  )}
                 </td>
                 <td className="px-5 py-3">
-                  <Select
-                    value={p.status}
-                    onChange={(e) =>
-                      updateStatus.mutate({ id: p.id, status: e.target.value as LandPropertyStatus })
-                    }
-                    className="h-8 w-32 text-xs"
-                  >
-                    {statuses.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </Select>
+                  {p.status === "Rented" ? (
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400" title="Managed from Rentals">
+                      Rented
+                    </span>
+                  ) : (
+                    <Select
+                      value={p.status}
+                      onChange={(e) => changeStatus(p, e.target.value as LandPropertyStatus)}
+                      className="h-8 w-32 text-xs"
+                    >
+                      {statuses.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
                 </td>
                 <td className="px-5 py-3 text-right">
                   <div className="flex items-center justify-end gap-1">
+                    <button
+                      onClick={() => openEdit(p)}
+                      title="Edit property"
+                      className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
                     {(p.status === "Reserved" || p.status === "Sold") && (
                       <button
                         onClick={() => setDetailPropertyId(p.id)}
@@ -255,13 +325,17 @@ export default function LandPlotsPage() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="New Property"
-        description="Add a plot, land, or commercial unit to inventory."
+        title={editingId ? "Edit Property" : "New Property"}
+        description={
+          editingId
+            ? "Correct the details or rates — e.g. set the actual sale price."
+            : "Add a plot, land, or commercial unit to inventory."
+        }
       >
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            createProperty.mutate();
+            saveProperty.mutate();
           }}
           className="space-y-4"
         >
@@ -339,7 +413,7 @@ export default function LandPlotsPage() {
               />
             </div>
             <div>
-              <Label htmlFor="sale_rate">Sale Rate</Label>
+              <Label htmlFor="sale_rate">Sale Price{editingId ? "" : " (expected)"}</Label>
               <Input
                 id="sale_rate"
                 type="number"
@@ -362,8 +436,8 @@ export default function LandPlotsPage() {
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={createProperty.isPending}>
-              Add Property
+            <Button type="submit" disabled={saveProperty.isPending}>
+              {editingId ? "Save Changes" : "Add Property"}
             </Button>
           </div>
         </form>
@@ -396,15 +470,27 @@ export default function LandPlotsPage() {
                 .slice()
                 .sort((a, b) => a.payment_date.localeCompare(b.payment_date));
               const totalMoved = relevantPayments.reduce((s, pm) => s + Number(pm.amount), 0);
-              const remaining = total - totalMoved;
+              const remaining = Math.round((total - totalMoved) * 100) / 100;
               const dueField = isSold ? "buyer_payment_due_date" : "seller_payment_due_date";
               const dueValue = (isSold ? detailProperty.buyer_payment_due_date : detailProperty.seller_payment_due_date) ?? "";
+              const purchase = Number(detailProperty.purchase_rate ?? 0);
+              const profit = total - purchase;
 
               return (
                 <>
                   <div className="grid grid-cols-3 gap-3 text-sm">
                     <div>
-                      <p className="text-xs text-slate-400">{isSold ? "Sale Rate" : "Purchase Rate"}</p>
+                      <p className="flex items-center gap-1 text-xs text-slate-400">
+                        {isSold ? "Sale Price" : "Purchase Rate"}
+                        <button
+                          type="button"
+                          onClick={() => openEdit(detailProperty)}
+                          title="Edit rate"
+                          className="rounded p-0.5 hover:text-brand-600"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      </p>
                       <p className="font-medium text-navy-900 dark:text-slate-100">
                         PKR {total.toLocaleString()}
                       </p>
@@ -415,9 +501,32 @@ export default function LandPlotsPage() {
                     </div>
                     <div>
                       <p className="text-xs text-slate-400">Remaining</p>
-                      <p className="font-medium text-danger-600">PKR {remaining.toLocaleString()}</p>
+                      {remaining > 0 ? (
+                        <p className="font-medium text-danger-600">PKR {remaining.toLocaleString()}</p>
+                      ) : remaining === 0 ? (
+                        <p className="font-medium text-success-700">
+                          Fully {isSold ? "received" : "paid"}
+                        </p>
+                      ) : (
+                        <p className="font-medium text-warning-700">
+                          Excess PKR {Math.abs(remaining).toLocaleString()}
+                        </p>
+                      )}
                     </div>
                   </div>
+
+                  {isSold && purchase > 0 && (
+                    <p
+                      className={`rounded-lg px-3 py-2 text-sm ${
+                        profit >= 0 ? "bg-success-50 text-success-700" : "bg-danger-50 text-danger-700"
+                      }`}
+                    >
+                      Bought for PKR {purchase.toLocaleString()}, sold for PKR {total.toLocaleString()} —{" "}
+                      <strong>
+                        {profit >= 0 ? "Profit" : "Loss"} PKR {Math.abs(profit).toLocaleString()}
+                      </strong>
+                    </p>
+                  )}
 
                   <div>
                     <Label htmlFor="due_date">
@@ -468,6 +577,65 @@ export default function LandPlotsPage() {
               );
             })()}
           </div>
+        )}
+      </Modal>
+
+      {/* ---- Mark as Sold Modal ---- */}
+      <Modal
+        open={!!sellProperty}
+        onClose={() => setSellProperty(null)}
+        title={sellProperty ? `Mark ${sellProperty.property_ref_no} as Sold` : ""}
+        description="Enter the price it actually sold for — the buyer's remaining balance is worked out from this."
+      >
+        {sellProperty && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              updateStatus.mutate({ id: sellProperty.id, status: "Sold", sale_rate: Number(sellPrice) });
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <Label htmlFor="sell_price">Actual Sale Price (PKR)</Label>
+              <Input
+                id="sell_price"
+                type="number"
+                min="1"
+                step="0.01"
+                required
+                autoFocus
+                value={sellPrice}
+                onChange={(e) => setSellPrice(e.target.value)}
+              />
+              {sellProperty.sale_rate != null && (
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                  Expected sale price was PKR {Number(sellProperty.sale_rate).toLocaleString()} — change it if the
+                  deal closed at a different price.
+                </p>
+              )}
+            </div>
+            {sellProperty.purchase_rate != null && Number(sellPrice) > 0 && (
+              <p
+                className={`rounded-lg px-3 py-2 text-sm ${
+                  Number(sellPrice) >= Number(sellProperty.purchase_rate)
+                    ? "bg-success-50 text-success-700"
+                    : "bg-danger-50 text-danger-700"
+                }`}
+              >
+                Purchase PKR {Number(sellProperty.purchase_rate).toLocaleString()} →{" "}
+                {Number(sellPrice) >= Number(sellProperty.purchase_rate) ? "Profit" : "Loss"} PKR{" "}
+                {Math.abs(Number(sellPrice) - Number(sellProperty.purchase_rate)).toLocaleString()}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="secondary" onClick={() => setSellProperty(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={updateStatus.isPending || !(Number(sellPrice) > 0)}>
+                Mark as Sold
+              </Button>
+            </div>
+          </form>
         )}
       </Modal>
 

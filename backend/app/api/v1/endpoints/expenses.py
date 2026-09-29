@@ -23,8 +23,10 @@ router = APIRouter()
 
 
 @router.get("/office", response_model=list[OfficeExpenseOut])
-def list_office_expenses(project_id: int | None = None, db: Session = Depends(get_db)):
-    return expense_crud.list_office_expenses(db, project_id=project_id)
+def list_office_expenses(
+    project_id: int | None = None, land_property_id: int | None = None, db: Session = Depends(get_db)
+):
+    return expense_crud.list_office_expenses(db, project_id=project_id, land_property_id=land_property_id)
 
 
 @router.post("/office", response_model=OfficeExpenseOut, status_code=status.HTTP_201_CREATED)

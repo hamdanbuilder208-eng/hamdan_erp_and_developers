@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.sequences import next_sequence_number
-from app.models.land_property import LandProperty, LandPropertyPayment
+from app.models.land_property import LandProperty, LandPropertyPayment, LandPropertyStatus
 from app.schemas.land_property import LandPropertyCreate, LandPropertyPaymentCreate, LandPropertyUpdate
 
 
@@ -48,7 +48,14 @@ def create_land_property(db: Session, property_in: LandPropertyCreate) -> LandPr
 def update_land_property(
     db: Session, db_property: LandProperty, property_in: LandPropertyUpdate
 ) -> LandProperty:
-    for field, value in property_in.model_dump(exclude_unset=True).items():
+    changes = property_in.model_dump(exclude_unset=True)
+    # A property marked Sold must carry the price it actually sold for — the
+    # buyer's "remaining" is measured against it, not the originally hoped-for rate.
+    new_status = changes.get("status", db_property.status)
+    new_sale_rate = changes.get("sale_rate", db_property.sale_rate)
+    if new_status == LandPropertyStatus.SOLD and not (new_sale_rate and float(new_sale_rate) > 0):
+        raise ValueError("Enter the actual sale price to mark this property as Sold")
+    for field, value in changes.items():
         setattr(db_property, field, value)
     db.commit()
     db.refresh(db_property)

@@ -40,7 +40,10 @@ def update_land_property(
     db_property = land_crud.get_land_property(db, property_id)
     if not db_property:
         raise HTTPException(status_code=404, detail="Property not found")
-    return land_crud.update_land_property(db, db_property, property_in)
+    try:
+        return land_crud.update_land_property(db, db_property, property_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.delete("/{property_id}", status_code=status.HTTP_204_NO_CONTENT)

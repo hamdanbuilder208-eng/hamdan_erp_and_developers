@@ -16,6 +16,9 @@ class OfficeExpense(Base, TimestampMixin):
 
     expense_head_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"))
+    # An expense on a standalone land/plot (not a project) — kept off every
+    # project's books so land costs never mix into project profit.
+    land_property_id: Mapped[int | None] = mapped_column(ForeignKey("land_properties.id"))
     paid_from_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
     voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
 
@@ -24,6 +27,7 @@ class OfficeExpense(Base, TimestampMixin):
 
     expense_head: Mapped["Account"] = relationship(foreign_keys=[expense_head_id])
     project: Mapped["Project | None"] = relationship()
+    land_property: Mapped["LandProperty | None"] = relationship()
     paid_from: Mapped["Account"] = relationship(foreign_keys=[paid_from_id])
 
 

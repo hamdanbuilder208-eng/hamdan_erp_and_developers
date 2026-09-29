@@ -1,6 +1,6 @@
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.models.expense import WageType
 from app.schemas.account import AccountOut
@@ -14,13 +14,26 @@ class OfficeExpenseBase(BaseModel):
     expense_date: date
     expense_head_id: int
     project_id: int | None = None
+    land_property_id: int | None = None
     paid_from_id: int
     amount: float
     narration: str | None = None
 
 
 class OfficeExpenseCreate(OfficeExpenseBase):
-    pass
+    @model_validator(mode="after")
+    def _one_target(self):
+        if self.project_id and self.land_property_id:
+            raise ValueError("An expense belongs to either a project or a land/plot, not both")
+        return self
+
+
+class LandPropertyBrief(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    property_ref_no: str
+    property_type: str
+    area_location: str
 
 
 class OfficeExpenseOut(OfficeExpenseBase):
@@ -31,6 +44,7 @@ class OfficeExpenseOut(OfficeExpenseBase):
     expense_head: AccountOut
     paid_from: AccountOut
     project: ProjectOut | None = None
+    land_property: LandPropertyBrief | None = None
 
 
 # Employee

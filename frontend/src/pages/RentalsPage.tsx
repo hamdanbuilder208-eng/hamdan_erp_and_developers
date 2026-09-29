@@ -10,9 +10,26 @@ import { RentAgreementStatusBadge } from "../components/ui/Badge";
 import { TableRowsSkeleton } from "../components/ui/Skeleton";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
-import type { Account, LandProperty, RentAgreement, RentReceipt, Tenant, Unit } from "../types";
+import type {
+  Account,
+  LandProperty,
+  OfficeExpense,
+  Project,
+  RentAgreement,
+  RentReceipt,
+  Tenant,
+  Unit,
+} from "../types";
 
-type RentalTab = "agreements" | "tenants";
+type RentalTab = "agreements" | "tenants" | "income";
+
+const rentCollected = (a: RentAgreement) => a.schedule_lines.reduce((s, l) => s + Number(l.paid_amount), 0);
+const rentOutstanding = (a: RentAgreement) =>
+  a.status === "Active"
+    ? a.schedule_lines
+        .filter((l) => l.due_date <= todayIso())
+        .reduce((s, l) => s + Math.max(Number(l.amount) - Number(l.paid_amount), 0), 0)
+    : 0;
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -29,9 +46,11 @@ const emptyAgreementForm = {
 };
 const emptyReceiptForm = { amount: "", credit_account_id: "", mode_of_payment: "Cash" };
 
-function targetLabel(a: RentAgreement) {
-  if (a.unit) return `${a.unit.unit_ref_no} — ${a.unit.unit_number}`;
-  if (a.land_property) return `${a.land_property.property_ref_no} — ${a.land_property.area_location}`;
+function targetLabel(a: RentAgreement, projectName?: (id: number) => string) {
+  if (a.unit)
+    return `${projectName ? `${projectName(a.unit.project_id)} · ` : ""}Unit ${a.unit.unit_number} (${a.unit.unit_ref_no})`;
+  if (a.land_property)
+    return `${a.land_property.property_type} ${a.land_property.property_ref_no} — ${a.land_property.area_location}`;
   return "—";
 }
 
@@ -92,6 +111,64 @@ export default function RentalsPage() {
   });
 
   const cashBankAccounts = accounts?.filter((a) => a.nature === "Asset" && !a.is_control) ?? [];
+
+  const { data: projects } = useQuery({
+    queryKey: ["projects"],
+    queryFn: async () => (await api.get<Project[]>("/projects/")).data,
+  });
+  const projectName = (id: number) => projects?.find((p) => p.id === id)?.project_name ?? `Project #${id}`;
+
+  // Land/plot expenses (Expenses > Office, charged to a land/plot) — shown
+  // next to that property's rent so each has its own separate account.
+  const { data: officeExpenses } = useQuery({
+    queryKey: ["office-expenses"],
+    queryFn: async () => (await api.get<OfficeExpense[]>("/expenses/office")).data,
+    enabled: tab === "income",
+  });
+
+  // Rental income grouped by where it comes from: each project's shops/units,
+  // and each standalone land/plot. Kept apart from project sales and profit.
+  type SourceRow = {
+    key: string;
+    kind: "project" | "land";
+    name: string;
+    agreements: number;
+    active: number;
+    collected: number;
+    outstanding: number;
+    expenses: number | null;
+  };
+  const incomeBySource: SourceRow[] = React.useMemo(() => {
+    const rows = new Map<string, SourceRow>();
+    for (const a of agreements ?? []) {
+      const key = a.unit ? `p:${a.unit.project_id}` : `l:${a.land_property_id}`;
+      const row =
+        rows.get(key) ??
+        ({
+          key,
+          kind: a.unit ? "project" : "land",
+          name: a.unit
+            ? projectName(a.unit.project_id)
+            : `${a.land_property?.property_type ?? "Property"} ${a.land_property?.property_ref_no ?? ""} — ${a.land_property?.area_location ?? ""}`,
+          agreements: 0,
+          active: 0,
+          collected: 0,
+          outstanding: 0,
+          expenses: a.unit
+            ? null
+            : (officeExpenses ?? [])
+                .filter((e) => e.land_property_id === a.land_property_id)
+                .reduce((s, e) => s + Number(e.amount), 0),
+        } as SourceRow);
+      row.agreements += 1;
+      if (a.status === "Active") row.active += 1;
+      row.collected += rentCollected(a);
+      row.outstanding += rentOutstanding(a);
+      rows.set(key, row);
+    }
+    return [...rows.values()].sort((x, y) => (x.kind === y.kind ? x.name.localeCompare(y.name) : x.kind === "project" ? -1 : 1));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agreements, projects, officeExpenses]);
 
   const refreshDetail = async (id: number) => {
     const { data } = await api.get<RentAgreement>(`/rentals/agreements/${id}`);
@@ -216,7 +293,7 @@ export default function RentalsPage() {
             accounting handled the same way as a sale booking.
           </p>
         </div>
-        {tab === "agreements" ? (
+        {tab !== "tenants" ? (
           <Button onClick={() => setAgreementModalOpen(true)}>
             <Plus className="h-4 w-4" />
             New Agreement
@@ -233,6 +310,7 @@ export default function RentalsPage() {
         {(
           [
             { key: "agreements", label: "Agreements" },
+            { key: "income", label: "Income by Source" },
             { key: "tenants", label: "Tenants" },
           ] as { key: RentalTab; label: string }[]
         ).map((t) => (
@@ -283,7 +361,7 @@ export default function RentalsPage() {
                   <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
                     <span className="inline-flex items-center gap-1.5">
                       {a.unit ? <Building2 className="h-3.5 w-3.5" /> : <MapPin className="h-3.5 w-3.5" />}
-                      {targetLabel(a)}
+                      {targetLabel(a, projectName)}
                     </span>
                   </td>
                   <td className="px-5 py-3 text-navy-900 dark:text-slate-100">
@@ -300,6 +378,71 @@ export default function RentalsPage() {
             </tbody>
           </table>
         </Card>
+      )}
+
+      {tab === "income" && (
+        <div className="space-y-3">
+          <p className="rounded-lg bg-slate-50 px-4 py-2.5 text-sm text-slate-600 dark:bg-navy-800/60 dark:text-slate-300">
+            Rent is tracked separately by where it comes from. It is <strong>not</strong> added to any
+            project's sales or profit. Land/plot expenses (Expenses &gt; Office, charged to a land/plot) are
+            shown against that property only.
+          </p>
+          <Card className="overflow-hidden">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                <tr>
+                  <th className="px-5 py-3 font-medium">Source</th>
+                  <th className="px-5 py-3 font-medium">Agreements</th>
+                  <th className="px-5 py-3 text-right font-medium">Rent Collected</th>
+                  <th className="px-5 py-3 text-right font-medium">Overdue</th>
+                  <th className="px-5 py-3 text-right font-medium">Land Expenses</th>
+                  <th className="px-5 py-3 text-right font-medium">Net</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
+                {incomeBySource.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                      No rent agreements yet.
+                    </td>
+                  </tr>
+                )}
+                {incomeBySource.map((r) => (
+                  <tr key={r.key}>
+                    <td className="px-5 py-3 text-navy-900 dark:text-slate-100">
+                      <span className="inline-flex items-center gap-1.5">
+                        {r.kind === "project" ? (
+                          <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                        ) : (
+                          <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                        )}
+                        {r.name}
+                      </span>
+                      <span className="block text-xs text-slate-400 dark:text-slate-500">
+                        {r.kind === "project" ? "Project shops / units" : "Personal land / plot"}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
+                      {r.agreements} ({r.active} active)
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums text-success-700">
+                      PKR {r.collected.toLocaleString()}
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums text-danger-600">
+                      {r.outstanding > 0 ? `PKR ${r.outstanding.toLocaleString()}` : "—"}
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums text-slate-500 dark:text-slate-400">
+                      {r.expenses === null ? "—" : `PKR ${r.expenses.toLocaleString()}`}
+                    </td>
+                    <td className="px-5 py-3 text-right font-medium tabular-nums text-navy-900 dark:text-slate-100">
+                      PKR {(r.collected - (r.expenses ?? 0)).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </div>
       )}
 
       {tab === "tenants" && (
@@ -461,7 +604,7 @@ export default function RentalsPage() {
                   })
                 }
               >
-                <option value="property">Extra Property</option>
+                <option value="property">Land / Plot (personal)</option>
                 <option value="unit">Project Unit / Shop</option>
               </Select>
             </div>
@@ -477,14 +620,20 @@ export default function RentalsPage() {
               >
                 <option value="">Select {agreementForm.target_type === "unit" ? "unit" : "property"}</option>
                 {agreementForm.target_type === "unit"
-                  ? (targetOptions as Unit[]).map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.unit_ref_no} — {u.unit_number}
-                      </option>
+                  ? [...new Set((targetOptions as Unit[]).map((u) => u.project_id))].map((pid) => (
+                      <optgroup key={pid} label={projectName(pid)}>
+                        {(targetOptions as Unit[])
+                          .filter((u) => u.project_id === pid)
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>
+                              Unit {u.unit_number} ({u.unit_ref_no})
+                            </option>
+                          ))}
+                      </optgroup>
                     ))
                   : (targetOptions as LandProperty[]).map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.property_ref_no} — {p.area_location}
+                        {p.property_type} {p.property_ref_no} — {p.area_location}
                       </option>
                     ))}
               </Select>
