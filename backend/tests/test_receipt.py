@@ -58,7 +58,7 @@ def test_create_receipt_requires_receivable_account_in_chart(db, project, unit, 
     so no 1030 Accounts Receivable exists) with a hand-built booking that never
     went through booking_crud, isolating this to the receipt-side lookup."""
     from app.models.account import Account, AccountNature
-    from app.models.booking import Booking, PaymentScheduleLine, ScheduleFrequency
+    from app.models.booking import Booking, PaymentScheduleLine
 
     cash = Account(code="1010", name="Cash", nature=AccountNature.ASSET)
     db.add(cash)
@@ -70,7 +70,6 @@ def test_create_receipt_requires_receivable_account_in_chart(db, project, unit, 
         allottee_id=allottee.id,
         status_date=TODAY,
         total_price=1_000_000,
-        frequency=ScheduleFrequency.MONTHLY,
     )
     db.add(booking_row)
     db.flush()

@@ -7,8 +7,19 @@ from app.models.allottee import Allottee
 from app.models.booking import BookingStatus, ExtraChargesReason, ScheduleFrequency
 from app.models.project import Project
 from app.models.unit import Unit, UnitStatus
-from app.schemas.booking import BookingCreate, BookingTransferCreate
+from app.schemas.booking import (
+    BookingCreate,
+    BookingTransferCreate,
+    ExtraChargeCreate,
+    InstallmentPlanCreate,
+)
 from tests.conftest import TODAY
+
+
+def _plan(count: int, total: float, frequency=ScheduleFrequency.MONTHLY, start=TODAY) -> InstallmentPlanCreate:
+    return InstallmentPlanCreate(
+        frequency=frequency, no_of_installments=count, total_amount=total, start_date=start
+    )
 
 
 def _booking_in(unit: Unit, project: Project, allottee: Allottee, **overrides) -> BookingCreate:
@@ -20,8 +31,6 @@ def _booking_in(unit: Unit, project: Project, allottee: Allottee, **overrides) -
         status_date=TODAY,
         discount=0,
         down_payment_amount=0,
-        no_of_installments=0,
-        frequency=ScheduleFrequency.MONTHLY,
     )
     data.update(overrides)
     return BookingCreate(**data)
@@ -58,7 +67,7 @@ def test_installment_schedule_sums_to_remaining_balance(db: Session, project, un
             project,
             allottee,
             down_payment_amount=100_000,
-            no_of_installments=3,
+            installment_plans=[_plan(3, float(unit.total_price) - 100_000)],
         ),
     )
 
@@ -83,8 +92,9 @@ def test_installment_due_dates_step_by_frequency(db: Session, project, unit, all
             unit,
             project,
             allottee,
-            no_of_installments=2,
-            frequency=ScheduleFrequency.QUARTERLY,
+            installment_plans=[
+                _plan(2, float(unit.total_price), ScheduleFrequency.QUARTERLY, start=TODAY.replace(month=4))
+            ],
         ),
     )
 
@@ -92,8 +102,8 @@ def test_installment_due_dates_step_by_frequency(db: Session, project, unit, all
         (l for l in result.schedule_lines if l.installment_no > 0),
         key=lambda l: l.installment_no,
     )
-    assert installment_lines[0].due_date.month == 4  # +3 months from Jan
-    assert installment_lines[1].due_date.month == 7  # +6 months from Jan
+    assert installment_lines[0].due_date.month == 4  # plan starts in April
+    assert installment_lines[1].due_date.month == 7  # one quarter later
 
 
 def test_create_booking_posts_balanced_journal_voucher(
@@ -158,14 +168,14 @@ def test_transfer_rejects_cancelled_booking(db: Session, project, unit, allottee
 # Extra charges
 
 
+def _extra(amount: float, reason=ExtraChargesReason.OTHER) -> ExtraChargeCreate:
+    return ExtraChargeCreate(reason=reason, amount=amount, charge_date=TODAY)
+
+
 def test_extra_charges_add_to_total_price(db: Session, project, unit, allottee):
     result = booking_crud.create_booking(
         db,
-        _booking_in(
-            unit, project, allottee,
-            extra_charges_amount=50_000,
-            extra_charges_reason=ExtraChargesReason.EAST_FACING,
-        ),
+        _booking_in(unit, project, allottee, extra_charges=[_extra(50_000, ExtraChargesReason.EAST_FACING)]),
     )
 
     assert result.total_price == unit.total_price + 50_000
@@ -174,11 +184,7 @@ def test_extra_charges_add_to_total_price(db: Session, project, unit, allottee):
 def test_extra_charges_create_a_labeled_schedule_line(db: Session, project, unit, allottee):
     result = booking_crud.create_booking(
         db,
-        _booking_in(
-            unit, project, allottee,
-            extra_charges_amount=50_000,
-            extra_charges_reason=ExtraChargesReason.WATER,
-        ),
+        _booking_in(unit, project, allottee, extra_charges=[_extra(50_000, ExtraChargesReason.WATER)]),
     )
 
     extra_line = next(l for l in result.schedule_lines if l.label == "Extra Charges — Water")
@@ -187,17 +193,14 @@ def test_extra_charges_create_a_labeled_schedule_line(db: Session, project, unit
 
 
 def test_extra_charges_are_excluded_from_remaining_installments(db: Session, project, unit, allottee):
-    # unit total is 1,000,000 (see conftest); +50,000 extra charges = 1,050,000,
-    # minus the 50,000 extra-charges line itself leaves exactly 1,000,000 to
-    # split across 2 installments — if extra charges leaked into the
-    # remaining-balance calc, each installment would be off.
+    # unit total is 1,000,000 (see conftest). Extra charges are posted as their
+    # own line on top, so the installment plans still cover exactly 1,000,000.
     result = booking_crud.create_booking(
         db,
         _booking_in(
             unit, project, allottee,
-            extra_charges_amount=50_000,
-            extra_charges_reason=ExtraChargesReason.ROAD_FACING,
-            no_of_installments=2,
+            extra_charges=[_extra(50_000, ExtraChargesReason.ROAD_FACING)],
+            installment_plans=[_plan(2, 1_000_000)],
         ),
     )
 
@@ -205,18 +208,14 @@ def test_extra_charges_are_excluded_from_remaining_installments(db: Session, pro
     assert sum(l.amount for l in installment_lines) == pytest.approx(1_000_000)
 
 
-def test_extra_charges_amount_requires_a_reason(unit, project, allottee):
-    with pytest.raises(ValidationError, match="Select what the extra charges are for"):
-        _booking_in(unit, project, allottee, extra_charges_amount=50_000)
+def test_extra_charges_amount_requires_a_reason():
+    with pytest.raises(ValidationError, match="reason"):
+        ExtraChargeCreate(amount=50_000, charge_date=TODAY)
 
 
-def test_extra_charges_rejects_negative_amount(unit, project, allottee):
-    with pytest.raises(ValidationError, match="cannot be negative"):
-        _booking_in(
-            unit, project, allottee,
-            extra_charges_amount=-1,
-            extra_charges_reason=ExtraChargesReason.OTHER,
-        )
+def test_extra_charges_rejects_negative_amount():
+    with pytest.raises(ValidationError, match="greater than zero"):
+        _extra(-1)
 
 
 def test_no_extra_charges_line_when_amount_is_zero(db: Session, project, unit, allottee):

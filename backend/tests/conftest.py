@@ -137,7 +137,7 @@ def booking(db: Session, project, unit, allottee, accounting_accounts):
     against — 2 installments of 500,000 each, no down payment."""
     from app.crud import booking as booking_crud
     from app.models.booking import ScheduleFrequency
-    from app.schemas.booking import BookingCreate
+    from app.schemas.booking import BookingCreate, InstallmentPlanCreate
 
     return booking_crud.create_booking(
         db,
@@ -147,8 +147,14 @@ def booking(db: Session, project, unit, allottee, accounting_accounts):
             unit_id=unit.id,
             allottee_id=allottee.id,
             status_date=TODAY,
-            no_of_installments=2,
-            frequency=ScheduleFrequency.MONTHLY,
+            installment_plans=[
+                InstallmentPlanCreate(
+                    frequency=ScheduleFrequency.MONTHLY,
+                    no_of_installments=2,
+                    total_amount=1_000_000,
+                    start_date=TODAY,
+                )
+            ],
         ),
     )
 

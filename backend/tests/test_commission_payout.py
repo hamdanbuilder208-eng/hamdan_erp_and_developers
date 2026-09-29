@@ -7,7 +7,7 @@ from app.crud import receipt as receipt_crud
 from app.crud.booking_agent import _commission_row
 from app.models.booking_agent import BookingAgent
 from app.models.voucher import Voucher
-from app.schemas.booking import BookingCreate
+from app.schemas.booking import BookingCreate, InstallmentPlanCreate
 from app.schemas.commission_payout import CommissionPayoutCreate
 from app.schemas.receipt import ReceiptCreate
 from tests.conftest import TODAY
@@ -36,7 +36,9 @@ def booking_with_agent(db: Session, project, unit, allottee, accounting_accounts
             status_date=TODAY,
             booking_agent_id=agent.id,
             agent_commission_percent=5,
-            no_of_installments=1,
+            installment_plans=[
+                InstallmentPlanCreate(no_of_installments=1, total_amount=1_000_000, start_date=TODAY)
+            ],
         ),
     )
 
