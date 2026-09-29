@@ -203,3 +203,49 @@ def test_delete_partner_blocked_while_shares_exist(db: Session, project, partner
 
     with pytest.raises(ValueError, match="share in"):
         partner_crud.delete_partner(db, partner)
+
+
+# ---------------------------------------------------------------------------
+# Pledge pending + company backup (retention) policy
+# ---------------------------------------------------------------------------
+
+def test_summary_shows_pending_pledge_and_retention(db: Session, partner, project):
+    from app.models.company_settings import CompanySettings
+    from app.models.partner import PartnerContribution, ProjectPartnerShare
+    from app.models.account import Account, AccountNature
+    from app.models.voucher import Voucher, VoucherLine, VoucherType
+
+    db.add(CompanySettings(id=1, partner_profit_retention_percent=20))
+    db.add(
+        ProjectPartnerShare(
+            project_id=project.id, partner_id=partner.id, investment_amount=20_000_000, share_percent=50
+        )
+    )
+    bank = Account(code="1015", name="Bank", nature=AccountNature.ASSET)
+    sales = Account(code="4015", name="Sales", nature=AccountNature.REVENUE)
+    db.add_all([bank, sales])
+    db.flush()
+    db.add(
+        PartnerContribution(
+            contribution_no="PC-1", contribution_date=TODAY, partner_id=partner.id,
+            project_id=project.id, debit_account_id=bank.id, amount=10_000_000,
+        )
+    )
+    # PKR 500,000 profit on the project → partner's 50% = 250,000
+    v = Voucher(voucher_no="JV-T1", voucher_type=VoucherType.JOURNAL, voucher_date=TODAY, project_id=project.id)
+    db.add(v)
+    db.flush()
+    db.add_all([
+        VoucherLine(voucher_id=v.id, account_id=bank.id, debit=500_000, credit=0),
+        VoucherLine(voucher_id=v.id, account_id=sales.id, debit=0, credit=500_000),
+    ])
+    db.commit()
+
+    row = partner_crud.get_partner_summary(db, partner.id).projects[0]
+    assert row.pending_investment == 10_000_000
+    assert row.partner_share_amount == 250_000
+    assert row.retention_percent == 20
+    assert row.retained_amount == 50_000
+    assert row.withdrawable_per_policy == 200_000
+    # The hard cap is still the full profit balance — the policy only warns.
+    assert row.balance == 250_000

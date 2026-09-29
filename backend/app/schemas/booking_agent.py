@@ -31,6 +31,8 @@ class BookingAgentOut(BookingAgentBase):
 class BookingCommissionRow(BaseModel):
     booking_id: int
     booking_ref_no: str
+    project_id: int
+    project_name: str
     unit_number: str
     allottee_name: str
     total_price: float

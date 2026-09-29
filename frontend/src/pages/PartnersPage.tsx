@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Landmark, PiggyBank, Plus, Printer, Receipt, Trash2, TrendingUp } from "lucide-react";
+import { BellRing, Landmark, PiggyBank, Plus, Printer, Receipt, Trash2, TrendingUp } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
@@ -26,6 +26,7 @@ const CONTRIBUTION_PURPOSES = [
   "Initial Investment",
   "Start of Work",
   "Construction Top-up",
+  "Pending Pledge",
   "Other",
 ];
 
@@ -62,6 +63,7 @@ export default function PartnersPage() {
   const [expenseModalOpen, setExpenseModalOpen] = React.useState(false);
   const [expenseForm, setExpenseForm] = React.useState(emptyExpenseForm);
   const [expenseError, setExpenseError] = React.useState<string | null>(null);
+  const [settlementProjectId, setSettlementProjectId] = React.useState<number | null>(null);
 
   const { data: partners, isLoading } = useQuery({
     queryKey: ["partners"],
@@ -231,6 +233,39 @@ export default function PartnersPage() {
     },
   });
 
+  const drawingRow = summary?.projects.find((r) => r.project_id === drawingProjectId);
+  const contributionRow = summary?.projects.find((r) => r.project_id === Number(contributionForm.project_id));
+  const settlementRow = summary?.projects.find((r) => r.project_id === settlementProjectId);
+  const profitReady = summary?.projects.filter((r) => r.balance > 0) ?? [];
+
+  // Company backup policy is advisory: going past it asks for confirmation
+  // (an admin may choose to pay the full profit) instead of blocking.
+  const submitDrawing = async () => {
+    setDrawingError(null);
+    const amount = Number(drawingForm.amount) || 0;
+    if (drawingRow && drawingRow.retention_percent > 0 && amount > drawingRow.withdrawable_per_policy + 0.01) {
+      const ok = await confirm(
+        `Company policy keeps ${drawingRow.retention_percent}% of the partner's profit (PKR ${drawingRow.retained_amount.toLocaleString()}) ` +
+          `with Hamdan as backup. Recommended withdrawal is up to PKR ${drawingRow.withdrawable_per_policy.toLocaleString()}, ` +
+          `but PKR ${amount.toLocaleString()} was entered. Pay it anyway?`,
+        { title: "Above backup threshold", confirmLabel: "Pay Anyway", danger: true },
+      );
+      if (!ok) return;
+    }
+    createDrawing.mutate();
+  };
+
+  const openContribution = (projectId?: number, amount?: number) => {
+    setContributionForm({
+      ...emptyContributionForm,
+      project_id: projectId ? String(projectId) : "",
+      amount: amount ? String(amount) : "",
+      purpose: amount ? "Pending Pledge" : CONTRIBUTION_PURPOSES[0],
+    });
+    setContributionError(null);
+    setContributionModalOpen(true);
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -259,7 +294,7 @@ export default function PartnersPage() {
           </Button>
           <Button
             variant="secondary"
-            onClick={() => setContributionModalOpen(true)}
+            onClick={() => openContribution()}
             disabled={!selectedPartnerId}
           >
             <PiggyBank className="h-4 w-4" />
@@ -325,6 +360,25 @@ export default function PartnersPage() {
             </Card>
           ) : (
             <div className="space-y-4">
+              {profitReady.length > 0 && (
+                <div className="rounded-lg border border-warning-100 bg-warning-50 px-4 py-3 text-sm text-warning-700">
+                  <p className="flex items-center gap-1.5 font-semibold">
+                    <BellRing className="h-4 w-4" />
+                    Profit available for {summary.partner.name}
+                  </p>
+                  <ul className="mt-1 space-y-0.5 text-xs">
+                    {profitReady.map((r) => (
+                      <li key={r.project_id}>
+                        {r.project_name}: profit share PKR {r.balance.toLocaleString()} not yet withdrawn
+                        {r.retention_percent > 0 &&
+                          ` — per company policy ${r.retention_percent}% (PKR ${r.retained_amount.toLocaleString()}) stays as backup, so up to PKR ${r.withdrawable_per_policy.toLocaleString()} can be withdrawn now`}
+                        .
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
                 <Card>
                   <CardContent>
@@ -431,6 +485,18 @@ export default function PartnersPage() {
                             {row.partner_expense_amount > 0 &&
                               ` · Paid on Behalf ${row.partner_expense_amount.toLocaleString()}`}
                           </p>
+                          {row.pending_investment > 0 && (
+                            <p className="mt-0.5 flex items-center gap-2 text-xs font-medium text-danger-600">
+                              Pending pledge: PKR {row.pending_investment.toLocaleString()}
+                              <button
+                                type="button"
+                                onClick={() => openContribution(row.project_id, row.pending_investment)}
+                                className="rounded border border-danger-100 px-1.5 py-0.5 text-[11px] hover:bg-danger-50"
+                              >
+                                Add Amount
+                              </button>
+                            </p>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{row.share_percent}%</td>
                         <td className="px-4 py-3 text-right tabular-nums text-navy-900 dark:text-slate-100">
@@ -449,18 +515,29 @@ export default function PartnersPage() {
                           {row.partner_distributable_share.toLocaleString()}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          {row.balance > 0 && (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => {
-                                setDrawingProjectId(row.project_id);
-                                setDrawingForm({ ...emptyDrawingForm, amount: String(row.balance) });
-                              }}
-                            >
-                              Withdraw
+                          <div className="flex items-center justify-end gap-1">
+                            {row.balance > 0 && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  setDrawingProjectId(row.project_id);
+                                  setDrawingError(null);
+                                  setDrawingForm({
+                                    ...emptyDrawingForm,
+                                    amount: String(
+                                      row.retention_percent > 0 ? row.withdrawable_per_policy : row.balance,
+                                    ),
+                                  });
+                                }}
+                              >
+                                Withdraw
+                              </Button>
+                            )}
+                            <Button size="sm" variant="secondary" onClick={() => setSettlementProjectId(row.project_id)}>
+                              Settlement
                             </Button>
-                          )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -683,11 +760,34 @@ export default function PartnersPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            setDrawingError(null);
-            createDrawing.mutate();
+            submitDrawing();
           }}
           className="space-y-4"
         >
+          {drawingRow && (
+            <div className="grid grid-cols-3 gap-3 rounded-lg bg-slate-50 px-4 py-2.5 text-sm dark:bg-navy-800/60">
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Profit Balance</p>
+                <p className="font-medium text-navy-900 dark:text-slate-100">
+                  PKR {drawingRow.balance.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Backup ({drawingRow.retention_percent}%)
+                </p>
+                <p className="font-medium text-navy-900 dark:text-slate-100">
+                  PKR {drawingRow.retained_amount.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Withdrawable per Policy</p>
+                <p className="font-semibold text-success-700">
+                  PKR {drawingRow.withdrawable_per_policy.toLocaleString()}
+                </p>
+              </div>
+            </div>
+          )}
           <div>
             <Label htmlFor="d_amount">Amount</Label>
             <Input
@@ -743,6 +843,75 @@ export default function PartnersPage() {
         </form>
       </Modal>
 
+      {/* Partnership end — settlement preview (read-only, nothing is posted) */}
+      <Modal
+        open={!!settlementRow}
+        onClose={() => setSettlementProjectId(null)}
+        title={settlementRow ? `Partnership Settlement — ${settlementRow.project_name}` : ""}
+        description="If the partnership on this project ended today. Preview only — nothing is recorded."
+      >
+        {settlementRow && (
+          <div className="space-y-4 text-sm">
+            <div
+              className={`rounded-lg px-4 py-2.5 ${
+                settlementRow.project_net_profit < 0
+                  ? "bg-danger-50 text-danger-700"
+                  : "bg-success-50 text-success-700"
+              }`}
+            >
+              Project is in {settlementRow.project_net_profit < 0 ? "loss" : "profit"}: PKR{" "}
+              {Math.abs(settlementRow.project_net_profit).toLocaleString()}. Partner's share is{" "}
+              {settlementRow.share_percent}%, so they{" "}
+              {settlementRow.project_net_profit < 0 ? "bear a loss of" : "earn a profit of"} PKR{" "}
+              {Math.abs(settlementRow.partner_share_amount).toLocaleString()}.
+            </div>
+            <table className="w-full">
+              <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
+                {[
+                  ["Contributed (paid in)", settlementRow.contributed_amount],
+                  ["Paid on behalf of company", settlementRow.partner_expense_amount],
+                  [
+                    settlementRow.partner_share_amount < 0 ? "Share of loss" : "Share of profit",
+                    settlementRow.partner_share_amount,
+                  ],
+                  ["Already withdrawn", -settlementRow.drawn_amount],
+                ].map(([label, value]) => (
+                  <tr key={label as string}>
+                    <td className="py-1.5 text-slate-600 dark:text-slate-300">{label}</td>
+                    <td
+                      className={`py-1.5 text-right tabular-nums ${
+                        (value as number) < 0 ? "text-danger-600" : "text-navy-900 dark:text-slate-100"
+                      }`}
+                    >
+                      {(value as number) < 0 ? "− " : "+ "}PKR {Math.abs(value as number).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="font-semibold">
+                  <td className="pt-2.5 text-navy-900 dark:text-slate-100">
+                    {settlementRow.current_account_balance >= 0
+                      ? "Hamdan pays the partner"
+                      : "Partner owes Hamdan"}
+                  </td>
+                  <td
+                    className={`pt-2.5 text-right tabular-nums ${
+                      settlementRow.current_account_balance >= 0 ? "text-success-700" : "text-danger-600"
+                    }`}
+                  >
+                    PKR {Math.abs(settlementRow.current_account_balance).toLocaleString()}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div className="flex justify-end">
+              <Button variant="secondary" onClick={() => setSettlementProjectId(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       <Modal
         open={contributionModalOpen}
         onClose={() => {
@@ -776,6 +945,28 @@ export default function PartnersPage() {
               ))}
             </Select>
           </div>
+          {contributionRow && (
+            <div className="grid grid-cols-3 gap-3 rounded-lg bg-slate-50 px-4 py-2.5 text-sm dark:bg-navy-800/60">
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Pledged</p>
+                <p className="font-medium text-navy-900 dark:text-slate-100">
+                  PKR {contributionRow.investment_amount.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Contributed</p>
+                <p className="font-medium text-navy-900 dark:text-slate-100">
+                  PKR {contributionRow.contributed_amount.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Pending</p>
+                <p className="font-semibold text-danger-600">
+                  PKR {contributionRow.pending_investment.toLocaleString()}
+                </p>
+              </div>
+            </div>
+          )}
           <div>
             <Label htmlFor="c_date">Date</Label>
             <Input

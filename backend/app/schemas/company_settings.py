@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CompanySettingsUpdate(BaseModel):
@@ -6,6 +6,7 @@ class CompanySettingsUpdate(BaseModel):
     accountant_name: str | None = None
     accountant_designation: str | None = None
     signature_image_url: str | None = None
+    partner_profit_retention_percent: float | None = Field(default=None, ge=0, le=100)
 
 
 class CompanySettingsOut(BaseModel):
@@ -15,3 +16,4 @@ class CompanySettingsOut(BaseModel):
     accountant_name: str | None
     accountant_designation: str | None
     signature_image_url: str | None
+    partner_profit_retention_percent: float = 0

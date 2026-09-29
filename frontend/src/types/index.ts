@@ -492,6 +492,10 @@ export interface PartnerProjectRow {
   partner_distributable_share: number;
   partner_expense_amount: number;
   current_account_balance: number;
+  pending_investment: number;
+  retention_percent: number;
+  retained_amount: number;
+  withdrawable_per_policy: number;
 }
 
 export interface PartnerSummary {
@@ -562,6 +566,8 @@ export interface BookingAgent {
 export interface BookingCommissionRow {
   booking_id: number;
   booking_ref_no: string;
+  project_id: number;
+  project_name: string;
   unit_number: string;
   allottee_name: string;
   total_price: number;
@@ -1033,6 +1039,7 @@ export interface CompanySettings {
   accountant_name: string | null;
   accountant_designation: string | null;
   signature_image_url: string | null;
+  partner_profit_retention_percent: number;
 }
 
 export interface IntegrityCheckResult {

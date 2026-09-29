@@ -78,6 +78,8 @@ def _commission_row(db: Session, booking: Booking) -> BookingCommissionRow:
     return BookingCommissionRow(
         booking_id=booking.id,
         booking_ref_no=booking.booking_ref_no,
+        project_id=booking.project_id,
+        project_name=booking.project.project_name,
         unit_number=booking.unit.unit_number,
         allottee_name=booking.allottee.name,
         total_price=total_price,

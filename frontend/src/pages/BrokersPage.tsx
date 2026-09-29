@@ -58,6 +58,26 @@ export default function BrokersPage() {
     enabled: !!selectedAgentId,
   });
 
+  // Project filter — a broker can bring customers into several projects; each
+  // booking's commission is paid from (and posted against) its own project.
+  const [projectFilter, setProjectFilter] = React.useState("");
+  React.useEffect(() => setProjectFilter(""), [selectedAgentId]);
+  const agentProjects = React.useMemo(() => {
+    const seen = new Map<number, string>();
+    summary?.bookings.forEach((b) => seen.set(b.project_id, b.project_name));
+    return [...seen.entries()].map(([id, name]) => ({ id, name }));
+  }, [summary]);
+  const visibleBookings =
+    summary?.bookings.filter((b) => !projectFilter || b.project_id === Number(projectFilter)) ?? [];
+  const visibleTotals = {
+    eligible: visibleBookings.reduce((s, b) => s + b.commission_eligible_amount, 0),
+    paid: visibleBookings.reduce((s, b) => s + b.commission_paid, 0),
+    balance: visibleBookings.reduce((s, b) => s + b.commission_balance, 0),
+  };
+  const visiblePayouts =
+    payouts?.filter((p) => !projectFilter || p.booking.project.id === Number(projectFilter)) ?? [];
+  const payoutRow = summary?.bookings.find((b) => b.booking_id === payoutBookingId);
+
   const deletePayout = useMutation({
     mutationFn: async (id: number) => api.delete(`/commission-payouts/${id}`),
     onSuccess: () => {
@@ -171,12 +191,31 @@ export default function BrokersPage() {
             </Card>
           ) : (
             <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="broker_project_filter" className="!mb-0 shrink-0">
+                  Project
+                </Label>
+                <Select
+                  id="broker_project_filter"
+                  value={projectFilter}
+                  onChange={(e) => setProjectFilter(e.target.value)}
+                  className="w-64"
+                >
+                  <option value="">All projects</option>
+                  {agentProjects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+
               <div className="grid grid-cols-3 gap-4">
                 <Card>
                   <CardContent>
                     <p className="text-xs text-slate-500 dark:text-slate-400">Eligible</p>
                     <p className="mt-1 text-lg font-semibold text-navy-950 dark:text-white">
-                      PKR {summary.total_eligible.toLocaleString()}
+                      PKR {visibleTotals.eligible.toLocaleString()}
                     </p>
                   </CardContent>
                 </Card>
@@ -184,7 +223,7 @@ export default function BrokersPage() {
                   <CardContent>
                     <p className="text-xs text-slate-500 dark:text-slate-400">Paid</p>
                     <p className="mt-1 text-lg font-semibold text-success-700">
-                      PKR {summary.total_paid.toLocaleString()}
+                      PKR {visibleTotals.paid.toLocaleString()}
                     </p>
                   </CardContent>
                 </Card>
@@ -192,7 +231,7 @@ export default function BrokersPage() {
                   <CardContent>
                     <p className="text-xs text-slate-500 dark:text-slate-400">Balance</p>
                     <p className="mt-1 text-lg font-semibold text-warning-700">
-                      PKR {summary.total_balance.toLocaleString()}
+                      PKR {visibleTotals.balance.toLocaleString()}
                     </p>
                   </CardContent>
                 </Card>
@@ -212,19 +251,21 @@ export default function BrokersPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-                    {summary.bookings.length === 0 && (
+                    {visibleBookings.length === 0 && (
                       <tr>
                         <td colSpan={7} className="px-4 py-8 text-center text-slate-400 dark:text-slate-500">
-                          No bookings referred by this agent yet.
+                          {projectFilter
+                            ? "No bookings by this agent in this project."
+                            : "No bookings referred by this agent yet."}
                         </td>
                       </tr>
                     )}
-                    {summary.bookings.map((row) => (
+                    {visibleBookings.map((row) => (
                       <tr key={row.booking_id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                         <td className="px-4 py-3">
                           <p className="font-medium text-navy-900 dark:text-slate-100">{row.booking_ref_no}</p>
                           <p className="text-xs text-slate-400 dark:text-slate-500">
-                            {row.unit_number} · {row.allottee_name}
+                            {row.project_name} · {row.unit_number} · {row.allottee_name}
                           </p>
                         </td>
                         <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
@@ -269,7 +310,7 @@ export default function BrokersPage() {
                 </table>
               </Card>
 
-              {payouts && payouts.length > 0 && (
+              {visiblePayouts.length > 0 && (
                 <Card className="overflow-hidden">
                   <div className="border-b border-slate-100 dark:border-navy-800 px-4 py-3">
                     <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">
@@ -287,7 +328,7 @@ export default function BrokersPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-                      {payouts.map((p) => (
+                      {visiblePayouts.map((p) => (
                         <tr key={p.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                           <td className="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">
                             {p.payout_no}
@@ -295,6 +336,9 @@ export default function BrokersPage() {
                           <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{p.payout_date}</td>
                           <td className="px-4 py-3 text-navy-900 dark:text-slate-100">
                             {p.booking.booking_ref_no}
+                            <span className="block text-xs text-slate-400 dark:text-slate-500">
+                              {p.booking.project.project_name}
+                            </span>
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums text-navy-900 dark:text-slate-100">
                             PKR {Number(p.amount).toLocaleString()}
@@ -420,6 +464,12 @@ export default function BrokersPage() {
           }}
           className="space-y-4"
         >
+          {payoutRow && (
+            <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-navy-800/60 dark:text-slate-300">
+              {payoutRow.booking_ref_no} · {payoutRow.unit_number} — charged to project{" "}
+              <strong>{payoutRow.project_name}</strong>
+            </p>
+          )}
           <div>
             <Label htmlFor="p_amount">Amount</Label>
             <Input

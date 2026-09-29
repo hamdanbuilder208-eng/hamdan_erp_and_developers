@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.sequences import next_sequence_number
 from app.models.account import AccountNature
+from app.models.company_settings import CompanySettings
 from app.models.partner import (
     Partner,
     PartnerContribution,
@@ -141,6 +142,9 @@ def get_partner_summary(db: Session, partner_id: int) -> PartnerSummary | None:
         .all()
     )
 
+    settings_row = db.query(CompanySettings).first()
+    retention_percent = float(settings_row.partner_profit_retention_percent or 0) if settings_row else 0.0
+
     rows: list[PartnerProjectRow] = []
     for share in shares:
         revenue, expense = compute_project_profit(db, share.project_id)
@@ -198,6 +202,14 @@ def get_partner_summary(db: Session, partner_id: int) -> PartnerSummary | None:
             distributable_amount * float(share.share_percent) / 100, 2
         )
 
+        # Company policy keeps retention_percent of the (positive) profit share
+        # as backup; this is what the partner can take without breaching it.
+        retained_amount = round(max(partner_share_amount, 0) * retention_percent / 100, 2)
+        withdrawable_per_policy = round(
+            max(partner_share_amount - retained_amount - drawn_amount, 0), 2
+        )
+        pending_investment = round(max(float(share.investment_amount) - contributed_amount, 0), 2)
+
         rows.append(
             PartnerProjectRow(
                 project_id=share.project_id,
@@ -217,6 +229,10 @@ def get_partner_summary(db: Session, partner_id: int) -> PartnerSummary | None:
                 partner_distributable_share=partner_distributable_share,
                 partner_expense_amount=partner_expense_amount,
                 current_account_balance=current_account_balance,
+                pending_investment=pending_investment,
+                retention_percent=retention_percent,
+                retained_amount=retained_amount,
+                withdrawable_per_policy=withdrawable_per_policy,
             )
         )
 

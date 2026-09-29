@@ -130,6 +130,12 @@ class PartnerProjectRow(BaseModel):
     partner_distributable_share: float
     partner_expense_amount: float
     current_account_balance: float
+    # Pledged investment not yet paid in (e.g. pledged 2cr, contributed 1cr → 1cr pending).
+    pending_investment: float = 0
+    # Company backup policy (advisory): part of the profit share kept with the company.
+    retention_percent: float = 0
+    retained_amount: float = 0
+    withdrawable_per_policy: float = 0
 
 
 class PartnerSummary(BaseModel):
