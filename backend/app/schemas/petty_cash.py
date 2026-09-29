@@ -81,6 +81,8 @@ class PettyCashExpenseCreate(PettyCashExpenseBase):
         if self.material_id is not None:
             if self.quantity is None or self.rate is None:
                 raise ValueError("Quantity and rate are required for a material purchase")
+            if self.warehouse_id is None and self.project_id is None:
+                raise ValueError("Material bought for site use needs a project (or pick a warehouse)")
         elif self.amount is None:
             raise ValueError("Amount is required")
         return self

@@ -17,7 +17,8 @@ from app.schemas.petty_cash import (
 
 PETTY_CASH_GROUP_NAME = "Petty Cash"
 MATERIAL_STOCK_ACCOUNT_CODE = "1040"
-DEFAULT_PETTY_CASH_EXPENSE_ACCOUNT_CODE = "5010"  # Office Expenses — the catch-all for a plain spend
+DEFAULT_PETTY_CASH_EXPENSE_ACCOUNT_CODE = "5010"  # Office Expenses — a plain spend on office work
+PROJECT_SITE_EXPENSE_ACCOUNT_CODE = "5070"  # a plain spend on a project's work
 
 
 def _attach_balance(db: Session, account: Account | None) -> None:
@@ -35,6 +36,22 @@ def _get_account_by_code(db: Session, code: str) -> Account:
     account = db.query(Account).filter(Account.code == code).first()
     if not account:
         raise ValueError(f"Required account (code {code}) not found in chart of accounts")
+    return account
+
+
+def _get_or_create_project_site_expense_account(db: Session) -> Account:
+    account = db.query(Account).filter(Account.code == PROJECT_SITE_EXPENSE_ACCOUNT_CODE).first()
+    if account:
+        return account
+    expenses_group = db.query(Account).filter(Account.code == "5000").first()
+    account = Account(
+        code=PROJECT_SITE_EXPENSE_ACCOUNT_CODE,
+        name="Project Site Expenses",
+        nature=AccountNature.EXPENSE,
+        parent_id=expenses_group.id if expenses_group else None,
+    )
+    db.add(account)
+    db.flush()
     return account
 
 
@@ -233,9 +250,15 @@ def _load_expense_query(db: Session):
 
 
 def list_expenses(
-    db: Session, float_id: int | None = None, project_id: int | None = None
+    db: Session,
+    float_id: int | None = None,
+    project_id: int | None = None,
+    office_only: bool = False,
 ) -> list[PettyCashExpense]:
     query = _load_expense_query(db)
+    if office_only:
+        # Plain spends on office work: no project and not a stock purchase.
+        query = query.filter(PettyCashExpense.project_id.is_(None), PettyCashExpense.material_id.is_(None))
     if float_id is not None:
         query = query.filter(PettyCashExpense.float_id == float_id)
     if project_id is not None:
@@ -289,6 +312,10 @@ def create_expense(db: Session, expense_in: PettyCashExpenseCreate) -> PettyCash
             rate=expense_in.rate,
         )
         debit_account = _get_account_by_code(db, MATERIAL_STOCK_ACCOUNT_CODE)
+    elif expense_in.project_id is not None:
+        # Spent on a project's work — booked as that project's cost, not as an
+        # office expense.
+        debit_account = _get_or_create_project_site_expense_account(db)
     else:
         debit_account = _get_account_by_code(db, DEFAULT_PETTY_CASH_EXPENSE_ACCOUNT_CODE)
 

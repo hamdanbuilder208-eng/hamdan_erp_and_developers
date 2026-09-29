@@ -42,6 +42,7 @@ _DEFAULT_COA = [
         ("5020", "Wages", AccountNature.EXPENSE, False, []),
         ("5030", "Owner's Personal Expenses", AccountNature.EXPENSE, False, []),
         ("5050", "Material Consumption", AccountNature.EXPENSE, False, []),
+        ("5070", "Project Site Expenses", AccountNature.EXPENSE, False, []),
     ]),
 ]
 

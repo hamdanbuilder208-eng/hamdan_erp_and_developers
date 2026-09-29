@@ -165,6 +165,7 @@ export default function PettyCashPage() {
   const [expenseForm, setExpenseForm] = React.useState({
     float_id: "",
     description: "",
+    usedFor: "office" as "office" | "project",
     project_id: "",
     isMaterial: false,
     material_id: "",
@@ -177,7 +178,7 @@ export default function PettyCashPage() {
 
   const resetExpenseForm = () => {
     setExpenseForm({
-      float_id: "", description: "", project_id: "", isMaterial: false,
+      float_id: "", description: "", usedFor: "office", project_id: "", isMaterial: false,
       material_id: "", quantity: "", rate: "", warehouse_id: "", amount: "",
     });
     setExpenseError(null);
@@ -196,7 +197,8 @@ export default function PettyCashPage() {
           expense_date: todayIso(),
           float_id: Number(expenseForm.float_id),
           description: expenseForm.description,
-          project_id: expenseForm.project_id ? Number(expenseForm.project_id) : null,
+          project_id:
+            expenseForm.usedFor === "project" && expenseForm.project_id ? Number(expenseForm.project_id) : null,
           material_id: expenseForm.isMaterial && expenseForm.material_id ? Number(expenseForm.material_id) : null,
           quantity: expenseForm.isMaterial && expenseForm.quantity ? Number(expenseForm.quantity) : null,
           rate: expenseForm.isMaterial && expenseForm.rate ? Number(expenseForm.rate) : null,
@@ -423,7 +425,7 @@ export default function PettyCashPage() {
                   <th className="px-5 py-3 font-medium">Date</th>
                   <th className="px-5 py-3 font-medium">Float</th>
                   <th className="px-5 py-3 font-medium">Description</th>
-                  <th className="px-5 py-3 font-medium">Project</th>
+                  <th className="px-5 py-3 font-medium">Used For</th>
                   <th className="px-5 py-3 text-right font-medium">Amount</th>
                   <th className="px-5 py-3" />
                 </tr>
@@ -459,7 +461,7 @@ export default function PettyCashPage() {
                       )}
                     </td>
                     <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
-                      {e.project?.project_name ?? "—"}
+                      {e.project?.project_name ?? (e.material ? "Warehouse stock" : "Office")}
                     </td>
                     <td className="px-5 py-3 text-right font-medium text-navy-900 dark:text-slate-100">
                       PKR {e.amount.toLocaleString()}
@@ -729,20 +731,47 @@ export default function PettyCashPage() {
             />
           </div>
           <div>
-            <Label htmlFor="exp_project">Project (optional)</Label>
-            <Select
-              id="exp_project"
-              value={expenseForm.project_id}
-              onChange={(e) => setExpenseForm({ ...expenseForm, project_id: e.target.value })}
-            >
-              <option value="">— General (not project-specific) —</option>
-              {projects?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.project_name}
-                </option>
+            <Label>Used For</Label>
+            <div className="flex overflow-hidden rounded-lg border border-slate-200 dark:border-navy-700">
+              {(["office", "project"] as const).map((use) => (
+                <button
+                  key={use}
+                  type="button"
+                  onClick={() => setExpenseForm({ ...expenseForm, usedFor: use, project_id: "" })}
+                  className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                    expenseForm.usedFor === use
+                      ? "bg-brand-600 text-white"
+                      : "bg-white text-slate-500 hover:bg-slate-50 dark:bg-navy-900 dark:text-slate-400 dark:hover:bg-navy-800/60"
+                  }`}
+                >
+                  {use === "office" ? "Office Work" : "Project Work / Material"}
+                </button>
               ))}
-            </Select>
+            </div>
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              {expenseForm.usedFor === "office"
+                ? "Booked as an Office Expense."
+                : "Booked as this project's cost (Project Site Expenses) — not as an office expense."}
+            </p>
           </div>
+          {expenseForm.usedFor === "project" && (
+            <div>
+              <Label htmlFor="exp_project">Project</Label>
+              <Select
+                id="exp_project"
+                required
+                value={expenseForm.project_id}
+                onChange={(e) => setExpenseForm({ ...expenseForm, project_id: e.target.value })}
+              >
+                <option value="">Select project</option>
+                {projects?.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.project_name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
 
           <label className="flex items-center gap-2 text-sm text-navy-800 dark:text-slate-200">
             <input
@@ -801,13 +830,18 @@ export default function PettyCashPage() {
                 </div>
               </div>
               <div>
-                <Label htmlFor="exp_warehouse">Goes Into (optional)</Label>
+                <Label htmlFor="exp_warehouse">
+                  Goes Into{expenseForm.usedFor === "project" ? " (optional)" : ""}
+                </Label>
                 <Select
                   id="exp_warehouse"
+                  required={expenseForm.usedFor === "office"}
                   value={expenseForm.warehouse_id}
                   onChange={(e) => setExpenseForm({ ...expenseForm, warehouse_id: e.target.value })}
                 >
-                  <option value="">Directly at the project site</option>
+                  <option value="">
+                    {expenseForm.usedFor === "project" ? "Directly at the project site" : "Select warehouse"}
+                  </option>
                   {warehouses?.map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.warehouse_code} — {w.name}

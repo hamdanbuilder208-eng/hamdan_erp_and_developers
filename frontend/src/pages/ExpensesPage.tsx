@@ -7,12 +7,14 @@ import { Card } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { confirm } from "../lib/confirm";
+import { toast, apiErrorMessage } from "../lib/toast";
 import type {
   Account,
   Employee,
   LandProperty,
   OfficeExpense,
   OwnerPersonalExpense,
+  PettyCashExpense,
   Project,
   WagePayment,
   WageType,
@@ -24,15 +26,17 @@ const errorMessage = (err: unknown, fallback: string) => {
   return typeof detail === "string" ? detail : fallback;
 };
 
-type ExpenseKind = "office" | "wages" | "owner";
+type ExpenseKind = "office" | "petty" | "wages" | "owner";
 
 const kindLabel: Record<ExpenseKind, string> = {
   office: "Office",
+  petty: "Office · Petty Cash",
   wages: "Wages",
   owner: "Owner",
 };
 const kindBadgeClass: Record<ExpenseKind, string> = {
   office: "bg-info-50 text-info-700",
+  petty: "bg-info-50 text-info-700",
   wages: "bg-warning-50 text-warning-700",
   owner: "bg-onhold-50 text-onhold-700",
 };
@@ -229,6 +233,23 @@ export default function ExpensesPage() {
     queryFn: async () => (await api.get<OwnerPersonalExpense[]>("/expenses/owner-personal")).data,
   });
 
+  // Petty cash the float-holder spent on office work (no project) is an office
+  // expense too — list it here. Project spends stay with their project.
+  const { data: pettyOfficeExpenses, isLoading: pettyLoading } = useQuery({
+    queryKey: ["petty-cash-expenses", "office"],
+    queryFn: async () =>
+      (await api.get<PettyCashExpense[]>("/petty-cash/expenses", { params: { office_only: true } })).data,
+  });
+  const deletePettyExpense = useMutation({
+    mutationFn: async (id: number) => api.delete(`/petty-cash/expenses/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["petty-cash-expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["petty-cash-floats"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to delete expense.")),
+  });
+
   const [ownerError, setOwnerError] = React.useState<string | null>(null);
 
   const createOwnerExpense = useMutation({
@@ -287,6 +308,15 @@ export default function ExpensesPage() {
             : ""),
       amount: Number(e.amount),
     })),
+    ...(pettyOfficeExpenses ?? []).map((e) => ({
+      key: `petty-${e.id}`,
+      kind: "petty" as const,
+      id: e.id,
+      expense_no: e.expense_no,
+      date: e.expense_date,
+      description: `${e.description} · by ${e.float.holder_name}`,
+      amount: Number(e.amount),
+    })),
     ...(wagePayments ?? []).map((w) => ({
       key: `wages-${w.id}`,
       kind: "wages" as const,
@@ -307,15 +337,20 @@ export default function ExpensesPage() {
     })),
   ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
 
-  const unifiedLoading = officeLoading || wagesLoading || ownerLoading;
+  const unifiedLoading = officeLoading || wagesLoading || ownerLoading || pettyLoading;
 
   const printUrl = (row: UnifiedRow) =>
-    row.kind === "wages" ? `/expenses/wages/${row.id}/print` : `/expenses/${row.kind === "office" ? "office" : "owner-personal"}/${row.id}/print`;
+    row.kind === "petty"
+      ? `/petty-cash/expense/${row.id}/print`
+      : row.kind === "wages"
+        ? `/expenses/wages/${row.id}/print`
+        : `/expenses/${row.kind === "office" ? "office" : "owner-personal"}/${row.id}/print`;
 
   const deleteRow = async (row: UnifiedRow) => {
     const ok = await confirm(`Delete expense "${row.expense_no}"?`, { danger: true, confirmLabel: "Delete" });
     if (!ok) return;
     if (row.kind === "office") deleteOfficeExpense.mutate(row.id);
+    else if (row.kind === "petty") deletePettyExpense.mutate(row.id);
     else if (row.kind === "wages") deleteWagePayment.mutate(row.id);
     else deleteOwnerExpense.mutate(row.id);
   };

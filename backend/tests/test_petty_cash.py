@@ -110,3 +110,53 @@ def test_delete_float_succeeds_when_untouched(db: Session, float_):
     account_id = float_.account_id
     petty_cash_crud.delete_float(db, float_)
     assert db.get(Account, account_id) is None
+
+
+# ---------------------------------------------------------------------------
+# Office vs project: where a plain petty cash spend is booked
+# ---------------------------------------------------------------------------
+
+def _debit_account(db: Session, expense) -> Account:
+    voucher = db.get(Voucher, expense.voucher_id)
+    return next(l.account for l in voucher.lines if l.debit > 0)
+
+
+def test_office_spend_is_booked_as_office_expense(db: Session, float_, office_expense_account):
+    expense = petty_cash_crud.create_expense(
+        db,
+        PettyCashExpenseCreate(expense_date=TODAY, float_id=float_.id, description="Tea & stationery", amount=800),
+    )
+    assert _debit_account(db, expense).code == "5010"
+    assert db.get(Voucher, expense.voucher_id).project_id is None
+    assert [e.id for e in petty_cash_crud.list_expenses(db, office_only=True)] == [expense.id]
+
+
+def test_project_spend_is_booked_to_that_project_not_office(
+    db: Session, float_, office_expense_account, project
+):
+    from app.crud import partner as partner_crud
+    from app.crud import project as project_crud
+
+    expense = petty_cash_crud.create_expense(
+        db,
+        PettyCashExpenseCreate(
+            expense_date=TODAY, float_id=float_.id, description="Labour transport", amount=1_500,
+            project_id=project.id,
+        ),
+    )
+    debit = _debit_account(db, expense)
+    assert debit.code == "5070" and debit.name == "Project Site Expenses"
+    assert db.get(Voucher, expense.voucher_id).project_id == project.id
+    # Shows up as that project's spend/cost, and not in the office list.
+    assert project_crud.project_total_spent(db, project.id) == 1_500
+    assert partner_crud.compute_project_profit(db, project.id) == (0, 1_500)
+    assert petty_cash_crud.list_expenses(db, office_only=True) == []
+
+
+def test_site_material_needs_a_project_or_warehouse():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="needs a project"):
+        PettyCashExpenseCreate(
+            expense_date=TODAY, float_id=1, description="Cement", material_id=1, quantity=10, rate=1_200
+        )

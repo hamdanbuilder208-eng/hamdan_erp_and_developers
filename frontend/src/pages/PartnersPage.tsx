@@ -13,7 +13,6 @@ import type { Account, Partner, PartnerContribution, PartnerExpense, PartnerSumm
 const emptyForm = {
   name: "",
   contact_info: "",
-  linked_account_id: "",
 };
 
 const emptyDrawingForm = {
@@ -112,7 +111,6 @@ export default function PartnersPage() {
         await api.post<Partner>("/partners/", {
           name: form.name,
           contact_info: form.contact_info || null,
-          linked_account_id: form.linked_account_id ? Number(form.linked_account_id) : null,
         })
       ).data,
     onSuccess: () => {
@@ -719,23 +717,6 @@ export default function PartnersPage() {
               value={form.contact_info}
               onChange={(e) => setForm({ ...form, contact_info: e.target.value })}
             />
-          </div>
-          <div>
-            <Label htmlFor="p_account">Linked Account (optional)</Label>
-            <Select
-              id="p_account"
-              value={form.linked_account_id}
-              onChange={(e) => setForm({ ...form, linked_account_id: e.target.value })}
-            >
-              <option value="">— None —</option>
-              {accounts
-                ?.filter((a) => !a.is_control)
-                .map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-            </Select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>

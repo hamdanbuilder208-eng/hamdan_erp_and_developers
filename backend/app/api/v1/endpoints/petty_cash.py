@@ -86,9 +86,12 @@ def delete_topup(topup_id: int, db: Session = Depends(get_db)):
 
 @router.get("/expenses", response_model=list[PettyCashExpenseOut])
 def list_expenses(
-    float_id: int | None = None, project_id: int | None = None, db: Session = Depends(get_db)
+    float_id: int | None = None,
+    project_id: int | None = None,
+    office_only: bool = False,
+    db: Session = Depends(get_db),
 ):
-    return petty_cash_crud.list_expenses(db, float_id=float_id, project_id=project_id)
+    return petty_cash_crud.list_expenses(db, float_id=float_id, project_id=project_id, office_only=office_only)
 
 
 @router.get("/expenses/{expense_id}", response_model=PettyCashExpenseOut)
