@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LayoutGrid, List, Pencil, Plus, Sparkles, Tags, Trash2 } from "lucide-react";
+import { LayoutGrid, List, Pencil, Plus, Printer, Sparkles, Tags, Trash2 } from "lucide-react";
 import { api } from "../../lib/api";
 import { Button } from "../../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/Card";
@@ -11,7 +11,6 @@ import { UnitStatusBadge } from "../../components/ui/Badge";
 import { UnitAvailabilityGrid } from "../../components/units/UnitAvailabilityGrid";
 import { toast, apiErrorMessage } from "../../lib/toast";
 import { confirm } from "../../lib/confirm";
-import { useAuthStore } from "../../store/authStore";
 import type { Project, ProjectDetail, Unit, UnitCategory, UnitStatus } from "../../types";
 
 type SubTab = "floors" | "units";
@@ -91,22 +90,9 @@ export default function UnitsPage() {
     queryFn: async () => (await api.get<UnitCategory[]>("/unit-categories/")).data,
   });
 
-  // Total floors (must be set before floors/units can be added). Once set,
-  // only an admin can change it.
-  const [totalFloorsDraft, setTotalFloorsDraft] = React.useState("");
-  const isAdmin = useAuthStore((s) => s.user?.role.is_admin) ?? false;
-  const floorsLocked = !isAdmin && !!project?.total_floors;
-  const setTotalFloors = useMutation({
-    mutationFn: async () =>
-      (
-        await api.put(`/projects/${projectId}`, {
-          total_floors: Number(totalFloorsDraft),
-        })
-      ).data,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
-    },
-  });
+  // Total floors comes from the project itself (set at creation, changed only
+  // by an admin via Project > Edit Project) — it caps the floor numbers below.
+  const totalFloors = project?.total_floors ?? 0;
 
   // Floor form
   const [floorForm, setFloorForm] = React.useState({ block: "", floor_no: "", no_of_units: "" });
@@ -138,6 +124,7 @@ export default function UnitsPage() {
       setFloorModalOpen(false);
       setFloorForm({ block: "", floor_no: "", no_of_units: "" });
     },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to add floor.")),
   });
 
   const deleteFloor = useMutation({
@@ -287,7 +274,16 @@ export default function UnitsPage() {
   const updateUnitStatus = useMutation({
     mutationFn: async ({ unitId, status }: { unitId: number; status: UnitStatus }) =>
       api.put(`/units/${unitId}`, { status }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["units", projectId] }),
+    // A unit status change can also move its booking (e.g. Available cancels
+    // it, Sold gives possession), so refresh every view that shows either.
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["units"] });
+      queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["refunds"] });
+      toast.success("Unit status updated.");
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to update unit status.")),
   });
 
   const [unitNumberDraft, setUnitNumberDraft] = React.useState("");
@@ -394,10 +390,7 @@ export default function UnitsPage() {
                 <CardTitle>Floors / Blocks</CardTitle>
                 <Button
                   size="sm"
-                  onClick={() => {
-                    setTotalFloorsDraft(project.total_floors ? String(project.total_floors) : "");
-                    setFloorModalOpen(true);
-                  }}
+                  onClick={() => setFloorModalOpen(true)}
                 >
                   <Plus className="h-4 w-4" />
                   Add Floor
@@ -467,6 +460,15 @@ export default function UnitsPage() {
                       <List className="h-3.5 w-3.5" />
                     </button>
                   </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!units || units.length === 0}
+                    onClick={() => window.open(`/projects/${projectId}/units/print`, "_blank")}
+                  >
+                    <Printer className="h-4 w-4" />
+                    Print Units
+                  </Button>
                   <Button size="sm" variant="secondary" onClick={() => setCategoryModalOpen(true)}>
                     <Tags className="h-4 w-4" />
                     Manage Categories
@@ -572,36 +574,25 @@ export default function UnitsPage() {
         open={floorModalOpen}
         onClose={() => setFloorModalOpen(false)}
         title="Add Floor / Block"
-        description="Set how many floors this project has, then add each floor and its units."
+        description="Add a floor of this project and how many units it has."
       >
         <form
-          onSubmit={async (e) => {
+          onSubmit={(e) => {
             e.preventDefault();
-            const draftCount = Number(totalFloorsDraft || 0);
-            if (draftCount !== (project?.total_floors ?? 0)) {
-              await setTotalFloors.mutateAsync();
-            }
             createFloor.mutate();
           }}
           className="space-y-4"
         >
-          <div>
-            <Label htmlFor="total_floors_draft">Total Floors in this Project</Label>
-            <Input
-              id="total_floors_draft"
-              type="number"
-              min="1"
-              required
-              disabled={floorsLocked}
-              value={totalFloorsDraft}
-              onChange={(e) => setTotalFloorsDraft(e.target.value)}
-              placeholder="e.g. 5"
-            />
-            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-              {floorsLocked
-                ? "Only an admin can change the total floors (Project > Edit Project)."
-                : "Enter this first — it determines which floor numbers you can pick below."}
-            </p>
+          <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-navy-800/60">
+            {totalFloors ? (
+              <span className="text-slate-600 dark:text-slate-300">
+                This project has <strong>{totalFloors}</strong> floor(s), plus Ground / Lower Ground.
+              </span>
+            ) : (
+              <span className="text-danger-600">
+                Total floors isn't set for this project. An admin must set it from Projects &gt; Edit Project.
+              </span>
+            )}
           </div>
 
           <div>
@@ -619,12 +610,12 @@ export default function UnitsPage() {
             <Select
               id="floor_no"
               required
-              disabled={!Number(totalFloorsDraft)}
+              disabled={!totalFloors}
               value={floorForm.floor_no}
               onChange={(e) => setFloorForm({ ...floorForm, floor_no: e.target.value })}
             >
               <option value="">
-                {Number(totalFloorsDraft) ? "Select floor" : "Enter total floors first"}
+                {totalFloors ? "Select floor" : "Total floors not set"}
               </option>
               <option value="Lower Ground" disabled={takenFloorNos.has("Lower Ground")}>
                 Lower Ground Floor{takenFloorNos.has("Lower Ground") ? " (already added)" : ""}
@@ -632,7 +623,7 @@ export default function UnitsPage() {
               <option value="Ground" disabled={takenFloorNos.has("Ground")}>
                 Ground Floor{takenFloorNos.has("Ground") ? " (already added)" : ""}
               </option>
-              {Array.from({ length: Number(totalFloorsDraft) || 0 }, (_, i) => i + 1)
+              {Array.from({ length: totalFloors }, (_, i) => i + 1)
                 .map((n) => ordinalFloorLabel(n))
                 .map((label) => (
                   <option key={label} value={label} disabled={takenFloorNos.has(label)}>
@@ -648,7 +639,7 @@ export default function UnitsPage() {
               id="no_of_units"
               type="number"
               required
-              disabled={!Number(totalFloorsDraft)}
+              disabled={!totalFloors}
               value={floorForm.no_of_units}
               onChange={(e) => setFloorForm({ ...floorForm, no_of_units: e.target.value })}
             />
@@ -659,7 +650,7 @@ export default function UnitsPage() {
             </Button>
             <Button
               type="submit"
-              disabled={createFloor.isPending || setTotalFloors.isPending || !Number(totalFloorsDraft)}
+              disabled={createFloor.isPending || !totalFloors}
             >
               Add Floor
             </Button>

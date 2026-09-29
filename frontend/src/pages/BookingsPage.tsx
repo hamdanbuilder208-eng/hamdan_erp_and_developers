@@ -75,6 +75,7 @@ const emptyForm = {
   down_payment_amount: "",
   extraCharges: [] as ExtraChargeForm[],
   installmentPlans: [] as InstallmentPlanForm[],
+  one_shot: false,
   remarks: "",
   booking_agent_id: "",
   agent_commission_percent: "",
@@ -238,6 +239,29 @@ export default function BookingsPage() {
     setForm({ ...form, down_payment_amount: String(downPayment), installmentPlans: plans });
   };
 
+  // One-shot: the whole price (after discount, excluding extra charges, which
+  // are posted separately) is collected at booking, so the plan is cleared.
+  const oneShotAmount = selectedUnit
+    ? Math.round((Number(selectedUnit.total_price) - (Number(form.discount) || 0)) * 100) / 100
+    : 0;
+  const toggleOneShot = (on: boolean) =>
+    setForm((f) => ({
+      ...f,
+      one_shot: on,
+      down_payment_amount: on ? String(oneShotAmount) : "",
+      installmentPlans: on ? [] : f.installmentPlans,
+    }));
+  // Keep the full-payment amount in step if the unit or discount changes.
+  React.useEffect(() => {
+    if (!form.one_shot) return;
+    if (!selectedUnit) {
+      setForm((f) => ({ ...f, one_shot: false, down_payment_amount: "" }));
+    } else if (form.down_payment_amount !== String(oneShotAmount)) {
+      setForm((f) => ({ ...f, down_payment_amount: String(oneShotAmount) }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.one_shot, oneShotAmount, selectedUnit?.id]);
+
   const addExtraCharge = () => setForm({ ...form, extraCharges: [...form.extraCharges, emptyExtraCharge()] });
   const removeExtraCharge = (idx: number) =>
     setForm({ ...form, extraCharges: form.extraCharges.filter((_, i) => i !== idx) });
@@ -264,6 +288,7 @@ export default function BookingsPage() {
             charge_date: todayIso(),
             narration: c.narration || null,
           })),
+          one_shot: form.one_shot,
           installment_plans: form.installmentPlans.map((p) => ({
             label: p.label || "Installments",
             frequency: p.frequency,
@@ -504,6 +529,7 @@ export default function BookingsPage() {
         }}
         title="New Booking"
         description="Book a unit against a customer with a default payment schedule."
+        className="max-w-2xl"
       >
         <form
           onSubmit={(e) => {
@@ -680,11 +706,38 @@ export default function BookingsPage() {
           </div>
 
           <div className="border-t border-slate-100 dark:border-navy-800 pt-4">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-                Payment Plan
-              </p>
-              <div className="flex items-center gap-2">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+              Payment Plan
+            </p>
+
+            <label
+              className={`mb-3 flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 text-sm ${
+                form.one_shot
+                  ? "border-brand-300 bg-brand-50 dark:border-brand-700 dark:bg-brand-900/20"
+                  : "border-slate-200 dark:border-navy-700"
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 accent-brand-600"
+                checked={form.one_shot}
+                disabled={!selectedUnit}
+                onChange={(e) => toggleOneShot(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium text-navy-900 dark:text-slate-100">
+                  One-shot payment (full cash)
+                </span>
+                <span className="block text-xs text-slate-500 dark:text-slate-400">
+                  {selectedUnit
+                    ? "Customer pays the whole price at booking — no down payment split or installments."
+                    : "Select a unit first."}
+                </span>
+              </span>
+            </label>
+
+            <fieldset disabled={form.one_shot} className={form.one_shot ? "opacity-50" : ""}>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
                 {paymentTemplate && selectedUnit && (
                   <Button type="button" size="sm" variant="secondary" onClick={applyStandardSchedule}>
                     Use Standard Schedule
@@ -699,12 +752,13 @@ export default function BookingsPage() {
                   Custom Payment Plan
                 </Button>
               </div>
-            </div>
+            </fieldset>
             <div>
-              <Label htmlFor="b_down">Down Payment</Label>
+              <Label htmlFor="b_down">{form.one_shot ? "Full Payment" : "Down Payment"}</Label>
               <Input
                 id="b_down"
                 type="number"
+                disabled={form.one_shot}
                 value={form.down_payment_amount}
                 onChange={(e) => setForm({ ...form, down_payment_amount: e.target.value })}
               />
@@ -808,7 +862,7 @@ export default function BookingsPage() {
             </div>
 
             {(previewDownPayment > 0 || previewPlansTotal > 0) && (
-              <div className="mt-3 grid grid-cols-4 gap-3 rounded-lg bg-brand-50 px-4 py-2.5 text-sm text-brand-800">
+              <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg bg-brand-50 px-4 py-2.5 text-sm text-brand-800 sm:grid-cols-4">
                 <div>
                   Total: <span className="font-semibold">PKR {previewTotal.toLocaleString()}</span>
                 </div>

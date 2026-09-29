@@ -94,6 +94,8 @@ class BookingBase(BaseModel):
 class BookingCreate(BookingBase):
     installment_plans: list[InstallmentPlanCreate] = []
     extra_charges: list[ExtraChargeCreate] = []
+    # Customer pays the whole price upfront (cash) — no installment plans.
+    one_shot: bool = False
 
 
 class BookingStatusUpdate(BaseModel):

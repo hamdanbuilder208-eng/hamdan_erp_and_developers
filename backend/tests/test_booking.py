@@ -223,3 +223,21 @@ def test_no_extra_charges_line_when_amount_is_zero(db: Session, project, unit, a
     result = booking_crud.create_booking(db, _booking_in(unit, project, allottee))
 
     assert not any("Extra Charges" in l.label for l in result.schedule_lines)
+
+
+def test_one_shot_booking_schedules_single_full_payment(db: Session, project, unit, allottee):
+    full = float(unit.total_price)
+    result = booking_crud.create_booking(
+        db, _booking_in(unit, project, allottee, one_shot=True, down_payment_amount=full)
+    )
+    assert len(result.schedule_lines) == 1
+    assert result.schedule_lines[0].label == "Full Payment"
+    assert float(result.schedule_lines[0].amount) == full
+
+
+def test_one_shot_booking_must_be_paid_in_full(db: Session, project, unit, allottee):
+    with pytest.raises(ValueError, match="paid in full"):
+        booking_crud.create_booking(
+            db,
+            _booking_in(unit, project, allottee, one_shot=True, down_payment_amount=float(unit.total_price) / 2),
+        )

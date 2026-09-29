@@ -249,6 +249,15 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
     # and layered on top, so they don't factor into the installment-plan math.
     base_price = float(unit.total_price) - booking_in.discount
 
+    if booking_in.one_shot:
+        if booking_in.installment_plans:
+            raise ValueError("A one-shot (full payment) booking cannot have installment plans.")
+        if round(booking_in.down_payment_amount, 2) != round(base_price, 2):
+            raise ValueError(
+                f"A one-shot booking must be paid in full: PKR {base_price:,.2f}, "
+                f"not PKR {booking_in.down_payment_amount:,.2f}."
+            )
+
     db_booking = Booking(
         booking_ref_no=_next_booking_ref_no(db),
         booking_date=booking_in.booking_date,
@@ -272,7 +281,7 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
             PaymentScheduleLine(
                 booking_id=db_booking.id,
                 installment_no=0,
-                label="Down Payment",
+                label="Full Payment" if booking_in.one_shot else "Down Payment",
                 due_date=booking_in.booking_date,
                 amount=booking_in.down_payment_amount,
             )

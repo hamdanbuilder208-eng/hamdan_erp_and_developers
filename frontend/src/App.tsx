@@ -41,6 +41,7 @@ import InventoryPrintPage from "./pages/InventoryPrintPage";
 import WarehouseDispatchPage from "./pages/WarehouseDispatchPage";
 import ProjectDeliveriesPage from "./pages/ProjectDeliveriesPage";
 import CommissionPayoutPrintPage from "./pages/CommissionPayoutPrintPage";
+import UnitsPrintPage from "./pages/UnitsPrintPage";
 import CommunicationsPage from "./pages/CommunicationsPage";
 import AdminPage from "./pages/AdminPage";
 import UsersRolesPage from "./pages/UsersRolesPage";
@@ -263,6 +264,7 @@ export default function App() {
             <Route path="/projects/:id/deliveries" element={<ProjectDeliveriesPage />} />
             <Route path="/commission-payouts/:id/print" element={<CommissionPayoutPrintPage />} />
             <Route path="/partners/:id/statement/print" element={<PartnerStatementPrintPage />} />
+            <Route path="/projects/:id/units/print" element={<UnitsPrintPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -63,12 +63,8 @@ def update_project(
     db_project = project_crud.get_project(db, project_id)
     if not db_project:
         raise HTTPException(status_code=404, detail="Project not found")
-    changes = project_in.model_dump(exclude_unset=True)
-    # Only admins may edit a project after it is created. The one exception:
-    # setting the floor count for the first time (Units > Add Floor), which is
-    # part of initial setup rather than an edit.
-    first_floor_setup = set(changes) == {"total_floors"} and not db_project.total_floors
-    if not current_user.role.is_admin and not first_floor_setup:
+    # Only admins may edit a project after it is created.
+    if not current_user.role.is_admin:
         raise HTTPException(status_code=403, detail="Only an admin can edit project details")
     try:
         return project_crud.update_project(db, db_project, project_in)

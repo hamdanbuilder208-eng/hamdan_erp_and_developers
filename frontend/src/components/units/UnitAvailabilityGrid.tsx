@@ -3,7 +3,7 @@ import { cn } from "../../lib/utils";
 import type { ProjectFloor, Unit, UnitStatus } from "../../types";
 
 const boxVariants = cva(
-  "flex h-10 min-w-[3rem] items-center justify-center rounded-md border px-1.5 text-xs font-semibold shadow-sm transition-transform hover:-translate-y-0.5 hover:shadow-md",
+  "flex min-h-10 min-w-[3rem] flex-col items-center justify-center rounded-md border px-1.5 py-1 text-xs font-semibold shadow-sm transition-transform hover:-translate-y-0.5 hover:shadow-md",
   {
     variants: {
       status: {
@@ -26,6 +26,19 @@ const legendItems: { status: UnitStatus; label: string }[] = [
   { status: "Cancelled", label: "Cancelled" },
   { status: "Rented", label: "Rented" },
 ];
+
+function UnitLabel({ unit }: { unit: Unit }) {
+  return (
+    <>
+      <span>{unit.unit_number}</span>
+      {unit.unit_category && (
+        <span className="max-w-[7rem] truncate text-[10px] font-normal leading-tight opacity-80">
+          {unit.unit_category.name}
+        </span>
+      )}
+    </>
+  );
+}
 
 function floorSortKey(f: ProjectFloor): number {
   const s = f.floor_no.toLowerCase();
@@ -53,7 +66,7 @@ export function UnitAvailabilityGrid({
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg bg-slate-50 dark:bg-navy-800/60 px-4 py-2.5">
         {legendItems.map((item) => (
           <div key={item.status} className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
-            <span className={cn("h-2.5 w-2.5 rounded-sm border", boxVariants({ status: item.status }))} />
+            <span className={cn(boxVariants({ status: item.status }), "h-2.5 min-h-0 w-2.5 min-w-0 rounded-sm p-0 shadow-none")} />
             {item.label}
           </div>
         ))}
@@ -101,10 +114,10 @@ export function UnitAvailabilityGrid({
                       <button
                         key={unit.id}
                         onClick={() => onSelectUnit(unit)}
-                        title={`${unit.unit_number} · ${unit.status} · PKR ${Number(unit.total_price).toLocaleString()}`}
+                        title={`${unit.unit_number} · ${unit.unit_category?.name ?? "No category"} · ${unit.status} · PKR ${Number(unit.total_price).toLocaleString()}`}
                         className={boxVariants({ status: unit.status })}
                       >
-                        {unit.unit_number}
+                        <UnitLabel unit={unit} />
                       </button>
                     ))}
                   </div>
@@ -131,10 +144,10 @@ export function UnitAvailabilityGrid({
               <button
                 key={unit.id}
                 onClick={() => onSelectUnit(unit)}
-                title={`${unit.unit_number} · ${unit.status}`}
+                title={`${unit.unit_number} · ${unit.unit_category?.name ?? "No category"} · ${unit.status}`}
                 className={boxVariants({ status: unit.status })}
               >
-                {unit.unit_number}
+                <UnitLabel unit={unit} />
               </button>
             ))}
           </div>
