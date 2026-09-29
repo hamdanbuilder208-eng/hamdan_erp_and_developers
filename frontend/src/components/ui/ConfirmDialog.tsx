@@ -8,7 +8,7 @@ export function ConfirmDialog() {
   const settle = useConfirmStore((s) => s.settle);
 
   return (
-    <Modal open={!!request} onClose={() => settle(false)} title={request?.title ?? ""}>
+    <Modal stacked open={!!request} onClose={() => settle(false)} title={request?.title ?? ""} className="max-w-md">
       {request && (
         <div className="space-y-5">
           <div className="flex items-start gap-3">

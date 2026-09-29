@@ -14,6 +14,9 @@ from app.schemas.unit import UnitBulkGenerate, UnitCategoryCreate, UnitCategoryU
 # its booking (shown in the Unit Booking tab) in sync instead of going stale.
 _UNIT_TO_BOOKING_STATUS = {
     UnitStatus.AVAILABLE: BookingStatus.CANCELLED,
+    # "Cancelled" on a unit means its booking was cancelled — so cancel the
+    # booking too (which also opens a pending refund for anything paid).
+    UnitStatus.CANCELLED: BookingStatus.CANCELLED,
     UnitStatus.SOLD: BookingStatus.POSSESSION_GIVEN,
     UnitStatus.BOOKED: BookingStatus.BOOKED,
 }
@@ -130,6 +133,9 @@ def update_unit(db: Session, db_unit: Unit, unit_in: UnitUpdate) -> Unit:
             )
             if active_booking and active_booking.status != mapped_status:
                 booking_crud.update_booking_status(db, active_booking, mapped_status, date.today())
+                # Cancelling a booking resets its unit to Available; keep the
+                # status the user actually picked (e.g. Cancelled).
+                db_unit.status = new_status
 
     db.commit()
     db.refresh(db_unit)

@@ -9,22 +9,33 @@ interface ModalProps {
   description?: string;
   children: React.ReactNode;
   className?: string;
+  /** Opens above any other open modal, centered (used by the confirm dialog). */
+  stacked?: boolean;
 }
 
-export function Modal({ open, onClose, title, description, children, className }: ModalProps) {
+export function Modal({ open, onClose, title, description, children, className, stacked }: ModalProps) {
   React.useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // A stacked modal listens in the capture phase and swallows Escape so
+      // it closes only itself, not the modal underneath it too.
+      if (stacked) e.stopImmediatePropagation();
+      onClose();
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+    window.addEventListener("keydown", onKeyDown, { capture: stacked });
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: stacked });
+  }, [open, onClose, stacked]);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-16 sm:pt-24">
+    <div
+      className={cn(
+        "fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-16 sm:pt-24",
+        stacked && "z-[60] items-center pt-4 sm:pt-4",
+      )}
+    >
       <div
         className="fixed inset-0 bg-navy-950/50 backdrop-blur-sm"
         onClick={onClose}

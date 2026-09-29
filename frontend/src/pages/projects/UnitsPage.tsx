@@ -286,6 +286,24 @@ export default function UnitsPage() {
     onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to update unit status.")),
   });
 
+  // Moving a booked/sold unit to Available or Cancelled cancels its booking on
+  // the backend, and anything already paid becomes a pending refund — so warn
+  // before doing it.
+  const changeUnitStatus = async (unit: Unit, status: UnitStatus) => {
+    const cancelsBooking =
+      (unit.status === "Booked" || unit.status === "Sold") &&
+      (status === "Available" || status === "Cancelled");
+    if (cancelsBooking) {
+      const ok = await confirm(
+        `Mark unit "${unit.unit_number}" as ${status}? This cancels its booking. Any amount the customer ` +
+          "has already paid will be added as a pending refund in the Refunds tab.",
+        { danger: true, confirmLabel: "Cancel Booking" },
+      );
+      if (!ok) return;
+    }
+    updateUnitStatus.mutate({ unitId: unit.id, status });
+  };
+
   const [unitNumberDraft, setUnitNumberDraft] = React.useState("");
   const updateUnitNumber = useMutation({
     mutationFn: async ({ unitId, unit_number }: { unitId: number; unit_number: string }) =>
@@ -527,10 +545,7 @@ export default function UnitsPage() {
                             <Select
                               value={u.status}
                               onChange={(e) =>
-                                updateUnitStatus.mutate({
-                                  unitId: u.id,
-                                  status: e.target.value as UnitStatus,
-                                })
+                                changeUnitStatus(u, e.target.value as UnitStatus)
                               }
                               className="h-8 w-36 text-xs"
                             >
@@ -1018,10 +1033,7 @@ export default function UnitsPage() {
                 id="unit_status_change"
                 value={currentSelectedUnit.status}
                 onChange={(e) =>
-                  updateUnitStatus.mutate({
-                    unitId: currentSelectedUnit.id,
-                    status: e.target.value as UnitStatus,
-                  })
+                  changeUnitStatus(currentSelectedUnit, e.target.value as UnitStatus)
                 }
               >
                 {(["Available", "Booked", "Sold", "On-Hold", "Cancelled"] as UnitStatus[]).map((s) => (
