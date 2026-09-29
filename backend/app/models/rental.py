@@ -5,6 +5,7 @@ from sqlalchemy import CheckConstraint, Date, Enum, ForeignKey, Numeric, String,
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base, TimestampMixin
+from app.models.payment_details import PaymentDetailsMixin
 
 
 class Tenant(Base, TimestampMixin):
@@ -81,7 +82,7 @@ class RentScheduleLine(Base, TimestampMixin):
     agreement: Mapped["RentAgreement"] = relationship(back_populates="schedule_lines")
 
 
-class RentReceipt(Base, TimestampMixin):
+class RentReceipt(Base, PaymentDetailsMixin, TimestampMixin):
     __tablename__ = "rent_receipts"
 
     id: Mapped[int] = mapped_column(primary_key=True)

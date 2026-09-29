@@ -9,6 +9,7 @@ from app.models.land_property import (
     PropertyType,
     SizeUnit,
 )
+from app.schemas.payment_details import PaymentDetailsFields
 
 
 class LandPropertyBase(BaseModel):
@@ -43,7 +44,7 @@ class LandPropertyUpdate(BaseModel):
     remarks: str | None = None
 
 
-class LandPropertyPaymentBase(BaseModel):
+class LandPropertyPaymentBase(PaymentDetailsFields):
     direction: LandPropertyPaymentDirection
     amount: float
     payment_date: date

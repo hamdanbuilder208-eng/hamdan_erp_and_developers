@@ -14,12 +14,13 @@ router = APIRouter()
 def list_accounts(
     nature: AccountNature | None = None,
     is_active: bool | None = None,
+    project_id: int | None = None,
     db: Session = Depends(get_db),
 ):
     accounts = account_crud.list_accounts(db, nature=nature, is_active=is_active)
     result = []
     for acc in accounts:
-        balance = account_crud.account_balance(db, acc.id)
+        balance = account_crud.account_balance(db, acc.id, project_id=project_id)
         item = AccountWithBalance.model_validate(acc)
         item.balance = balance
         result.append(item)

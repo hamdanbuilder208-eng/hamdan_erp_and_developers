@@ -98,14 +98,14 @@ def test_create_receipt_posts_balanced_voucher(db: Session, booking, cash_accoun
 
 def test_cheque_receipt_starts_pending(db: Session, booking, cash_account):
     result = receipt_crud.create_receipt(
-        db, _receipt_in(booking, cash_account, mode_of_payment="Cheque", cheque_no="123")
+        db, _receipt_in(booking, cash_account, mode_of_payment="Cheque", cheque_no="123", cheque_bank_name="HBL")
     )
     assert result.cheque_status == ChequeStatus.PENDING
 
 
 def test_bounced_cheque_reverses_allocation_and_voucher(db: Session, booking, cash_account):
     receipt = receipt_crud.create_receipt(
-        db, _receipt_in(booking, cash_account, mode_of_payment="Cheque", cheque_no="123")
+        db, _receipt_in(booking, cash_account, mode_of_payment="Cheque", cheque_no="123", cheque_bank_name="HBL")
     )
     voucher_id = receipt.voucher_id
 
@@ -119,7 +119,7 @@ def test_bounced_cheque_reverses_allocation_and_voucher(db: Session, booking, ca
 
 def test_recleared_cheque_reapplies_ledger(db: Session, booking, cash_account):
     receipt = receipt_crud.create_receipt(
-        db, _receipt_in(booking, cash_account, mode_of_payment="Cheque", cheque_no="123")
+        db, _receipt_in(booking, cash_account, mode_of_payment="Cheque", cheque_no="123", cheque_bank_name="HBL")
     )
     receipt_crud.mark_cheque_status(db, receipt, ChequeStatus.BOUNCED)
 

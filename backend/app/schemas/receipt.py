@@ -21,6 +21,9 @@ class ReceiptBase(BaseModel):
     transfer_account_title: str | None = None
     transfer_account_no: str | None = None
     transfer_ref_no: str | None = None
+    transfer_to_account_title: str | None = None
+    transfer_to_account_no: str | None = None
+    cheque_bank_name: str | None = None
     narration: str | None = None
 
 
@@ -46,6 +49,9 @@ class ReceiptUpdate(BaseModel):
     transfer_account_title: str | None = None
     transfer_account_no: str | None = None
     transfer_ref_no: str | None = None
+    transfer_to_account_title: str | None = None
+    transfer_to_account_no: str | None = None
+    cheque_bank_name: str | None = None
     narration: str | None = None
 
 

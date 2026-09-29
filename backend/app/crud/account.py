@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 
 from app.models.account import Account, AccountNature
 from app.models.receipt import Receipt
-from app.models.voucher import VoucherLine
+from app.models.voucher import Voucher, VoucherLine
 from app.schemas.account import AccountCreate, AccountUpdate
 
 _NATURE_PREFIX = {
@@ -79,12 +79,20 @@ def delete_account(db: Session, db_account: Account) -> None:
     db.commit()
 
 
-def account_balance(db: Session, account_id: int) -> float:
+def account_balance(db: Session, account_id: int, project_id: int | None = None) -> float:
+    """Opening balance + everything posted. With `project_id`, only what was
+    posted on that project's vouchers — opening balances are company-wide, so
+    they're left out of a project view."""
     account = db.query(Account).filter(Account.id == account_id).first()
     if not account:
         return 0
-    lines = db.query(VoucherLine).filter(VoucherLine.account_id == account_id).all()
+    query = db.query(VoucherLine).filter(VoucherLine.account_id == account_id)
+    if project_id is not None:
+        query = query.join(Voucher, VoucherLine.voucher_id == Voucher.id).filter(Voucher.project_id == project_id)
+    lines = query.all()
     posted_debit = sum(float(line.debit) for line in lines)
     posted_credit = sum(float(line.credit) for line in lines)
+    if project_id is not None:
+        return posted_debit - posted_credit
     opening = float(account.opening_debit) - float(account.opening_credit)
     return opening + posted_debit - posted_credit

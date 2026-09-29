@@ -14,17 +14,19 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, title, description, children, className, stacked }: ModalProps) {
+  // Forms only close through their own buttons (X / Cancel / Submit) — a stray
+  // click outside or an Escape press used to wipe a half-filled form. The small
+  // stacked confirm dialog holds no input, so it still closes on Escape/outside.
   React.useEffect(() => {
-    if (!open) return;
+    if (!open || !stacked) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      // A stacked modal listens in the capture phase and swallows Escape so
-      // it closes only itself, not the modal underneath it too.
-      if (stacked) e.stopImmediatePropagation();
+      // Captured and swallowed so it closes only itself, not the modal underneath.
+      e.stopImmediatePropagation();
       onClose();
     };
-    window.addEventListener("keydown", onKeyDown, { capture: stacked });
-    return () => window.removeEventListener("keydown", onKeyDown, { capture: stacked });
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [open, onClose, stacked]);
 
   if (!open) return null;
@@ -38,7 +40,7 @@ export function Modal({ open, onClose, title, description, children, className, 
     >
       <div
         className="fixed inset-0 bg-navy-950/50 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={stacked ? onClose : undefined}
         aria-hidden="true"
       />
       <div
@@ -57,7 +59,9 @@ export function Modal({ open, onClose, title, description, children, className, 
             )}
           </div>
           <button
+            type="button"
             onClick={onClose}
+            title="Close"
             className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-navy-800 dark:hover:text-slate-200"
           >
             <X className="h-4 w-4" />

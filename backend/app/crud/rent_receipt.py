@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.payment_details import apply_payment_details
 from app.core.sequences import next_sequence_number
 from app.models.account import Account
 from app.models.rental import RentAgreement, RentReceipt, RentReceiptAllocation, RentScheduleLine
@@ -94,6 +95,7 @@ def create_receipt(db: Session, receipt_in: RentReceiptCreate) -> RentReceipt:
         mode_of_payment=receipt_in.mode_of_payment,
         narration=receipt_in.narration,
     )
+    apply_payment_details(db_receipt, receipt_in.mode_of_payment, receipt_in.model_dump())
     db.add(db_receipt)
     db.flush()
 

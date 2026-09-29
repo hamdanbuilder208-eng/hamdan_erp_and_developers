@@ -10,6 +10,12 @@ import { RentAgreementStatusBadge } from "../components/ui/Badge";
 import { TableRowsSkeleton } from "../components/ui/Skeleton";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
+import {
+  PaymentDetailsFields,
+  emptyPaymentDetails,
+  paymentDetailsPayload,
+  paymentDetailsSummary,
+} from "../components/payments/PaymentDetailsFields";
 import type {
   Account,
   LandProperty,
@@ -44,7 +50,7 @@ const emptyAgreementForm = {
   duration_months: "11",
   narration: "",
 };
-const emptyReceiptForm = { amount: "", credit_account_id: "", mode_of_payment: "Cash" };
+const emptyReceiptForm = { amount: "", credit_account_id: "", mode_of_payment: "Cash", ...emptyPaymentDetails() };
 
 function targetLabel(a: RentAgreement, projectName?: (id: number) => string) {
   if (a.unit)
@@ -259,6 +265,7 @@ export default function RentalsPage() {
           credit_account_id: Number(receiptForm.credit_account_id),
           amount: Number(receiptForm.amount),
           mode_of_payment: receiptForm.mode_of_payment,
+          ...paymentDetailsPayload(receiptForm.mode_of_payment, receiptForm),
         })
       ).data,
     onSuccess: async () => {
@@ -838,7 +845,13 @@ export default function RentalsPage() {
                       className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm dark:border-navy-800"
                     >
                       <span className="text-navy-900 dark:text-slate-100">
-                        {r.receipt_no} · {r.receipt_date} · PKR {Number(r.amount).toLocaleString()}
+                        {r.receipt_no} · {r.receipt_date} · PKR {Number(r.amount).toLocaleString()} ·{" "}
+                        {r.mode_of_payment}
+                        {paymentDetailsSummary(r.mode_of_payment, r) && (
+                          <span className="block text-xs text-slate-400">
+                            {paymentDetailsSummary(r.mode_of_payment, r)}
+                          </span>
+                        )}
                       </span>
                       <div className="flex items-center gap-1">
                         <button
@@ -928,6 +941,12 @@ export default function RentalsPage() {
               </Select>
             </div>
           </div>
+          <PaymentDetailsFields
+            idPrefix="rr"
+            mode={receiptForm.mode_of_payment}
+            value={receiptForm}
+            onChange={(patch) => setReceiptForm({ ...receiptForm, ...patch })}
+          />
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setReceiptModalOpen(false)}>
               Cancel

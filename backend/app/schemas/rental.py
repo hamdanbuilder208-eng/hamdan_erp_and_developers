@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from app.models.rental import RentAgreementStatus
 from app.schemas.account import AccountOut
 from app.schemas.land_property import LandPropertyOut
+from app.schemas.payment_details import PaymentDetailsFields
 from app.schemas.unit import UnitOut
 
 
@@ -69,7 +70,7 @@ class RentAgreementOut(RentAgreementBase):
     schedule_lines: list[RentScheduleLineOut]
 
 
-class RentReceiptBase(BaseModel):
+class RentReceiptBase(PaymentDetailsFields):
     receipt_date: date
     agreement_id: int
     credit_account_id: int

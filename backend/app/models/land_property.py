@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base, TimestampMixin
 from app.models.booking import PaymentMode
+from app.models.payment_details import PaymentDetailsMixin
 
 
 class PropertyType(str, enum.Enum):
@@ -72,7 +73,7 @@ class LandProperty(Base, TimestampMixin):
     )
 
 
-class LandPropertyPayment(Base, TimestampMixin):
+class LandPropertyPayment(Base, PaymentDetailsMixin, TimestampMixin):
     """A single installment paid to the seller (acquiring the property) or
     received from a buyer (disposing of it) — a running ledger rather than a
     fixed schedule, since these deals are negotiated case by case."""

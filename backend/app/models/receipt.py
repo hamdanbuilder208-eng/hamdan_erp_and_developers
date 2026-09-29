@@ -48,6 +48,10 @@ class Receipt(Base, TimestampMixin):
     transfer_account_title: Mapped[str | None] = mapped_column(String(150))
     transfer_account_no: Mapped[str | None] = mapped_column(String(50))
     transfer_ref_no: Mapped[str | None] = mapped_column(String(80))
+    # ...and the account it landed in.
+    transfer_to_account_title: Mapped[str | None] = mapped_column(String(150))
+    transfer_to_account_no: Mapped[str | None] = mapped_column(String(50))
+    cheque_bank_name: Mapped[str | None] = mapped_column(String(100))
     narration: Mapped[str | None] = mapped_column(Text)
 
     booking: Mapped["Booking"] = relationship()

@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.payment_details import apply_payment_details
 from app.core.sequences import next_sequence_number
 from app.models.land_property import LandProperty, LandPropertyPayment, LandPropertyStatus
 from app.schemas.land_property import LandPropertyCreate, LandPropertyPaymentCreate, LandPropertyUpdate
@@ -74,7 +75,9 @@ def get_payment(db: Session, payment_id: int) -> LandPropertyPayment | None:
 def create_payment(
     db: Session, db_property: LandProperty, payment_in: LandPropertyPaymentCreate
 ) -> LandPropertyPayment:
-    db_payment = LandPropertyPayment(land_property_id=db_property.id, **payment_in.model_dump())
+    data = payment_in.model_dump()
+    db_payment = LandPropertyPayment(land_property_id=db_property.id, **data)
+    apply_payment_details(db_payment, payment_in.mode_of_payment, data)
     db.add(db_payment)
     db.commit()
     db.refresh(db_payment)

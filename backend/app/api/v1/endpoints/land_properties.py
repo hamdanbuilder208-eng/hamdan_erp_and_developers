@@ -63,7 +63,10 @@ def create_payment(property_id: int, payment_in: LandPropertyPaymentCreate, db: 
     db_property = land_crud.get_land_property(db, property_id)
     if not db_property:
         raise HTTPException(status_code=404, detail="Property not found")
-    return land_crud.create_payment(db, db_property, payment_in)
+    try:
+        return land_crud.create_payment(db, db_property, payment_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.delete("/payments/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)

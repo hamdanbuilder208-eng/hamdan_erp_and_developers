@@ -10,7 +10,15 @@ from app.models.account import Account, AccountNature
 from app.models.allottee import Allottee
 from app.models.booking import Booking, BookingStatus
 from app.models.expense import WagePayment
-from app.models.inventory import GRN, GRNLine, Material, MaterialIssueLine, StockLedger, StockMovementType
+from app.models.inventory import (
+    GRN,
+    GRNLine,
+    Material,
+    MaterialIssue,
+    MaterialIssueLine,
+    StockLedger,
+    StockMovementType,
+)
 from app.models.project import Project
 from app.models.rental import RentAgreement, RentAgreementStatus
 from app.models.voucher import Voucher, VoucherLine
@@ -38,21 +46,29 @@ from app.schemas.report import (
 )
 
 
-def _account_balance(db: Session, account: Account) -> float:
-    lines = db.query(VoucherLine).filter(VoucherLine.account_id == account.id).all()
+def _account_balance(db: Session, account: Account, project_id: int | None = None) -> float:
+    """Opening + posted. For a project, only that project's vouchers count —
+    opening balances are company-wide and every voucher balances on its own,
+    so a project's figures still balance without them."""
+    query = db.query(VoucherLine).filter(VoucherLine.account_id == account.id)
+    if project_id is not None:
+        query = query.join(Voucher, VoucherLine.voucher_id == Voucher.id).filter(Voucher.project_id == project_id)
+    lines = query.all()
     posted_debit = sum(float(l.debit) for l in lines)
     posted_credit = sum(float(l.credit) for l in lines)
+    if project_id is not None:
+        return posted_debit - posted_credit
     opening = float(account.opening_debit) - float(account.opening_credit)
     return opening + posted_debit - posted_credit
 
 
-def get_trial_balance(db: Session) -> TrialBalanceReport:
+def get_trial_balance(db: Session, project_id: int | None = None) -> TrialBalanceReport:
     accounts = db.query(Account).filter(Account.is_control == False).order_by(Account.code).all()  # noqa: E712
     rows: list[TrialBalanceRow] = []
     total_debit = 0.0
     total_credit = 0.0
     for acc in accounts:
-        balance = _account_balance(db, acc)
+        balance = _account_balance(db, acc, project_id)
         if abs(balance) < 0.005:
             continue
         debit = balance if balance > 0 else 0
@@ -154,7 +170,7 @@ def get_profit_loss(
     )
 
 
-def get_balance_sheet(db: Session) -> BalanceSheetReport:
+def get_balance_sheet(db: Session, project_id: int | None = None) -> BalanceSheetReport:
     accounts = db.query(Account).filter(Account.is_control == False).order_by(Account.code).all()  # noqa: E712
 
     assets: list[BalanceSheetLine] = []
@@ -162,7 +178,7 @@ def get_balance_sheet(db: Session) -> BalanceSheetReport:
     capital: list[BalanceSheetLine] = []
 
     for acc in accounts:
-        balance = _account_balance(db, acc)
+        balance = _account_balance(db, acc, project_id)
         if abs(balance) < 0.005:
             continue
         line = BalanceSheetLine(account_id=acc.id, code=acc.code, name=acc.name, amount=round(balance, 2))
@@ -177,7 +193,7 @@ def get_balance_sheet(db: Session) -> BalanceSheetReport:
     total_liabilities = round(sum(l.amount for l in liabilities), 2)
     total_capital_before_profit = round(sum(l.amount for l in capital), 2)
 
-    pl = get_profit_loss(db)
+    pl = get_profit_loss(db, project_id=project_id)
     retained_earnings = pl.net_profit
     total_capital = round(total_capital_before_profit + retained_earnings, 2)
 
@@ -199,12 +215,16 @@ def get_general_ledger(
     account_id: int,
     date_from: date | None = None,
     date_to: date | None = None,
+    project_id: int | None = None,
 ) -> GeneralLedgerReport | None:
     account = db.query(Account).filter(Account.id == account_id).first()
     if not account:
         return None
 
-    opening_balance = float(account.opening_debit) - float(account.opening_credit)
+    # Opening balances are company-wide, so a project's ledger starts at zero.
+    opening_balance = (
+        0.0 if project_id is not None else float(account.opening_debit) - float(account.opening_credit)
+    )
 
     query = (
         db.query(VoucherLine)
@@ -212,6 +232,8 @@ def get_general_ledger(
         .options(joinedload(VoucherLine.voucher))
         .filter(VoucherLine.account_id == account_id)
     )
+    if project_id is not None:
+        query = query.filter(Voucher.project_id == project_id)
 
     running = opening_balance
     if date_from is not None:
@@ -256,11 +278,13 @@ def get_general_ledger(
 # Aging
 
 
-def get_aging_report(db: Session, as_of_date: date | None = None) -> AgingReport:
+def get_aging_report(
+    db: Session, as_of_date: date | None = None, project_id: int | None = None
+) -> AgingReport:
     if as_of_date is None:
         as_of_date = date.today()
 
-    bookings = (
+    query = (
         db.query(Booking)
         .options(
             joinedload(Booking.allottee),
@@ -268,8 +292,10 @@ def get_aging_report(db: Session, as_of_date: date | None = None) -> AgingReport
             joinedload(Booking.schedule_lines),
         )
         .filter(Booking.status != BookingStatus.CANCELLED)
-        .all()
     )
+    if project_id is not None:
+        query = query.filter(Booking.project_id == project_id)
+    bookings = query.all()
 
     rows: list[AgingRow] = []
     total_0_30 = total_31_60 = total_61_90 = total_90_plus = 0.0
@@ -437,7 +463,7 @@ def get_stock_ledger_report(
 # Customer-wise
 
 
-def get_customer_wise_report(db: Session) -> CustomerWiseReport:
+def get_customer_wise_report(db: Session, project_id: int | None = None) -> CustomerWiseReport:
     allottees = db.query(Allottee).order_by(Allottee.name).all()
 
     rows: list[CustomerWiseRow] = []
@@ -445,12 +471,14 @@ def get_customer_wise_report(db: Session) -> CustomerWiseReport:
     grand_received = 0.0
 
     for a in allottees:
-        bookings = (
+        query = (
             db.query(Booking)
             .options(joinedload(Booking.schedule_lines))
             .filter(Booking.allottee_id == a.id, Booking.status != BookingStatus.CANCELLED)
-            .all()
         )
+        if project_id is not None:
+            query = query.filter(Booking.project_id == project_id)
+        bookings = query.all()
         if not bookings:
             continue
 
@@ -485,49 +513,59 @@ def get_customer_wise_report(db: Session) -> CustomerWiseReport:
 # Broker / Partner
 
 
-def get_all_broker_summaries(db: Session) -> list[BrokerSummaryRow]:
+def get_all_broker_summaries(db: Session, project_id: int | None = None) -> list[BrokerSummaryRow]:
     agents = agent_crud.list_agents(db)
     rows = []
     for a in agents:
         summary = agent_crud.get_agent_summary(db, a.id)
+        bookings = [b for b in summary.bookings if project_id is None or b.project_id == project_id]
+        if project_id is not None and not bookings:
+            continue  # this broker brought nobody into the selected project
         rows.append(
             BrokerSummaryRow(
                 agent_id=a.id,
                 agent_code=a.agent_code,
                 name=a.name,
-                total_eligible=summary.total_eligible,
-                total_paid=summary.total_paid,
-                total_balance=summary.total_balance,
+                total_eligible=round(sum(b.commission_eligible_amount for b in bookings), 2),
+                total_paid=round(sum(b.commission_paid for b in bookings), 2),
+                total_balance=round(sum(b.commission_balance for b in bookings), 2),
             )
         )
     rows.sort(key=lambda r: -r.total_balance)
     return rows
 
 
-def get_all_partner_summaries(db: Session) -> list[PartnerSummaryRow]:
+def get_all_partner_summaries(db: Session, project_id: int | None = None) -> list[PartnerSummaryRow]:
     partners = partner_crud.list_partners(db)
     rows = []
     for p in partners:
         summary = partner_crud.get_partner_summary(db, p.id)
+        projects = [r for r in summary.projects if project_id is None or r.project_id == project_id]
+        if project_id is not None and not projects:
+            continue  # no share in the selected project
+
+        def total(field: str) -> float:
+            return round(sum(getattr(r, field) for r in projects), 2)
+
         rows.append(
             PartnerSummaryRow(
                 partner_id=p.id,
                 partner_code=p.partner_code,
                 name=p.name,
-                total_share_amount=summary.total_share_amount,
-                total_drawn=summary.total_drawn,
-                total_balance=summary.total_balance,
-                total_contributed=summary.total_contributed,
-                total_distributable_share=summary.total_distributable_share,
-                total_partner_expense=summary.total_partner_expense,
-                total_current_account_balance=summary.total_current_account_balance,
+                total_share_amount=total("partner_share_amount"),
+                total_drawn=total("drawn_amount"),
+                total_balance=total("balance"),
+                total_contributed=total("contributed_amount"),
+                total_distributable_share=total("partner_distributable_share"),
+                total_partner_expense=total("partner_expense_amount"),
+                total_current_account_balance=total("current_account_balance"),
             )
         )
     rows.sort(key=lambda r: -r.total_balance)
     return rows
 
 
-def get_rental_income_report(db: Session) -> list[RentalIncomeRow]:
+def get_rental_income_report(db: Session, project_id: int | None = None) -> list[RentalIncomeRow]:
     agreements = (
         db.query(RentAgreement)
         .options(
@@ -538,6 +576,9 @@ def get_rental_income_report(db: Session) -> list[RentalIncomeRow]:
         )
         .all()
     )
+    if project_id is not None:
+        # Only that project's shops/units — standalone land/plots belong to no project.
+        agreements = [a for a in agreements if a.unit is not None and a.unit.project_id == project_id]
 
     buckets: dict[tuple[str, int], dict] = {}
     for a in agreements:
@@ -584,9 +625,9 @@ def get_rental_income_report(db: Session) -> list[RentalIncomeRow]:
 # Material / Employee
 
 
-def get_material_summary_report(db: Session) -> list[MaterialSummaryRow]:
+def get_material_summary_report(db: Session, project_id: int | None = None) -> list[MaterialSummaryRow]:
     materials = db.query(Material).order_by(Material.name).all()
-    balances = inventory_crud.get_stock_balances(db)
+    balances = inventory_crud.get_stock_balances(db, project_id=project_id)
 
     balance_by_material: dict[int, dict[str, float]] = {}
     for b in balances:
@@ -596,9 +637,16 @@ def get_material_summary_report(db: Session) -> list[MaterialSummaryRow]:
 
     rows = []
     for mat in materials:
-        purchased_lines = db.query(GRNLine).filter(GRNLine.material_id == mat.id).all()
-        issued_lines = db.query(MaterialIssueLine).filter(MaterialIssueLine.material_id == mat.id).all()
+        purchased_query = db.query(GRNLine).filter(GRNLine.material_id == mat.id)
+        issued_query = db.query(MaterialIssueLine).filter(MaterialIssueLine.material_id == mat.id)
+        if project_id is not None:
+            purchased_query = purchased_query.join(GRN).filter(GRN.project_id == project_id)
+            issued_query = issued_query.join(MaterialIssue).filter(MaterialIssue.project_id == project_id)
+        purchased_lines = purchased_query.all()
+        issued_lines = issued_query.all()
         bal = balance_by_material.get(mat.id, {"qty": 0.0, "value": 0.0})
+        if project_id is not None and not (purchased_lines or issued_lines or bal["qty"]):
+            continue  # material never touched the selected project
 
         rows.append(
             MaterialSummaryRow(

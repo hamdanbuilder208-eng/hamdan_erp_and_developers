@@ -27,8 +27,8 @@ router = APIRouter()
 
 
 @router.get("/trial-balance", response_model=TrialBalanceReport)
-def trial_balance(db: Session = Depends(get_db)):
-    return report_crud.get_trial_balance(db)
+def trial_balance(project_id: int | None = None, db: Session = Depends(get_db)):
+    return report_crud.get_trial_balance(db, project_id=project_id)
 
 
 @router.get("/profit-loss", response_model=ProfitLossReport)
@@ -42,8 +42,8 @@ def profit_loss(
 
 
 @router.get("/balance-sheet", response_model=BalanceSheetReport)
-def balance_sheet(db: Session = Depends(get_db)):
-    return report_crud.get_balance_sheet(db)
+def balance_sheet(project_id: int | None = None, db: Session = Depends(get_db)):
+    return report_crud.get_balance_sheet(db, project_id=project_id)
 
 
 @router.get("/general-ledger/{account_id}", response_model=GeneralLedgerReport)
@@ -51,17 +51,22 @@ def general_ledger(
     account_id: int,
     date_from: date | None = None,
     date_to: date | None = None,
+    project_id: int | None = None,
     db: Session = Depends(get_db),
 ):
-    report = report_crud.get_general_ledger(db, account_id, date_from=date_from, date_to=date_to)
+    report = report_crud.get_general_ledger(
+        db, account_id, date_from=date_from, date_to=date_to, project_id=project_id
+    )
     if not report:
         raise HTTPException(status_code=404, detail="Account not found")
     return report
 
 
 @router.get("/aging", response_model=AgingReport)
-def aging_report(as_of_date: date | None = None, db: Session = Depends(get_db)):
-    return report_crud.get_aging_report(db, as_of_date=as_of_date)
+def aging_report(
+    as_of_date: date | None = None, project_id: int | None = None, db: Session = Depends(get_db)
+):
+    return report_crud.get_aging_report(db, as_of_date=as_of_date, project_id=project_id)
 
 
 @router.get("/sales-purchase", response_model=SalesPurchaseReport)
@@ -100,23 +105,23 @@ def stock_ledger_report(
 
 
 @router.get("/customer-wise", response_model=CustomerWiseReport)
-def customer_wise_report(db: Session = Depends(get_db)):
-    return report_crud.get_customer_wise_report(db)
+def customer_wise_report(project_id: int | None = None, db: Session = Depends(get_db)):
+    return report_crud.get_customer_wise_report(db, project_id=project_id)
 
 
 @router.get("/brokers", response_model=list[BrokerSummaryRow])
-def brokers_report(db: Session = Depends(get_db)):
-    return report_crud.get_all_broker_summaries(db)
+def brokers_report(project_id: int | None = None, db: Session = Depends(get_db)):
+    return report_crud.get_all_broker_summaries(db, project_id=project_id)
 
 
 @router.get("/partners", response_model=list[PartnerSummaryRow])
-def partners_report(db: Session = Depends(get_db)):
-    return report_crud.get_all_partner_summaries(db)
+def partners_report(project_id: int | None = None, db: Session = Depends(get_db)):
+    return report_crud.get_all_partner_summaries(db, project_id=project_id)
 
 
 @router.get("/materials", response_model=list[MaterialSummaryRow])
-def materials_report(db: Session = Depends(get_db)):
-    return report_crud.get_material_summary_report(db)
+def materials_report(project_id: int | None = None, db: Session = Depends(get_db)):
+    return report_crud.get_material_summary_report(db, project_id=project_id)
 
 
 @router.get("/employees", response_model=list[EmployeeSummaryRow])
@@ -125,5 +130,5 @@ def employees_report(db: Session = Depends(get_db)):
 
 
 @router.get("/rental-income", response_model=list[RentalIncomeRow])
-def rental_income_report(db: Session = Depends(get_db)):
-    return report_crud.get_rental_income_report(db)
+def rental_income_report(project_id: int | None = None, db: Session = Depends(get_db)):
+    return report_crud.get_rental_income_report(db, project_id=project_id)

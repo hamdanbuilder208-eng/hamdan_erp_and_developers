@@ -4,6 +4,7 @@ import { Printer } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
+import { paymentDetailsSummary } from "../components/payments/PaymentDetailsFields";
 import type { CompanySettings, Receipt } from "../types";
 
 const API_ORIGIN = new URL(api.defaults.baseURL ?? "", window.location.origin).origin;
@@ -158,12 +159,9 @@ export default function ReceiptPrintPage() {
                 <td className="px-3 py-2 text-navy-900">{r.receipt_date}</td>
                 <td className="px-3 py-2 text-slate-500">
                   {r.mode_of_payment}
-                  {r.mode_of_payment === "Cheque" && r.cheque_no ? ` · #${r.cheque_no}` : ""}
-                  {r.transfer_bank_name && (
+                  {paymentDetailsSummary(r.mode_of_payment, r) && (
                     <span className="block text-xs text-slate-400">
-                      {[r.transfer_bank_name, r.transfer_account_title, r.transfer_account_no, r.transfer_ref_no && `Ref ${r.transfer_ref_no}`]
-                        .filter(Boolean)
-                        .join(" · ")}
+                      {paymentDetailsSummary(r.mode_of_payment, r)}
                     </span>
                   )}
                 </td>

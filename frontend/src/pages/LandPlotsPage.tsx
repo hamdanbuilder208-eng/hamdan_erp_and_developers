@@ -9,6 +9,12 @@ import { Modal } from "../components/ui/Modal";
 import { TableRowsSkeleton } from "../components/ui/Skeleton";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
+import {
+  PaymentDetailsFields,
+  emptyPaymentDetails,
+  paymentDetailsPayload,
+  paymentDetailsSummary,
+} from "../components/payments/PaymentDetailsFields";
 import type {
   LandProperty,
   LandPropertyPaymentDirection,
@@ -23,7 +29,13 @@ const sizeUnits: SizeUnit[] = ["Sq. Yd.", "Sq. Ft.", "Marla", "Kanal"];
 const statuses: LandPropertyStatus[] = ["Available", "Reserved", "Sold"];
 const paymentModes: PaymentMode[] = ["Cash", "Cheque", "Bank Transfer", "Online"];
 
-const emptyPaymentForm = { amount: "", payment_date: "", mode_of_payment: "Cash" as PaymentMode, narration: "" };
+const emptyPaymentForm = {
+  amount: "",
+  payment_date: "",
+  mode_of_payment: "Cash" as PaymentMode,
+  narration: "",
+  ...emptyPaymentDetails(),
+};
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const emptyForm = {
@@ -147,6 +159,7 @@ export default function LandPlotsPage() {
         payment_date: paymentForm.payment_date || todayIso(),
         mode_of_payment: paymentForm.mode_of_payment,
         narration: paymentForm.narration || null,
+        ...paymentDetailsPayload(paymentForm.mode_of_payment, paymentForm),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["land-properties"] });
@@ -555,6 +568,11 @@ export default function LandPlotsPage() {
                           >
                             <span className="text-navy-900 dark:text-slate-100">
                               {pm.payment_date} · PKR {Number(pm.amount).toLocaleString()} · {pm.mode_of_payment}
+                              {paymentDetailsSummary(pm.mode_of_payment, pm) && (
+                                <span className="block text-xs text-slate-400">
+                                  {paymentDetailsSummary(pm.mode_of_payment, pm)}
+                                </span>
+                              )}
                             </span>
                             <button
                               onClick={async () => {
@@ -696,6 +714,12 @@ export default function LandPlotsPage() {
               </Select>
             </div>
           </div>
+          <PaymentDetailsFields
+            idPrefix="lp"
+            mode={paymentForm.mode_of_payment}
+            value={paymentForm}
+            onChange={(patch) => setPaymentForm({ ...paymentForm, ...patch })}
+          />
           <div>
             <Label htmlFor="payment_narration">Narration (optional)</Label>
             <Input

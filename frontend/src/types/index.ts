@@ -710,6 +710,9 @@ export interface Receipt {
   transfer_account_title: string | null;
   transfer_account_no: string | null;
   transfer_ref_no: string | null;
+  transfer_to_account_title: string | null;
+  transfer_to_account_no: string | null;
+  cheque_bank_name: string | null;
   cheque_status: "Pending" | "Cleared" | "Bounced" | null;
   narration: string | null;
   credit_account: Account;
@@ -792,7 +795,19 @@ export interface RentAgreement {
   schedule_lines: RentScheduleLine[];
 }
 
-export interface RentReceipt {
+// Cheque / bank-transfer details on a payment (see components/payments/PaymentDetailsFields).
+export interface PaymentDetailFields {
+  cheque_no: string | null;
+  cheque_bank_name: string | null;
+  transfer_bank_name: string | null;
+  transfer_account_title: string | null;
+  transfer_account_no: string | null;
+  transfer_ref_no: string | null;
+  transfer_to_account_title: string | null;
+  transfer_to_account_no: string | null;
+}
+
+export interface RentReceipt extends PaymentDetailFields {
   id: number;
   receipt_no: string;
   receipt_date: string;
@@ -808,7 +823,7 @@ export interface RentReceipt {
 
 export type LandPropertyPaymentDirection = "To Seller" | "From Buyer";
 
-export interface LandPropertyPayment {
+export interface LandPropertyPayment extends PaymentDetailFields {
   id: number;
   land_property_id: number;
   direction: LandPropertyPaymentDirection;

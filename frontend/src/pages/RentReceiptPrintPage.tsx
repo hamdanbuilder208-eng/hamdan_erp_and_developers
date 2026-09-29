@@ -4,6 +4,7 @@ import { Printer } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
+import { paymentDetailsSummary } from "../components/payments/PaymentDetailsFields";
 import type { CompanySettings, RentReceipt } from "../types";
 
 const RECEIPT_TERMS = [
@@ -97,6 +98,9 @@ export default function RentReceiptPrintPage() {
           <div>
             <p className="text-xs text-slate-500">Mode of Payment</p>
             <p className="mt-0.5 font-medium text-navy-900">{receipt.mode_of_payment}</p>
+            {paymentDetailsSummary(receipt.mode_of_payment, receipt) && (
+              <p className="text-xs text-slate-500">{paymentDetailsSummary(receipt.mode_of_payment, receipt)}</p>
+            )}
           </div>
         </div>
 
@@ -118,7 +122,12 @@ export default function RentReceiptPrintPage() {
               >
                 <td className="px-3 py-2 font-mono text-xs text-slate-500">{r.receipt_no}</td>
                 <td className="px-3 py-2 text-navy-900">{r.receipt_date}</td>
-                <td className="px-3 py-2 text-slate-500">{r.mode_of_payment}</td>
+                <td className="px-3 py-2 text-slate-500">
+                  {r.mode_of_payment}
+                  {paymentDetailsSummary(r.mode_of_payment, r) && (
+                    <span className="block text-xs text-slate-400">{paymentDetailsSummary(r.mode_of_payment, r)}</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums text-navy-900">
                   {Number(r.amount).toLocaleString()}
                 </td>
