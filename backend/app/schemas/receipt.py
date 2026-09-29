@@ -17,6 +17,10 @@ class ReceiptBase(BaseModel):
     cheque_no: str | None = None
     cheque_date: date | None = None
     cheque_clearing_date: date | None = None
+    transfer_bank_name: str | None = None
+    transfer_account_title: str | None = None
+    transfer_account_no: str | None = None
+    transfer_ref_no: str | None = None
     narration: str | None = None
 
 
@@ -38,6 +42,10 @@ class ReceiptUpdate(BaseModel):
     cheque_no: str | None = None
     cheque_date: date | None = None
     cheque_clearing_date: date | None = None
+    transfer_bank_name: str | None = None
+    transfer_account_title: str | None = None
+    transfer_account_no: str | None = None
+    transfer_ref_no: str | None = None
     narration: str | None = None
 
 

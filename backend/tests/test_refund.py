@@ -19,6 +19,34 @@ def expense_account(db: Session) -> Account:
     return obj
 
 
+@pytest.fixture()
+def paid_booking(db: Session, project, unit, allottee, accounting_accounts, cash_account):
+    """A booking the customer has paid PKR 300,000 on (down payment + cash receipt)."""
+    from app.crud import booking as booking_crud
+    from app.crud import receipt as receipt_crud
+    from app.schemas.booking import BookingCreate
+    from app.schemas.receipt import ReceiptCreate
+
+    booking = booking_crud.create_booking(
+        db,
+        BookingCreate(
+            booking_date=TODAY,
+            project_id=project.id,
+            unit_id=unit.id,
+            allottee_id=allottee.id,
+            status_date=TODAY,
+            down_payment_amount=300_000,
+        ),
+    )
+    receipt_crud.create_receipt(
+        db,
+        ReceiptCreate(
+            receipt_date=TODAY, booking_id=booking.id, credit_account_id=cash_account.id, amount=300_000
+        ),
+    )
+    return booking
+
+
 def test_customer_refund_requires_booking_id():
     with pytest.raises(ValidationError, match="must reference a booking"):
         RefundCreate(
@@ -55,14 +83,14 @@ def test_refund_rejects_deduction_over_gross_amount():
 
 
 def test_customer_refund_computes_net_amount_and_cancels_booking(
-    db: Session, booking, expense_account, cash_account
+    db: Session, paid_booking, expense_account, cash_account
 ):
     result = refund_crud.create_refund(
         db,
         RefundCreate(
             refund_date=TODAY,
             refund_type="Customer",
-            booking_id=booking.id,
+            booking_id=paid_booking.id,
             account_id=expense_account.id,
             cash_account_id=cash_account.id,
             gross_amount=100_000,
@@ -71,8 +99,8 @@ def test_customer_refund_computes_net_amount_and_cancels_booking(
     )
 
     assert result.net_amount == 90_000
-    db.refresh(booking)
-    assert booking.status == BookingStatus.CANCELLED
+    db.refresh(paid_booking)
+    assert paid_booking.status == BookingStatus.CANCELLED
 
 
 def test_customer_refund_rejects_already_cancelled_booking(
@@ -126,10 +154,10 @@ def _customer_refund(db: Session, booking, gross: float, deduction: float = 0):
     )
 
 
-def test_refund_payment_posts_balanced_voucher(db: Session, booking, expense_account, cash_account):
+def test_refund_payment_posts_balanced_voucher(db: Session, paid_booking, expense_account, cash_account):
     # The voucher is posted per payment (a refund is often paid in installments),
     # not when the refund itself is recorded.
-    refund = _customer_refund(db, booking, 100_000, deduction=10_000)
+    refund = _customer_refund(db, paid_booking, 100_000, deduction=10_000)
     result = refund_crud.add_payment(
         db,
         refund,
@@ -144,8 +172,8 @@ def test_refund_payment_posts_balanced_voucher(db: Session, booking, expense_acc
     assert total_debit == total_credit == 90_000  # net_amount, not gross
 
 
-def test_delete_refund_removes_payment_vouchers(db: Session, booking, expense_account, cash_account):
-    refund = _customer_refund(db, booking, 50_000)
+def test_delete_refund_removes_payment_vouchers(db: Session, paid_booking, expense_account, cash_account):
+    refund = _customer_refund(db, paid_booking, 50_000)
     result = refund_crud.add_payment(
         db,
         refund,
@@ -158,3 +186,20 @@ def test_delete_refund_removes_payment_vouchers(db: Session, booking, expense_ac
     refund_crud.delete_refund(db, result)
 
     assert db.get(Voucher, voucher_id) is None
+
+
+def test_customer_refund_cannot_exceed_amount_paid(db: Session, paid_booking):
+    with pytest.raises(ValueError, match="more than the PKR 300,000.00"):
+        _customer_refund(db, paid_booking, 300_001)
+
+
+def test_customer_refund_rejects_booking_with_nothing_paid(db: Session, booking):
+    with pytest.raises(ValueError, match="hasn't paid anything"):
+        _customer_refund(db, booking, 1_000)
+
+
+def test_customer_refund_does_not_duplicate_auto_refund_on_cancel(db: Session, paid_booking):
+    _customer_refund(db, paid_booking, 300_000, deduction=30_000)
+    refunds = refund_crud.list_refunds(db, booking_id=paid_booking.id)
+    assert len(refunds) == 1
+    assert refunds[0].net_amount == 270_000

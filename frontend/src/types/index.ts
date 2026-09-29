@@ -698,6 +698,10 @@ export interface Receipt {
   cheque_no: string | null;
   cheque_date: string | null;
   cheque_clearing_date: string | null;
+  transfer_bank_name: string | null;
+  transfer_account_title: string | null;
+  transfer_account_no: string | null;
+  transfer_ref_no: string | null;
   cheque_status: "Pending" | "Cleared" | "Bounced" | null;
   narration: string | null;
   credit_account: Account;

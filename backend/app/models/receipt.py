@@ -43,6 +43,11 @@ class Receipt(Base, TimestampMixin):
     # itself by the customer).
     cheque_clearing_date: Mapped[date | None] = mapped_column(Date)
     cheque_status: Mapped[ChequeStatus | None] = mapped_column(Enum(ChequeStatus))
+    # Bank Transfer / Online: the customer's account the money came from.
+    transfer_bank_name: Mapped[str | None] = mapped_column(String(100))
+    transfer_account_title: Mapped[str | None] = mapped_column(String(150))
+    transfer_account_no: Mapped[str | None] = mapped_column(String(50))
+    transfer_ref_no: Mapped[str | None] = mapped_column(String(80))
     narration: Mapped[str | None] = mapped_column(Text)
 
     booking: Mapped["Booking"] = relationship()

@@ -139,6 +139,19 @@ def _apply_receipt_ledger(
     _distribute_amount(db, booking, db_receipt.id, float(db_receipt.amount), schedule_line_id)
 
 
+# Modes where money arrives from the customer's bank account — the receipt
+# records which account (bank, title, number, transaction ref) it came from.
+TRANSFER_MODES = ("Bank Transfer", "Online")
+
+
+def _require_transfer_details(bank_name: str | None, account_title: str | None) -> None:
+    if not (bank_name or "").strip() or not (account_title or "").strip():
+        raise ValueError(
+            "For Bank Transfer / Online payments, enter the customer's bank name and account title "
+            "(whose account the money came from)."
+        )
+
+
 def create_receipt(db: Session, receipt_in: ReceiptCreate) -> Receipt:
     booking = db.query(Booking).filter(Booking.id == receipt_in.booking_id).first()
     if not booking:
@@ -160,6 +173,12 @@ def create_receipt(db: Session, receipt_in: ReceiptCreate) -> Receipt:
         cheque_status=ChequeStatus.PENDING if receipt_in.mode_of_payment == "Cheque" else None,
         narration=receipt_in.narration,
     )
+    if receipt_in.mode_of_payment in TRANSFER_MODES:
+        _require_transfer_details(receipt_in.transfer_bank_name, receipt_in.transfer_account_title)
+        db_receipt.transfer_bank_name = receipt_in.transfer_bank_name
+        db_receipt.transfer_account_title = receipt_in.transfer_account_title
+        db_receipt.transfer_account_no = receipt_in.transfer_account_no
+        db_receipt.transfer_ref_no = receipt_in.transfer_ref_no
     db.add(db_receipt)
     db.flush()
 
@@ -207,6 +226,17 @@ def update_receipt(db: Session, db_receipt: Receipt, receipt_in: ReceiptUpdate) 
         db_receipt.cheque_date = None
         db_receipt.cheque_clearing_date = None
         should_apply = True
+    if db_receipt.mode_of_payment in TRANSFER_MODES:
+        # Only enforced when the edit touches the payment mode or transfer
+        # details, so older receipts saved before these fields existed can
+        # still be corrected (amount, date...) without retyping them.
+        if data.keys() & {"mode_of_payment", "transfer_bank_name", "transfer_account_title"}:
+            _require_transfer_details(db_receipt.transfer_bank_name, db_receipt.transfer_account_title)
+    else:
+        db_receipt.transfer_bank_name = None
+        db_receipt.transfer_account_title = None
+        db_receipt.transfer_account_no = None
+        db_receipt.transfer_ref_no = None
 
     db.flush()
 

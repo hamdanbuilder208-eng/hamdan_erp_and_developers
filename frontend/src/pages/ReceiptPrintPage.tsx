@@ -156,7 +156,17 @@ export default function ReceiptPrintPage() {
               >
                 <td className="px-3 py-2 font-mono text-xs text-slate-500">{r.receipt_no}</td>
                 <td className="px-3 py-2 text-navy-900">{r.receipt_date}</td>
-                <td className="px-3 py-2 text-slate-500">{r.mode_of_payment}</td>
+                <td className="px-3 py-2 text-slate-500">
+                  {r.mode_of_payment}
+                  {r.mode_of_payment === "Cheque" && r.cheque_no ? ` · #${r.cheque_no}` : ""}
+                  {r.transfer_bank_name && (
+                    <span className="block text-xs text-slate-400">
+                      {[r.transfer_bank_name, r.transfer_account_title, r.transfer_account_no, r.transfer_ref_no && `Ref ${r.transfer_ref_no}`]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums text-navy-900">
                   {Number(r.amount).toLocaleString()}
                 </td>

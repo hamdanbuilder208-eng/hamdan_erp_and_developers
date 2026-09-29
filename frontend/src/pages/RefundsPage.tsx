@@ -10,12 +10,15 @@ import { Badge } from "../components/ui/Badge";
 import { SendMessageModal } from "../components/communication/SendMessageModal";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
-import type { Account, Refund, RefundStatus, RefundType } from "../types";
+import type { Account, Booking, Refund, RefundStatus, RefundType } from "../types";
 
-// Customer refunds are tracked automatically when a booking with payments
-// already made is cancelled (see BookingsPage) — this form is only for
-// manually recording a Vendor or Employee refund.
-const manualRefundTypes: RefundType[] = ["Vendor", "Employee"];
+// A Customer refund cancels the booking and can't exceed what the customer
+// has paid so far. (Cancelling a paid booking from Bookings/Units also opens
+// one automatically.)
+const manualRefundTypes: RefundType[] = ["Customer", "Vendor", "Employee"];
+
+const paidOnBooking = (b: Booking) =>
+  Math.round(b.schedule_lines.reduce((s, l) => s + Number(l.paid_amount), 0) * 100) / 100;
 const filterRefundTypes: RefundType[] = ["Customer", "Vendor", "Employee"];
 
 const refundTypeTone: Record<RefundType, "success" | "warning" | "info"> = {
@@ -33,7 +36,8 @@ const statusTone: Record<RefundStatus, "success" | "warning" | "neutral"> = {
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const emptyForm = {
-  refund_type: "Vendor" as RefundType,
+  refund_type: "Customer" as RefundType,
+  booking_id: "",
   party_name: "",
   gross_amount: "",
   deduction_percent: "",
@@ -62,6 +66,19 @@ export default function RefundsPage() {
     queryFn: async () => (await api.get<Account[]>("/accounts/")).data,
   });
 
+  // Customer refunds: only live bookings the customer has actually paid on.
+  const { data: bookings } = useQuery({
+    queryKey: ["bookings", "", ""],
+    queryFn: async () => (await api.get<Booking[]>("/bookings/")).data,
+    enabled: modalOpen && form.refund_type === "Customer",
+  });
+  const refundableBookings = (bookings ?? []).filter(
+    (b) => b.status !== "Cancelled" && paidOnBooking(b) > 0,
+  );
+  const selectedBooking = refundableBookings.find((b) => b.id === Number(form.booking_id));
+  const customerPaid = selectedBooking ? paidOnBooking(selectedBooking) : 0;
+  const isCustomer = form.refund_type === "Customer";
+
   const cashAccounts = accounts?.filter((a) => a.nature === "Asset" && !a.is_control) ?? [];
   const glAccounts =
     accounts?.filter(
@@ -84,8 +101,8 @@ export default function RefundsPage() {
         await api.post<Refund>("/refunds/", {
           refund_date: todayIso(),
           refund_type: form.refund_type,
-          booking_id: null,
-          party_name: form.party_name,
+          booking_id: isCustomer ? Number(form.booking_id) : null,
+          party_name: isCustomer ? selectedBooking?.allottee.name ?? null : form.party_name,
           gross_amount: grossAmount,
           deduction_percent: form.deduction_percent ? deductionPercent : null,
           deduction_amount: deductionAmount,
@@ -94,6 +111,9 @@ export default function RefundsPage() {
       ).data,
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ["refunds"] });
+      // A customer refund cancels the booking and frees its unit.
+      queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["units"] });
       setModalOpen(false);
       resetForm();
       setPaymentsRefundId(created.id);
@@ -350,32 +370,91 @@ export default function RefundsPage() {
               </button>
             ))}
           </div>
-          <p className="text-xs text-slate-400 dark:text-slate-500">
-            Customer refunds are tracked automatically when a booking with payments is cancelled — see
-            the Booking Cancel action.
-          </p>
+          {isCustomer ? (
+            <>
+              <div>
+                <Label htmlFor="rf_booking">Customer / Booking</Label>
+                <Select
+                  id="rf_booking"
+                  required
+                  value={form.booking_id}
+                  onChange={(e) => {
+                    const b = refundableBookings.find((x) => x.id === Number(e.target.value));
+                    setForm({
+                      ...form,
+                      booking_id: e.target.value,
+                      gross_amount: b ? String(paidOnBooking(b)) : "",
+                    });
+                  }}
+                >
+                  <option value="">Select booking</option>
+                  {refundableBookings.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.allottee.name} · {b.booking_ref_no} · {b.unit.unit_number} (paid PKR{" "}
+                      {paidOnBooking(b).toLocaleString()})
+                    </option>
+                  ))}
+                </Select>
+                {bookings && refundableBookings.length === 0 && (
+                  <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                    No active booking has any payment received yet.
+                  </p>
+                )}
+              </div>
 
-          <div>
-            <Label htmlFor="rf_party">{form.refund_type === "Vendor" ? "Vendor Name" : "Employee Name"}</Label>
-            <Input
-              id="rf_party"
-              required
-              value={form.party_name}
-              onChange={(e) => setForm({ ...form, party_name: e.target.value })}
-              placeholder={form.refund_type === "Vendor" ? "e.g. ABC Cement Suppliers" : "e.g. Asif — Site Supervisor"}
-            />
-          </div>
+              {selectedBooking && (
+                <div className="grid grid-cols-3 gap-3 rounded-lg bg-slate-50 px-4 py-2.5 text-sm dark:bg-navy-800/60">
+                  <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Project / Unit</p>
+                    <p className="font-medium text-navy-900 dark:text-slate-100">
+                      {selectedBooking.project.project_name} · {selectedBooking.unit.unit_number}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Booking Price</p>
+                    <p className="font-medium text-navy-900 dark:text-slate-100">
+                      PKR {Number(selectedBooking.total_price).toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Paid So Far</p>
+                    <p className="font-semibold text-success-700">PKR {customerPaid.toLocaleString()}</p>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div>
+              <Label htmlFor="rf_party">{form.refund_type === "Vendor" ? "Vendor Name" : "Employee Name"}</Label>
+              <Input
+                id="rf_party"
+                required
+                value={form.party_name}
+                onChange={(e) => setForm({ ...form, party_name: e.target.value })}
+                placeholder={form.refund_type === "Vendor" ? "e.g. ABC Cement Suppliers" : "e.g. Asif — Site Supervisor"}
+              />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="rf_gross">Gross Amount</Label>
+              <Label htmlFor="rf_gross">{isCustomer ? "Refund Amount (max: paid so far)" : "Gross Amount"}</Label>
               <Input
                 id="rf_gross"
                 type="number"
                 required
+                min="0"
+                max={isCustomer && customerPaid ? customerPaid : undefined}
+                step="0.01"
+                disabled={isCustomer && !selectedBooking}
                 value={form.gross_amount}
                 onChange={(e) => setForm({ ...form, gross_amount: e.target.value })}
               />
+              {isCustomer && grossAmount > customerPaid && selectedBooking && (
+                <p className="mt-1 text-xs text-danger-600">
+                  Can't refund more than the PKR {customerPaid.toLocaleString()} paid.
+                </p>
+              )}
             </div>
             <div>
               <Label htmlFor="rf_deduction">Deduction % (optional)</Label>
@@ -398,6 +477,14 @@ export default function RefundsPage() {
                 </span>
               )}
             </div>
+          )}
+
+          {isCustomer && selectedBooking && (
+            <p className="rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
+              Saving this cancels booking {selectedBooking.booking_ref_no} and makes unit{" "}
+              {selectedBooking.unit.unit_number} Available again. After saving, click "Pay" to pay it back all
+              at once or in installments.
+            </p>
           )}
 
           <div>
@@ -424,7 +511,14 @@ export default function RefundsPage() {
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={createRefund.isPending || netAmount <= 0}>
+            <Button
+              type="submit"
+              disabled={
+                createRefund.isPending ||
+                netAmount <= 0 ||
+                (isCustomer && (!selectedBooking || grossAmount > customerPaid))
+              }
+            >
               Save Refund
             </Button>
           </div>

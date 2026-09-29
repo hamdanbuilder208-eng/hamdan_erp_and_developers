@@ -49,10 +49,26 @@ const makeEmptyForm = () => ({
   cheque_no: "",
   cheque_date: "",
   cheque_clearing_date: "",
+  transfer_bank_name: "",
+  transfer_account_title: "",
+  transfer_account_no: "",
+  transfer_ref_no: "",
   credit_account_id: "",
   narration: "",
   schedule_line_id: "",
 });
+
+// Bank Transfer / Online: record whose account the money came from.
+const transferModes = ["Bank Transfer", "Online"];
+function transferPayload(form: ReturnType<typeof makeEmptyForm>) {
+  const on = transferModes.includes(form.mode_of_payment);
+  return {
+    transfer_bank_name: on ? form.transfer_bank_name.trim() || null : null,
+    transfer_account_title: on ? form.transfer_account_title.trim() || null : null,
+    transfer_account_no: on ? form.transfer_account_no.trim() || null : null,
+    transfer_ref_no: on ? form.transfer_ref_no.trim() || null : null,
+  };
+}
 
 function bookingSummary(booking: Booking) {
   const paid = booking.schedule_lines.reduce((s, l) => s + Number(l.paid_amount), 0);
@@ -190,6 +206,10 @@ export default function ReceiptsPage() {
       cheque_no: r.cheque_no ?? "",
       cheque_date: r.cheque_date ?? "",
       cheque_clearing_date: r.cheque_clearing_date ?? "",
+      transfer_bank_name: r.transfer_bank_name ?? "",
+      transfer_account_title: r.transfer_account_title ?? "",
+      transfer_account_no: r.transfer_account_no ?? "",
+      transfer_ref_no: r.transfer_ref_no ?? "",
       credit_account_id: String(r.credit_account_id),
       narration: r.narration ?? "",
       schedule_line_id: "",
@@ -227,6 +247,7 @@ export default function ReceiptsPage() {
           cheque_date: form.mode_of_payment === "Cheque" ? form.cheque_date || null : null,
           cheque_clearing_date:
             form.mode_of_payment === "Cheque" ? form.cheque_clearing_date || null : null,
+          ...transferPayload(form),
           narration: form.narration || null,
           schedule_line_id: form.schedule_line_id ? Number(form.schedule_line_id) : null,
         })
@@ -259,6 +280,7 @@ export default function ReceiptsPage() {
           cheque_date: form.mode_of_payment === "Cheque" ? form.cheque_date || null : null,
           cheque_clearing_date:
             form.mode_of_payment === "Cheque" ? form.cheque_clearing_date || null : null,
+          ...transferPayload(form),
           narration: form.narration || null,
         })
       ).data,
@@ -358,6 +380,12 @@ export default function ReceiptsPage() {
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{r.booking.allottee.name}</td>
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
                   {r.mode_of_payment}
+                  {r.transfer_bank_name && (
+                    <div className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
+                      {r.transfer_bank_name}
+                      {r.transfer_account_title ? ` · ${r.transfer_account_title}` : ""}
+                    </div>
+                  )}
                   {r.mode_of_payment === "Cheque" && r.cheque_status && (
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                       {r.cheque_status === "Pending" && (
@@ -843,6 +871,52 @@ export default function ReceiptsPage() {
                   When this cheque is due to be presented at the bank — you'll get a dashboard
                   reminder on this date to confirm it cleared or bounced.
                 </p>
+              </div>
+            </div>
+          )}
+
+          {transferModes.includes(form.mode_of_payment) && (
+            <div className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-navy-700">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                Sent From (customer's account)
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="r_transfer_bank">Bank Name</Label>
+                  <Input
+                    id="r_transfer_bank"
+                    required
+                    value={form.transfer_bank_name}
+                    onChange={(e) => setForm({ ...form, transfer_bank_name: e.target.value })}
+                    placeholder="e.g. Meezan Bank"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="r_transfer_title">Account Title</Label>
+                  <Input
+                    id="r_transfer_title"
+                    required
+                    value={form.transfer_account_title}
+                    onChange={(e) => setForm({ ...form, transfer_account_title: e.target.value })}
+                    placeholder="Name on the account"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="r_transfer_acc">Account No. / IBAN</Label>
+                  <Input
+                    id="r_transfer_acc"
+                    value={form.transfer_account_no}
+                    onChange={(e) => setForm({ ...form, transfer_account_no: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="r_transfer_ref">Transaction / Reference No.</Label>
+                  <Input
+                    id="r_transfer_ref"
+                    value={form.transfer_ref_no}
+                    onChange={(e) => setForm({ ...form, transfer_ref_no: e.target.value })}
+                  />
+                </div>
               </div>
             </div>
           )}

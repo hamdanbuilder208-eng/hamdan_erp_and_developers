@@ -77,6 +77,15 @@ def create_refund(db: Session, refund_in: RefundCreate) -> Refund:
             raise ValueError("Booking not found")
         if booking.status == BookingStatus.CANCELLED:
             raise ValueError("This booking is already cancelled")
+        # A customer can only be refunded what they've actually paid so far.
+        total_paid = round(sum(float(line.paid_amount) for line in booking.schedule_lines), 2)
+        if total_paid <= 0:
+            raise ValueError("This customer hasn't paid anything on this booking yet — nothing to refund")
+        if round(refund_in.gross_amount, 2) > total_paid + 0.01:
+            raise ValueError(
+                f"Refund amount PKR {refund_in.gross_amount:,.2f} is more than the PKR {total_paid:,.2f} "
+                "this customer has paid so far"
+            )
 
     db_refund = Refund(
         refund_no=_next_refund_no(db),
