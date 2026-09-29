@@ -13,7 +13,9 @@ from app.schemas.expense import (
 )
 
 WAGES_ACCOUNT_CODE = "5020"
-OWNER_PERSONAL_ACCOUNT_CODE = "5030"
+# Owner's personal expenses are booked as office expenses (same 5010 account),
+# so they come out of — and show up in — the office expense figures.
+OWNER_PERSONAL_ACCOUNT_CODE = "5010"
 
 
 def _next_voucher_no(db: Session) -> str:

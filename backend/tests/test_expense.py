@@ -34,7 +34,7 @@ def wages_account(db: Session) -> Account:
 
 @pytest.fixture()
 def owner_personal_account(db: Session) -> Account:
-    obj = Account(code="5030", name="Owner Personal", nature=AccountNature.EXPENSE)
+    obj = Account(code="5010", name="Office Expenses", nature=AccountNature.EXPENSE)
     db.add(obj)
     db.commit()
     db.refresh(obj)
@@ -153,6 +153,8 @@ def test_owner_personal_expense_posts_balanced_voucher(
 
     voucher = db.get(Voucher, result.voucher_id)
     assert sum(l.debit for l in voucher.lines) == sum(l.credit for l in voucher.lines) == 15_000
+    # Booked as an office expense.
+    assert next(l.account.code for l in voucher.lines if l.debit > 0) == "5010"
 
 
 def test_owner_personal_expense_requires_account_in_chart(db: Session, cash_account):

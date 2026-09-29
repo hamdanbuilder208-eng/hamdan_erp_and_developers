@@ -32,7 +32,7 @@ const kindLabel: Record<ExpenseKind, string> = {
   office: "Office",
   petty: "Office · Petty Cash",
   wages: "Wages",
-  owner: "Owner",
+  owner: "Office · Owner",
 };
 const kindBadgeClass: Record<ExpenseKind, string> = {
   office: "bg-info-50 text-info-700",

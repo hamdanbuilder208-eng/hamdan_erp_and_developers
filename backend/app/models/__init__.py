@@ -30,6 +30,7 @@ from app.models.customer_account import CustomerAccount
 from app.models.petty_cash import PettyCashFloat, PettyCashTopup, PettyCashExpense
 from app.models.lead import Lead
 from app.models.rental import Tenant, RentAgreement, RentScheduleLine, RentReceipt, RentReceiptAllocation
+from app.models.sequence_counter import SequenceCounter
 from app.models.inventory import (
     Vendor,
     Material,
@@ -102,4 +103,5 @@ __all__ = [
     "RentScheduleLine",
     "RentReceipt",
     "RentReceiptAllocation",
+    "SequenceCounter",
 ]

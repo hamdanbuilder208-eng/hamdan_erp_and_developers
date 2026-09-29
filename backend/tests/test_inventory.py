@@ -254,3 +254,29 @@ def test_delete_warehouse_blocked_when_stock_movements_exist(
 
     with pytest.raises(ValueError, match="cannot be deleted"):
         inventory_crud.delete_warehouse(db, warehouse)
+
+
+# ---------------------------------------------------------------------------
+# Numbering never goes backwards
+# ---------------------------------------------------------------------------
+
+def test_deleted_number_is_never_reissued(db: Session):
+    from app.crud import inventory as inventory_crud
+    from app.schemas.inventory import VendorCreate
+
+    v1 = inventory_crud.create_vendor(db, VendorCreate(name="A"))
+    v2 = inventory_crud.create_vendor(db, VendorCreate(name="B"))
+    assert (v1.vendor_code, v2.vendor_code) == ("VEN-00001", "VEN-00002")
+
+    inventory_crud.delete_vendor(db, v2)
+    v3 = inventory_crud.create_vendor(db, VendorCreate(name="C"))
+    assert v3.vendor_code == "VEN-00003"  # not VEN-00002 again
+
+
+def test_numbering_continues_after_existing_data(db: Session):
+    from app.core.sequences import next_persistent_sequence_number
+    from app.models.inventory import Vendor
+
+    db.add(Vendor(vendor_code="VEN-00041", name="Imported"))
+    db.commit()
+    assert next_persistent_sequence_number(db, Vendor.vendor_code, "VEN-", 5) == "VEN-00042"

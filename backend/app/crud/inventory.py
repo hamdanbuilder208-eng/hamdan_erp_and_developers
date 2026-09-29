@@ -3,7 +3,7 @@ from datetime import date
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.sequences import next_sequence_number
+from app.core.sequences import next_persistent_sequence_number, next_sequence_number
 from app.models.account import Account, AccountNature
 from app.models.inventory import (
     GRN,
@@ -90,7 +90,7 @@ def get_vendor(db: Session, vendor_id: int) -> Vendor | None:
 
 def create_vendor(db: Session, vendor_in: VendorCreate) -> Vendor:
     db_vendor = Vendor(
-        vendor_code=next_sequence_number(db, Vendor.vendor_code, "VEN-", 5),
+        vendor_code=next_persistent_sequence_number(db, Vendor.vendor_code, "VEN-", 5),
         **vendor_in.model_dump(),
     )
     db.add(db_vendor)
@@ -128,7 +128,7 @@ def get_warehouse(db: Session, warehouse_id: int) -> Warehouse | None:
 
 def create_warehouse(db: Session, warehouse_in: WarehouseCreate) -> Warehouse:
     db_warehouse = Warehouse(
-        warehouse_code=next_sequence_number(db, Warehouse.warehouse_code, "WH-", 4),
+        warehouse_code=next_persistent_sequence_number(db, Warehouse.warehouse_code, "WH-", 4),
         **warehouse_in.model_dump(),
     )
     db.add(db_warehouse)
@@ -174,7 +174,7 @@ def get_material(db: Session, material_id: int) -> Material | None:
 
 def create_material(db: Session, material_in: MaterialCreate) -> Material:
     db_material = Material(
-        material_code=next_sequence_number(db, Material.material_code, "MAT-", 5),
+        material_code=next_persistent_sequence_number(db, Material.material_code, "MAT-", 5),
         **material_in.model_dump(),
     )
     db.add(db_material)
@@ -224,7 +224,7 @@ def get_purchase_order(db: Session, po_id: int) -> PurchaseOrder | None:
 
 def create_purchase_order(db: Session, po_in: PurchaseOrderCreate) -> PurchaseOrder:
     db_po = PurchaseOrder(
-        po_no=next_sequence_number(db, PurchaseOrder.po_no, "PO-", 5),
+        po_no=next_persistent_sequence_number(db, PurchaseOrder.po_no, "PO-", 5),
         po_date=po_in.po_date,
         vendor_id=po_in.vendor_id,
         project_id=po_in.project_id,
@@ -403,7 +403,7 @@ def create_grn(db: Session, grn_in: GRNCreate) -> GRN:
         line_data.append((line, amount))
 
     db_grn = GRN(
-        grn_no=next_sequence_number(db, GRN.grn_no, "GRN-", 5),
+        grn_no=next_persistent_sequence_number(db, GRN.grn_no, "GRN-", 5),
         grn_date=grn_in.grn_date,
         vendor_id=grn_in.vendor_id,
         warehouse_id=grn_in.warehouse_id,
@@ -560,7 +560,7 @@ def create_material_issue(db: Session, issue_in: MaterialIssueCreate) -> Materia
         line_data.append((line, rate, amount))
 
     db_issue = MaterialIssue(
-        issue_no=next_sequence_number(db, MaterialIssue.issue_no, "MIS-", 5),
+        issue_no=next_persistent_sequence_number(db, MaterialIssue.issue_no, "MIS-", 5),
         issue_date=issue_in.issue_date,
         project_id=issue_in.project_id,
         warehouse_id=issue_in.warehouse_id,
@@ -764,7 +764,7 @@ def create_opening_stock(db: Session, opening_in: OpeningStockCreate) -> Opening
     amount = round(opening_in.quantity * opening_in.rate, 2)
 
     db_opening = OpeningStock(
-        opening_no=next_sequence_number(db, OpeningStock.opening_no, "OPN-", 5),
+        opening_no=next_persistent_sequence_number(db, OpeningStock.opening_no, "OPN-", 5),
         opening_date=opening_in.opening_date,
         material_id=opening_in.material_id,
         quantity=opening_in.quantity,
@@ -890,7 +890,7 @@ def create_material_transfer(db: Session, transfer_in: MaterialTransferCreate) -
     amount = round(transfer_in.quantity * rate, 2)
 
     db_transfer = MaterialTransfer(
-        transfer_no=next_sequence_number(db, MaterialTransfer.transfer_no, "MTR-", 5),
+        transfer_no=next_persistent_sequence_number(db, MaterialTransfer.transfer_no, "MTR-", 5),
         transfer_date=transfer_in.transfer_date,
         material_id=transfer_in.material_id,
         quantity=transfer_in.quantity,
