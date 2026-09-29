@@ -8,7 +8,7 @@ import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { StatusBarChart } from "../components/charts/StatusBarChart";
 import { cn } from "../lib/utils";
-import type { Account, AccountNature, PartyType } from "../types";
+import type { Account, AccountNature, PartyType, Project } from "../types";
 
 const natures: AccountNature[] = ["Asset", "Liability", "Capital", "Revenue", "Expense"];
 const partyTypes: PartyType[] = ["Customer", "Vendor", "Other"];
@@ -105,9 +105,21 @@ export default function AccountsPage() {
   const [modalOpen, setModalOpen] = React.useState(false);
   const [form, setForm] = React.useState(emptyForm);
 
+  // Balances for the whole company, or only what was posted on one project's
+  // vouchers (company-wide opening balances are left out of a project view).
+  const [projectId, setProjectId] = React.useState("");
+  const { data: projects } = useQuery({
+    queryKey: ["projects"],
+    queryFn: async () => (await api.get<Project[]>("/projects/")).data,
+  });
   const { data: accounts, isLoading } = useQuery({
-    queryKey: ["accounts"],
-    queryFn: async () => (await api.get<Account[]>("/accounts/")).data,
+    queryKey: projectId ? ["accounts", "project", projectId] : ["accounts"],
+    queryFn: async () =>
+      (
+        await api.get<Account[]>("/accounts/", {
+          params: projectId ? { project_id: Number(projectId) } : undefined,
+        })
+      ).data,
   });
 
   const createAccount = useMutation({
@@ -154,11 +166,33 @@ export default function AccountsPage() {
             All your accounts — bank, cash, income and expenses — in one place.
           </p>
         </div>
-        <Button onClick={() => setModalOpen(true)}>
-          <Plus className="h-4 w-4" />
-          New Account
-        </Button>
+        <div className="flex items-center gap-2">
+          <Select
+            aria-label="Project"
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            className="w-56"
+          >
+            <option value="">All Projects (Company-wide)</option>
+            {projects?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.project_name}
+              </option>
+            ))}
+          </Select>
+          <Button onClick={() => setModalOpen(true)}>
+            <Plus className="h-4 w-4" />
+            New Account
+          </Button>
+        </div>
       </div>
+      {projectId && (
+        <p className="rounded-lg bg-brand-50 px-4 py-2 text-xs text-brand-800">
+          Balances show only what was posted for{" "}
+          <strong>{projects?.find((p) => p.id === Number(projectId))?.project_name}</strong>. Company-wide opening
+          balances are left out.
+        </p>
+      )}
 
       <Card>
         <CardHeader>

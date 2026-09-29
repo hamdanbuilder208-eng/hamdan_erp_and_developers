@@ -1,19 +1,33 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { Printer } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
-import type { CompanySettings, GeneralLedgerReport } from "../types";
+import type { CompanySettings, GeneralLedgerReport, Project } from "../types";
 
 export default function GeneralLedgerPrintPage() {
   const { accountId } = useParams();
+  // ?project_id=… from the Reports page's project filter.
+  const [searchParams] = useSearchParams();
+  const projectId = searchParams.get("project_id");
 
   const { data } = useQuery({
-    queryKey: ["reports", "general-ledger", accountId],
+    queryKey: ["reports", "general-ledger", accountId, projectId],
     queryFn: async () =>
-      (await api.get<GeneralLedgerReport>(`/reports/general-ledger/${accountId}`)).data,
+      (
+        await api.get<GeneralLedgerReport>(`/reports/general-ledger/${accountId}`, {
+          params: projectId ? { project_id: Number(projectId) } : undefined,
+        })
+      ).data,
   });
+
+  const { data: projects } = useQuery({
+    queryKey: ["projects"],
+    queryFn: async () => (await api.get<Project[]>("/projects/")).data,
+    enabled: !!projectId,
+  });
+  const projectName = projects?.find((p) => p.id === Number(projectId))?.project_name;
 
   const { data: companySettings } = useQuery({
     queryKey: ["admin-settings"],
@@ -46,6 +60,7 @@ export default function GeneralLedgerPrintPage() {
             <p className="mt-1 text-sm text-slate-500">
               {data.account_code} · {data.account_name}
             </p>
+            {projectId && <p className="text-xs text-slate-500">Project: {projectName ?? "…"}</p>}
           </div>
         </div>
 

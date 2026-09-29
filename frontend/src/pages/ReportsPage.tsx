@@ -69,7 +69,7 @@ export default function ReportsPage() {
   const [tab, setTab] = React.useState<ReportTab>("trial-balance");
   const [selectedAccountId, setSelectedAccountId] = React.useState("");
   const [selectedMaterialId, setSelectedMaterialId] = React.useState("");
-  const [profitLossProjectId, setProfitLossProjectId] = React.useState("");
+  const [projectId, setProjectId] = React.useState("");
 
   const { data: accounts } = useQuery({
     queryKey: ["accounts"],
@@ -86,88 +86,107 @@ export default function ReportsPage() {
     queryFn: async () => (await api.get<Material[]>("/inventory/materials")).data,
   });
 
+  // One project filter for every report ("" = whole company). Employees
+  // aren't linked to projects, so that report always shows everyone.
+  const projectParams = projectId ? { project_id: Number(projectId) } : undefined;
+  const selectedProjectName = projects?.find((p) => p.id === Number(projectId))?.project_name;
+  const scopeLabel = selectedProjectName ? `— ${selectedProjectName}` : "(Company-wide)";
+  const printUrl = (path: string) => `${path}${projectId ? `${path.includes("?") ? "&" : "?"}project_id=${projectId}` : ""}`;
+
   const { data: trialBalance } = useQuery({
-    queryKey: ["reports", "trial-balance"],
-    queryFn: async () => (await api.get<TrialBalanceReport>("/reports/trial-balance")).data,
+    queryKey: ["reports", "trial-balance", projectId],
+    queryFn: async () =>
+      (await api.get<TrialBalanceReport>("/reports/trial-balance", { params: projectParams })).data,
     enabled: tab === "trial-balance",
   });
 
   const { data: profitLoss } = useQuery({
-    queryKey: ["reports", "profit-loss", profitLossProjectId],
+    queryKey: ["reports", "profit-loss", projectId],
     queryFn: async () =>
-      (
-        await api.get<ProfitLossReport>("/reports/profit-loss", {
-          params: profitLossProjectId ? { project_id: Number(profitLossProjectId) } : undefined,
-        })
-      ).data,
+      (await api.get<ProfitLossReport>("/reports/profit-loss", { params: projectParams })).data,
     enabled: tab === "profit-loss",
   });
 
   const { data: balanceSheet } = useQuery({
-    queryKey: ["reports", "balance-sheet"],
-    queryFn: async () => (await api.get<BalanceSheetReport>("/reports/balance-sheet")).data,
+    queryKey: ["reports", "balance-sheet", projectId],
+    queryFn: async () =>
+      (await api.get<BalanceSheetReport>("/reports/balance-sheet", { params: projectParams })).data,
     enabled: tab === "balance-sheet",
   });
 
   const { data: ledger } = useQuery({
-    queryKey: ["reports", "general-ledger", selectedAccountId],
+    queryKey: ["reports", "general-ledger", selectedAccountId, projectId],
     queryFn: async () =>
-      (await api.get<GeneralLedgerReport>(`/reports/general-ledger/${selectedAccountId}`)).data,
+      (
+        await api.get<GeneralLedgerReport>(`/reports/general-ledger/${selectedAccountId}`, {
+          params: projectParams,
+        })
+      ).data,
     enabled: tab === "general-ledger" && !!selectedAccountId,
   });
 
   const { data: aging } = useQuery({
-    queryKey: ["reports", "aging"],
-    queryFn: async () => (await api.get<AgingReport>("/reports/aging")).data,
+    queryKey: ["reports", "aging", projectId],
+    queryFn: async () => (await api.get<AgingReport>("/reports/aging", { params: projectParams })).data,
     enabled: tab === "aging",
   });
 
   const { data: salesPurchase } = useQuery({
-    queryKey: ["reports", "sales-purchase"],
-    queryFn: async () => (await api.get<SalesPurchaseReport>("/reports/sales-purchase")).data,
+    queryKey: ["reports", "sales-purchase", projectId],
+    queryFn: async () =>
+      (await api.get<SalesPurchaseReport>("/reports/sales-purchase", { params: projectParams })).data,
     enabled: tab === "sales-purchase",
   });
 
   const { data: stock } = useQuery({
-    queryKey: ["reports", "stock"],
-    queryFn: async () => (await api.get<StockBalance[]>("/reports/stock")).data,
+    queryKey: ["reports", "stock", projectId],
+    queryFn: async () => (await api.get<StockBalance[]>("/reports/stock", { params: projectParams })).data,
     enabled: tab === "stock",
   });
 
   const { data: stockLedger } = useQuery({
-    queryKey: ["reports", "stock-ledger", selectedMaterialId],
+    queryKey: ["reports", "stock-ledger", selectedMaterialId, projectId],
     queryFn: async () =>
-      (await api.get<StockLedgerReport>(`/reports/stock/ledger/${selectedMaterialId}`)).data,
+      (
+        await api.get<StockLedgerReport>(`/reports/stock/ledger/${selectedMaterialId}`, {
+          params: projectParams,
+        })
+      ).data,
     enabled: tab === "stock" && !!selectedMaterialId,
   });
 
   const { data: customerWise } = useQuery({
-    queryKey: ["reports", "customer-wise"],
-    queryFn: async () => (await api.get<CustomerWiseReport>("/reports/customer-wise")).data,
+    queryKey: ["reports", "customer-wise", projectId],
+    queryFn: async () =>
+      (await api.get<CustomerWiseReport>("/reports/customer-wise", { params: projectParams })).data,
     enabled: tab === "customer-wise",
   });
 
   const { data: brokers } = useQuery({
-    queryKey: ["reports", "brokers"],
-    queryFn: async () => (await api.get<BrokerSummaryRow[]>("/reports/brokers")).data,
+    queryKey: ["reports", "brokers", projectId],
+    queryFn: async () =>
+      (await api.get<BrokerSummaryRow[]>("/reports/brokers", { params: projectParams })).data,
     enabled: tab === "brokers-partners",
   });
 
   const { data: partnersReport } = useQuery({
-    queryKey: ["reports", "partners"],
-    queryFn: async () => (await api.get<PartnerSummaryRow[]>("/reports/partners")).data,
+    queryKey: ["reports", "partners", projectId],
+    queryFn: async () =>
+      (await api.get<PartnerSummaryRow[]>("/reports/partners", { params: projectParams })).data,
     enabled: tab === "brokers-partners",
   });
 
   const { data: rentalIncome } = useQuery({
-    queryKey: ["reports", "rental-income"],
-    queryFn: async () => (await api.get<RentalIncomeRow[]>("/reports/rental-income")).data,
+    queryKey: ["reports", "rental-income", projectId],
+    queryFn: async () =>
+      (await api.get<RentalIncomeRow[]>("/reports/rental-income", { params: projectParams })).data,
     enabled: tab === "rental-income",
   });
 
   const { data: materialsReport } = useQuery({
-    queryKey: ["reports", "materials"],
-    queryFn: async () => (await api.get<MaterialSummaryRow[]>("/reports/materials")).data,
+    queryKey: ["reports", "materials", projectId],
+    queryFn: async () =>
+      (await api.get<MaterialSummaryRow[]>("/reports/materials", { params: projectParams })).data,
     enabled: tab === "material-employee",
   });
 
@@ -181,12 +200,38 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-lg font-semibold text-navy-950 dark:text-white">Financial Reports</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          General Ledger, Trial Balance, Profit &amp; Loss, and Balance Sheet.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-navy-950 dark:text-white">Financial Reports</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            General Ledger, Trial Balance, Profit &amp; Loss, and Balance Sheet.
+          </p>
+        </div>
+        <div>
+          <label htmlFor="report_project" className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+            Project
+          </label>
+          <Select
+            id="report_project"
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            className="w-64"
+          >
+            <option value="">All Projects (Company-wide)</option>
+            {projects?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.project_name}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
+      {projectId && (
+        <p className="rounded-lg bg-brand-50 px-4 py-2 text-xs text-brand-800">
+          Showing only <strong>{selectedProjectName}</strong>. Company-wide opening balances are left out of
+          the project view.{tab === "material-employee" && " Employee wages aren't linked to projects, so the employee list is company-wide."}
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-1 border-b border-slate-200 dark:border-navy-700">
         {tabs.map((t) => (
@@ -208,10 +253,10 @@ export default function ReportsPage() {
         <Card>
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-navy-800 px-5 py-4">
             <div className="flex items-center gap-3">
-              <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">Trial Balance</h3>
+              <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">Trial Balance {scopeLabel}</h3>
               {trialBalance && <BalanceBadge isBalanced={trialBalance.is_balanced} />}
             </div>
-            <Button size="sm" onClick={() => window.open("/reports/print/trial-balance", "_blank")}>
+            <Button size="sm" onClick={() => window.open(printUrl("/reports/print/trial-balance"), "_blank")}>
               <Printer className="h-4 w-4" />
               Print / PDF
             </Button>
@@ -262,23 +307,6 @@ export default function ReportsPage() {
         </Card>
       )}
 
-      {tab === "profit-loss" && (
-        <div className="flex justify-end">
-          <Select
-            value={profitLossProjectId}
-            onChange={(e) => setProfitLossProjectId(e.target.value)}
-            className="w-56"
-          >
-            <option value="">All Projects (Company-wide)</option>
-            {projects?.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.project_name}
-              </option>
-            ))}
-          </Select>
-        </div>
-      )}
-
       {tab === "profit-loss" && profitLoss && (
         <Card>
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-navy-800 px-5 py-4">
@@ -288,10 +316,7 @@ export default function ReportsPage() {
             <Button
               size="sm"
               onClick={() =>
-                window.open(
-                  `/reports/print/profit-loss${profitLossProjectId ? `?project_id=${profitLossProjectId}` : ""}`,
-                  "_blank",
-                )
+                window.open(printUrl("/reports/print/profit-loss"), "_blank")
               }
             >
               <Printer className="h-4 w-4" />
@@ -355,10 +380,10 @@ export default function ReportsPage() {
         <Card>
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-navy-800 px-5 py-4">
             <div className="flex items-center gap-3">
-              <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">Balance Sheet</h3>
+              <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">Balance Sheet {scopeLabel}</h3>
               <BalanceBadge isBalanced={balanceSheet.is_balanced} />
             </div>
-            <Button size="sm" onClick={() => window.open("/reports/print/balance-sheet", "_blank")}>
+            <Button size="sm" onClick={() => window.open(printUrl("/reports/print/balance-sheet"), "_blank")}>
               <Printer className="h-4 w-4" />
               Print / PDF
             </Button>
@@ -430,7 +455,7 @@ export default function ReportsPage() {
         <Card>
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-navy-800 px-5 py-4">
             <div className="flex items-center gap-3">
-              <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">General Ledger</h3>
+              <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">General Ledger {scopeLabel}</h3>
               <Select
                 value={selectedAccountId}
                 onChange={(e) => setSelectedAccountId(e.target.value)}
@@ -447,7 +472,7 @@ export default function ReportsPage() {
             {selectedAccountId && (
               <Button
                 size="sm"
-                onClick={() => window.open(`/reports/print/general-ledger/${selectedAccountId}`, "_blank")}
+                onClick={() => window.open(printUrl(`/reports/print/general-ledger/${selectedAccountId}`), "_blank")}
               >
                 <Printer className="h-4 w-4" />
                 Print / PDF

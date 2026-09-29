@@ -4,7 +4,13 @@ import { Printer } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
-import type { BalanceSheetReport, CompanySettings, ProfitLossReport, TrialBalanceReport } from "../types";
+import type {
+  BalanceSheetReport,
+  CompanySettings,
+  ProfitLossReport,
+  Project,
+  TrialBalanceReport,
+} from "../types";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -52,15 +58,34 @@ function PrintShell({
   );
 }
 
+// ?project_id=… from the Reports page's project filter — scopes a print to one project.
+function useProjectScope() {
+  const [searchParams] = useSearchParams();
+  const projectId = searchParams.get("project_id");
+  const { data: projects } = useQuery({
+    queryKey: ["projects"],
+    queryFn: async () => (await api.get<Project[]>("/projects/")).data,
+    enabled: !!projectId,
+  });
+  const name = projects?.find((p) => p.id === Number(projectId))?.project_name;
+  return {
+    projectId,
+    params: projectId ? { project_id: Number(projectId) } : undefined,
+    suffix: projectId ? ` — ${name ?? "Project"}` : "",
+  };
+}
+
 function TrialBalancePrint() {
+  const scope = useProjectScope();
   const { data } = useQuery({
-    queryKey: ["reports", "trial-balance"],
-    queryFn: async () => (await api.get<TrialBalanceReport>("/reports/trial-balance")).data,
+    queryKey: ["reports", "trial-balance", scope.projectId],
+    queryFn: async () =>
+      (await api.get<TrialBalanceReport>("/reports/trial-balance", { params: scope.params })).data,
   });
   if (!data) return <p className="text-sm text-slate-400">Loading...</p>;
 
   return (
-    <PrintShell title="Trial Balance">
+    <PrintShell title={`Trial Balance${scope.suffix}`}>
       <table className="w-full border-collapse text-left text-sm">
         <thead>
           <tr className="border-y border-slate-300 bg-slate-50">
@@ -157,14 +182,16 @@ function ProfitLossPrint() {
 }
 
 function BalanceSheetPrint() {
+  const scope = useProjectScope();
   const { data } = useQuery({
-    queryKey: ["reports", "balance-sheet"],
-    queryFn: async () => (await api.get<BalanceSheetReport>("/reports/balance-sheet")).data,
+    queryKey: ["reports", "balance-sheet", scope.projectId],
+    queryFn: async () =>
+      (await api.get<BalanceSheetReport>("/reports/balance-sheet", { params: scope.params })).data,
   });
   if (!data) return <p className="text-sm text-slate-400">Loading...</p>;
 
   return (
-    <PrintShell title="Balance Sheet">
+    <PrintShell title={`Balance Sheet${scope.suffix}`}>
       <div className="grid grid-cols-2 gap-8">
         <div>
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Assets</p>
