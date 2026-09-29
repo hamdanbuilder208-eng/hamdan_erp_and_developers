@@ -1,3 +1,4 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.security import hash_password, verify_password
@@ -34,7 +35,7 @@ def authenticate(db: Session, username: str, password: str) -> CustomerAccount |
 def signup(db: Session, signup_in: CustomerSignup) -> CustomerAccount:
     allottee = (
         db.query(Allottee)
-        .filter(Allottee.mobile == signup_in.mobile, Allottee.cnic == signup_in.cnic)
+        .filter(Allottee.mobile == signup_in.mobile, func.replace(Allottee.cnic, "-", "") == signup_in.cnic.replace("-", "").strip())
         .first()
     )
     if not allottee:
@@ -72,7 +73,7 @@ def reset_password(db: Session, reset_in: CustomerForgotPassword) -> None:
     the same trust model already used for signup."""
     allottee = (
         db.query(Allottee)
-        .filter(Allottee.mobile == reset_in.mobile, Allottee.cnic == reset_in.cnic)
+        .filter(Allottee.mobile == reset_in.mobile, func.replace(Allottee.cnic, "-", "") == reset_in.cnic.replace("-", "").strip())
         .first()
     )
     if not allottee:

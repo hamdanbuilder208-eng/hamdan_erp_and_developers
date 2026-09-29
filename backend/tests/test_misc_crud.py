@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.crud import account as account_crud
@@ -14,7 +15,7 @@ from app.models.account import AccountNature
 from app.models.booking_agent import BookingAgent
 from app.models.voucher import VoucherType
 from app.schemas.account import AccountCreate
-from app.schemas.allottee import AllotteeCreate
+from app.schemas.allottee import AllotteeCreate, AllotteeUpdate
 from app.schemas.booking import BookingCreate
 from app.schemas.project import ProjectCreate
 from app.schemas.unit import UnitCategoryCreate, UnitCreate
@@ -256,3 +257,41 @@ def test_delete_role_blocked_when_users_assigned(db: Session, role):
 
     with pytest.raises(ValueError, match="assigned to"):
         user_crud.delete_role(db, role)
+
+
+# ---------------------------------------------------------------------------
+# Allottee CNIC validation
+# ---------------------------------------------------------------------------
+
+def test_allottee_cnic_must_be_unique_ignoring_dashes(db: Session):
+    allottee_crud.create_allottee(db, AllotteeCreate(name="A", cnic="42101-1234567-1"))
+    with pytest.raises(ValueError, match="already registered"):
+        allottee_crud.create_allottee(db, AllotteeCreate(name="B", cnic="4210112345671"))
+
+
+def test_nominee_cnic_must_be_unique(db: Session):
+    allottee_crud.create_allottee(db, AllotteeCreate(name="A", nominee_cnic="42101-1111111-1"))
+    with pytest.raises(ValueError, match="already used as the nominee"):
+        allottee_crud.create_allottee(db, AllotteeCreate(name="B", nominee_cnic="42101-1111111-1"))
+
+
+def test_allottee_and_nominee_cnic_cannot_match(db: Session):
+    with pytest.raises(ValueError, match="same CNIC"):
+        allottee_crud.create_allottee(
+            db, AllotteeCreate(name="A", cnic="42101-2222222-2", nominee_cnic="4210122222222")
+        )
+
+
+def test_allottee_update_keeps_own_cnic(db: Session):
+    a = allottee_crud.create_allottee(db, AllotteeCreate(name="A", cnic="42101-3333333-3"))
+    updated = allottee_crud.update_allottee(db, a, AllotteeUpdate(name="A2", cnic="42101-3333333-3"))
+    assert updated.name == "A2"
+
+
+def test_allottee_rejects_letters_in_number_fields():
+    with pytest.raises(ValidationError):
+        AllotteeCreate(name="A", mobile="0300-abc1234")
+    with pytest.raises(ValidationError):
+        AllotteeCreate(name="A", cnic="42101-12345x7-1")
+    with pytest.raises(ValidationError):
+        AllotteeCreate(name="A", cnic="12345")

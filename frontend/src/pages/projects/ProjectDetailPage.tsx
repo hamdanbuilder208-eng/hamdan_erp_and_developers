@@ -305,10 +305,6 @@ export default function ProjectDetailPage() {
               <p className="text-xs text-slate-500 dark:text-slate-400">Project Group</p>
               <p className="mt-0.5 text-navy-900 dark:text-slate-100">{project.project_group?.name ?? "—"}</p>
             </div>
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Commission %</p>
-              <p className="mt-0.5 text-navy-900 dark:text-slate-100">{project.commission_percent ?? 0}%</p>
-            </div>
             <div className="col-span-2">
               <p className="text-xs text-slate-500 dark:text-slate-400">Address</p>
               <p className="mt-0.5 text-navy-900 dark:text-slate-100">{project.address || "—"}</p>

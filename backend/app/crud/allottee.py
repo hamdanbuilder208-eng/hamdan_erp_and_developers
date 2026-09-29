@@ -1,11 +1,11 @@
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.sequences import next_sequence_number
 from app.models.allottee import Allottee
 from app.models.booking import Booking
 from app.models.customer_account import CustomerAccount
-from app.schemas.allottee import AllotteeCreate, AllotteeUpdate
+from app.schemas.allottee import AllotteeCreate, AllotteeUpdate, cnic_digits
 
 
 def _next_allottee_code(db: Session) -> str:
@@ -31,7 +31,33 @@ def get_allottee(db: Session, allottee_id: int) -> Allottee | None:
     return db.query(Allottee).filter(Allottee.id == allottee_id).first()
 
 
+def _find_cnic_owner(db: Session, column, cnic: str, exclude_id: int | None) -> Allottee | None:
+    query = db.query(Allottee).filter(func.replace(column, "-", "") == cnic_digits(cnic))
+    if exclude_id is not None:
+        query = query.filter(Allottee.id != exclude_id)
+    return query.first()
+
+
+def _validate_cnics(db: Session, cnic: str | None, nominee_cnic: str | None, exclude_id: int | None = None) -> None:
+    """Every allottee CNIC is unique, every nominee CNIC is unique, and an
+    allottee can't be their own nominee. Raises ValueError with a message
+    naming the record that already holds the CNIC."""
+    if cnic and nominee_cnic and cnic_digits(cnic) == cnic_digits(nominee_cnic):
+        raise ValueError("Allottee and nominee cannot have the same CNIC")
+    if cnic:
+        owner = _find_cnic_owner(db, Allottee.cnic, cnic, exclude_id)
+        if owner:
+            raise ValueError(f"CNIC {cnic} is already registered to allottee {owner.name} ({owner.allottee_code})")
+    if nominee_cnic:
+        owner = _find_cnic_owner(db, Allottee.nominee_cnic, nominee_cnic, exclude_id)
+        if owner:
+            raise ValueError(
+                f"Nominee CNIC {nominee_cnic} is already used as the nominee of {owner.name} ({owner.allottee_code})"
+            )
+
+
 def create_allottee(db: Session, allottee_in: AllotteeCreate) -> Allottee:
+    _validate_cnics(db, allottee_in.cnic, allottee_in.nominee_cnic)
     db_allottee = Allottee(
         allottee_code=_next_allottee_code(db),
         **allottee_in.model_dump(),
@@ -43,7 +69,14 @@ def create_allottee(db: Session, allottee_in: AllotteeCreate) -> Allottee:
 
 
 def update_allottee(db: Session, db_allottee: Allottee, allottee_in: AllotteeUpdate) -> Allottee:
-    for field, value in allottee_in.model_dump(exclude_unset=True).items():
+    changes = allottee_in.model_dump(exclude_unset=True)
+    _validate_cnics(
+        db,
+        changes.get("cnic", db_allottee.cnic),
+        changes.get("nominee_cnic", db_allottee.nominee_cnic),
+        exclude_id=db_allottee.id,
+    )
+    for field, value in changes.items():
         setattr(db_allottee, field, value)
     db.commit()
     db.refresh(db_allottee)

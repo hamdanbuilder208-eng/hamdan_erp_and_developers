@@ -16,7 +16,10 @@ def list_allottees(search: str | None = None, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=AllotteeOut, status_code=status.HTTP_201_CREATED)
 def create_allottee(allottee_in: AllotteeCreate, db: Session = Depends(get_db)):
-    return allottee_crud.create_allottee(db, allottee_in)
+    try:
+        return allottee_crud.create_allottee(db, allottee_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/{allottee_id}", response_model=AllotteeOut)
@@ -32,7 +35,10 @@ def update_allottee(allottee_id: int, allottee_in: AllotteeUpdate, db: Session =
     db_allottee = allottee_crud.get_allottee(db, allottee_id)
     if not db_allottee:
         raise HTTPException(status_code=404, detail="Allottee not found")
-    return allottee_crud.update_allottee(db, db_allottee, allottee_in)
+    try:
+        return allottee_crud.update_allottee(db, db_allottee, allottee_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.delete("/{allottee_id}", status_code=status.HTTP_204_NO_CONTENT)

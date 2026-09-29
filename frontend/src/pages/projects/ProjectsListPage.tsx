@@ -32,7 +32,6 @@ export default function ProjectsListPage() {
     project_name: "",
     address: "",
     total_budget: "",
-    commission_percent: "",
     total_floors: "",
     project_group_id: "",
   });
@@ -74,7 +73,6 @@ export default function ProjectsListPage() {
           project_name: form.project_name,
           address: form.address || null,
           total_budget: form.total_budget ? Number(form.total_budget) : null,
-          commission_percent: form.commission_percent ? Number(form.commission_percent) : 0,
           total_floors: form.total_floors ? Number(form.total_floors) : 0,
           project_group_id: form.project_group_id ? Number(form.project_group_id) : null,
         })
@@ -86,7 +84,6 @@ export default function ProjectsListPage() {
         project_name: "",
         address: "",
         total_budget: "",
-        commission_percent: "",
         total_floors: "",
         project_group_id: "",
       });
@@ -198,29 +195,14 @@ export default function ProjectsListPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="total_budget">Total Budget (PKR)</Label>
-              <Input
-                id="total_budget"
-                type="number"
-                value={form.total_budget}
-                onChange={(e) => setForm({ ...form, total_budget: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="commission_percent">Vendor Commission %</Label>
-              <Input
-                id="commission_percent"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                value={form.commission_percent}
-                onChange={(e) => setForm({ ...form, commission_percent: e.target.value })}
-                placeholder="e.g. 5 for 5%"
-              />
-            </div>
+          <div>
+            <Label htmlFor="total_budget">Total Budget (PKR)</Label>
+            <Input
+              id="total_budget"
+              type="number"
+              value={form.total_budget}
+              onChange={(e) => setForm({ ...form, total_budget: e.target.value })}
+            />
           </div>
 
           <div>

@@ -38,6 +38,18 @@ const emptyForm = {
   nominee_picture_url: "" as string | null,
 };
 
+// Phone fields: digits plus the usual separators — letters are dropped as typed.
+const onlyPhoneChars = (v: string) => v.replace(/[^0-9+\-() ]/g, "");
+
+// CNIC: digits only, auto-dashed as xxxxx-xxxxxxx-x (13 digits max).
+function formatCnic(v: string) {
+  const d = v.replace(/\D/g, "").slice(0, 13);
+  if (d.length <= 5) return d;
+  if (d.length <= 12) return `${d.slice(0, 5)}-${d.slice(5)}`;
+  return `${d.slice(0, 5)}-${d.slice(5, 12)}-${d.slice(12)}`;
+}
+const cnicDigits = (v: string) => v.replace(/\D/g, "");
+
 function PhotoPicker({
   label,
   url,
@@ -136,7 +148,27 @@ export default function CustomersPage() {
       setModalOpen(false);
       setForm(emptyForm);
     },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to save allottee.")),
   });
+
+  const sameCnic = !!form.cnic && cnicDigits(form.cnic) === cnicDigits(form.nominee_cnic);
+
+  const handleSubmit = () => {
+    for (const [value, label] of [
+      [form.cnic, "CNIC"],
+      [form.nominee_cnic, "Nominee CNIC"],
+    ] as const) {
+      if (value && cnicDigits(value).length !== 13) {
+        toast.error(`${label} must have 13 digits.`);
+        return;
+      }
+    }
+    if (sameCnic) {
+      toast.error("Allottee and nominee cannot have the same CNIC.");
+      return;
+    }
+    createAllottee.mutate();
+  };
 
   const deleteAllottee = useMutation({
     mutationFn: async (id: number) => api.delete(`/allottees/${id}`),
@@ -261,7 +293,7 @@ export default function CustomersPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            createAllottee.mutate();
+            handleSubmit();
           }}
           className="space-y-4"
         >
@@ -316,8 +348,9 @@ export default function CustomersPage() {
               <Label htmlFor="mobile">Mobile No.</Label>
               <Input
                 id="mobile"
+                inputMode="tel"
                 value={form.mobile}
-                onChange={(e) => setForm({ ...form, mobile: e.target.value })}
+                onChange={(e) => setForm({ ...form, mobile: onlyPhoneChars(e.target.value) })}
                 placeholder="03xx-xxxxxxx"
               />
             </div>
@@ -325,8 +358,9 @@ export default function CustomersPage() {
               <Label htmlFor="cnic">CNIC / NIC No.</Label>
               <Input
                 id="cnic"
+                inputMode="numeric"
                 value={form.cnic}
-                onChange={(e) => setForm({ ...form, cnic: e.target.value })}
+                onChange={(e) => setForm({ ...form, cnic: formatCnic(e.target.value) })}
                 placeholder="xxxxx-xxxxxxx-x"
               />
             </div>
@@ -337,16 +371,18 @@ export default function CustomersPage() {
               <Label htmlFor="tel_res">Tel (Res.)</Label>
               <Input
                 id="tel_res"
+                inputMode="tel"
                 value={form.tel_res}
-                onChange={(e) => setForm({ ...form, tel_res: e.target.value })}
+                onChange={(e) => setForm({ ...form, tel_res: onlyPhoneChars(e.target.value) })}
               />
             </div>
             <div>
               <Label htmlFor="office_phone">Office</Label>
               <Input
                 id="office_phone"
+                inputMode="tel"
                 value={form.office_phone}
-                onChange={(e) => setForm({ ...form, office_phone: e.target.value })}
+                onChange={(e) => setForm({ ...form, office_phone: onlyPhoneChars(e.target.value) })}
               />
             </div>
           </div>
@@ -403,9 +439,14 @@ export default function CustomersPage() {
                   <Label htmlFor="nominee_cnic">Nominee CNIC</Label>
                   <Input
                     id="nominee_cnic"
+                    inputMode="numeric"
                     value={form.nominee_cnic}
-                    onChange={(e) => setForm({ ...form, nominee_cnic: e.target.value })}
+                    onChange={(e) => setForm({ ...form, nominee_cnic: formatCnic(e.target.value) })}
+                    placeholder="xxxxx-xxxxxxx-x"
                   />
+                  {sameCnic && (
+                    <p className="mt-1 text-xs text-danger-500">Same as allottee's CNIC.</p>
+                  )}
                 </div>
               </div>
             </div>
