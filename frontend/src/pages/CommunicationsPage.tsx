@@ -1,12 +1,14 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, MessageCircle, Trash2, Users, XCircle } from "lucide-react";
+import { CheckCircle2, MessageCircle, Pencil, Trash2, Users, XCircle } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Select } from "../components/ui/Input";
+import { Modal } from "../components/ui/Modal";
 import { Badge } from "../components/ui/Badge";
 import { BulkSendMessageModal } from "../components/communication/BulkSendMessageModal";
+import { SendMessageModal } from "../components/communication/SendMessageModal";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
 import type { CommunicationChannel, CommunicationLog } from "../types";
@@ -17,6 +19,8 @@ export default function CommunicationsPage() {
   const queryClient = useQueryClient();
   const [bulkModalOpen, setBulkModalOpen] = React.useState(false);
   const [filterChannel, setFilterChannel] = React.useState("");
+  const [viewLog, setViewLog] = React.useState<CommunicationLog | null>(null);
+  const [resendLog, setResendLog] = React.useState<CommunicationLog | null>(null);
 
   const { data: logs, isLoading } = useQuery({
     queryKey: ["communications", filterChannel],
@@ -93,7 +97,12 @@ export default function CommunicationsPage() {
               </tr>
             )}
             {logs?.map((l) => (
-              <tr key={l.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
+              <tr
+                key={l.id}
+                onClick={() => setViewLog(l)}
+                title="Click to read the full message"
+                className="cursor-pointer transition-colors hover:bg-slate-100 dark:hover:bg-navy-800"
+              >
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
                   {new Date(l.created_at).toLocaleString()}
                 </td>
@@ -108,8 +117,8 @@ export default function CommunicationsPage() {
                   {l.related_type}
                   {l.related_id ? ` #${l.related_id}` : ""}
                 </td>
-                <td className="px-5 py-3 max-w-xs truncate text-slate-500 dark:text-slate-400" title={l.message_body}>
-                  {l.message_body}
+                <td className="px-5 py-3 max-w-sm text-slate-500 dark:text-slate-400">
+                  <span className="line-clamp-2 whitespace-pre-line">{l.message_body}</span>
                 </td>
                 <td className="px-5 py-3">
                   {l.status === "Sent" ? (
@@ -129,7 +138,8 @@ export default function CommunicationsPage() {
                 </td>
                 <td className="px-5 py-3 text-right">
                   <button
-                    onClick={async () => {
+                    onClick={async (e) => {
+                      e.stopPropagation();
                       const ok = await confirm("Delete this message log entry?", {
                         danger: true,
                         confirmLabel: "Delete",
@@ -156,6 +166,94 @@ export default function CommunicationsPage() {
       )}
 
       <BulkSendMessageModal open={bulkModalOpen} onClose={() => setBulkModalOpen(false)} />
+
+      {/* ---- Full message view ---- */}
+      <Modal
+        open={!!viewLog}
+        onClose={() => setViewLog(null)}
+        title="Message Details"
+        description={viewLog ? new Date(viewLog.created_at).toLocaleString() : undefined}
+      >
+        {viewLog && (
+          <div className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">To</p>
+                <p className="font-medium text-navy-900 dark:text-slate-100">
+                  {viewLog.recipient_name ? `${viewLog.recipient_name} · ` : ""}
+                  {viewLog.recipient_phone}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Channel</p>
+                <Badge tone={viewLog.channel === "WhatsApp" ? "success" : "info"}>{viewLog.channel}</Badge>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Related To</p>
+                <p className="text-navy-900 dark:text-slate-100">
+                  {viewLog.related_type}
+                  {viewLog.related_id ? ` #${viewLog.related_id}` : ""}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Sent By</p>
+                <p className="text-navy-900 dark:text-slate-100">{viewLog.sent_by?.username ?? "—"}</p>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Message</p>
+              <p className="whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2.5 text-navy-900 dark:bg-navy-800/60 dark:text-slate-100">
+                {viewLog.message_body}
+              </p>
+            </div>
+
+            {viewLog.status === "Sent" ? (
+              <p className="flex items-center gap-1.5 text-xs font-medium text-success-700">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Sent{viewLog.provider_message_id ? ` · ID ${viewLog.provider_message_id}` : ""}
+              </p>
+            ) : (
+              <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">
+                <span className="font-semibold">Failed:</span> {viewLog.error_message ?? "Unknown error"}
+              </p>
+            )}
+
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              A WhatsApp / SMS can't be changed once it has gone out. To correct it, use "Edit &amp; Resend" — the
+              fixed message is sent again and saved here as a new entry.
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setViewLog(null)}>
+                Close
+              </Button>
+              <Button
+                onClick={() => {
+                  setResendLog(viewLog);
+                  setViewLog(null);
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+                Edit &amp; Resend
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {resendLog && (
+        <SendMessageModal
+          open={!!resendLog}
+          onClose={() => setResendLog(null)}
+          defaultPhone={resendLog.recipient_phone}
+          defaultName={resendLog.recipient_name ?? undefined}
+          defaultMessage={resendLog.message_body}
+          defaultChannel={resendLog.channel}
+          relatedType={resendLog.related_type}
+          relatedId={resendLog.related_id}
+        />
+      )}
     </div>
   );
 }

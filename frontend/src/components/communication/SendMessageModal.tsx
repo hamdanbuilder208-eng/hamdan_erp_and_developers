@@ -17,6 +17,8 @@ interface SendMessageModalProps {
   defaultMessage: string;
   relatedType: CommunicationRelatedType;
   relatedId?: number | null;
+  /** Pre-selects the channel (e.g. when resending a logged message). Defaults to WhatsApp. */
+  defaultChannel?: CommunicationChannel;
 }
 
 export function SendMessageModal({
@@ -27,9 +29,10 @@ export function SendMessageModal({
   defaultMessage,
   relatedType,
   relatedId,
+  defaultChannel = "WhatsApp",
 }: SendMessageModalProps) {
   const queryClient = useQueryClient();
-  const [channel, setChannel] = React.useState<CommunicationChannel>("WhatsApp");
+  const [channel, setChannel] = React.useState<CommunicationChannel>(defaultChannel);
   const [phone, setPhone] = React.useState(defaultPhone);
   const [message, setMessage] = React.useState(defaultMessage);
 
@@ -37,9 +40,9 @@ export function SendMessageModal({
     if (open) {
       setPhone(defaultPhone);
       setMessage(defaultMessage);
-      setChannel("WhatsApp");
+      setChannel(defaultChannel);
     }
-  }, [open, defaultPhone, defaultMessage]);
+  }, [open, defaultPhone, defaultMessage, defaultChannel]);
 
   const send = useMutation({
     mutationFn: async () =>
@@ -118,6 +121,10 @@ export function SendMessageModal({
             onChange={(e) => setMessage(e.target.value)}
             className="flex w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-navy-950 shadow-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:border-brand-500 dark:border-navy-700 dark:bg-navy-800 dark:text-slate-100"
           />
+          <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+            {message.length} characters · every message sent is saved under WhatsApp / SMS, where you can read it
+            again later.
+          </p>
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
