@@ -1,6 +1,6 @@
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.account import AccountOut
 
@@ -32,10 +32,15 @@ class ProjectPartnerShareBase(BaseModel):
     partner_id: int
     investment_amount: float = 0
     share_percent: float
+    retention_percent: float = Field(default=0, ge=0, le=100)
 
 
 class ProjectPartnerShareCreate(ProjectPartnerShareBase):
     pass
+
+
+class ProjectPartnerShareUpdate(BaseModel):
+    retention_percent: float = Field(ge=0, le=100)
 
 
 class ProjectPartnerShareOut(ProjectPartnerShareBase):

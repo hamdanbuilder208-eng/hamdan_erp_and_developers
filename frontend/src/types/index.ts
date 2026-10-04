@@ -496,6 +496,7 @@ export interface ProjectPartnerShare {
   partner_id: number;
   investment_amount: number;
   share_percent: number;
+  retention_percent: number;
   partner: Partner;
 }
 
@@ -1079,7 +1080,6 @@ export interface CompanySettings {
   accountant_name: string | null;
   accountant_designation: string | null;
   signature_image_url: string | null;
-  partner_profit_retention_percent: number;
 }
 
 export interface IntegrityCheckResult {

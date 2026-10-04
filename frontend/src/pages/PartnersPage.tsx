@@ -243,7 +243,7 @@ export default function PartnersPage() {
     const amount = Number(drawingForm.amount) || 0;
     if (drawingRow && drawingRow.retention_percent > 0 && amount > drawingRow.withdrawable_per_policy + 0.01) {
       const ok = await confirm(
-        `Company policy keeps ${drawingRow.retention_percent}% of the partner's profit (PKR ${drawingRow.retained_amount.toLocaleString()}) ` +
+        `This partner's backup on this project keeps ${drawingRow.retention_percent}% of their profit (PKR ${drawingRow.retained_amount.toLocaleString()}) ` +
           `with Hamdan as backup. Recommended withdrawal is up to PKR ${drawingRow.withdrawable_per_policy.toLocaleString()}, ` +
           `but PKR ${amount.toLocaleString()} was entered. Pay it anyway?`,
         { title: "Above backup threshold", confirmLabel: "Pay Anyway", danger: true },
@@ -369,7 +369,7 @@ export default function PartnersPage() {
                       <li key={r.project_id}>
                         {r.project_name}: profit share PKR {r.balance.toLocaleString()} not yet withdrawn
                         {r.retention_percent > 0 &&
-                          ` — per company policy ${r.retention_percent}% (PKR ${r.retained_amount.toLocaleString()}) stays as backup, so up to PKR ${r.withdrawable_per_policy.toLocaleString()} can be withdrawn now`}
+                          ` — per this project's backup setting ${r.retention_percent}% (PKR ${r.retained_amount.toLocaleString()}) stays as backup, so up to PKR ${r.withdrawable_per_policy.toLocaleString()} can be withdrawn now`}
                         .
                       </li>
                     ))}

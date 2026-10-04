@@ -28,7 +28,6 @@ export default function AdminPage() {
     accountant_name: "",
     accountant_designation: "",
     signature_image_url: "",
-    partner_profit_retention_percent: "",
   });
 
   React.useEffect(() => {
@@ -38,7 +37,6 @@ export default function AdminPage() {
         accountant_name: settings.accountant_name ?? "",
         accountant_designation: settings.accountant_designation ?? "",
         signature_image_url: settings.signature_image_url ?? "",
-        partner_profit_retention_percent: String(settings.partner_profit_retention_percent ?? 0),
       });
     }
   }, [settings]);
@@ -51,7 +49,6 @@ export default function AdminPage() {
           accountant_name: form.accountant_name || null,
           accountant_designation: form.accountant_designation || null,
           signature_image_url: form.signature_image_url || null,
-          partner_profit_retention_percent: Number(form.partner_profit_retention_percent) || 0,
         })
       ).data,
     onSuccess: () => {
@@ -183,23 +180,6 @@ export default function AdminPage() {
                 onChange={(e) => setForm({ ...form, signature_image_url: e.target.value })}
                 placeholder="https://..."
               />
-            </div>
-            <div className="border-t border-slate-100 pt-4 dark:border-navy-800">
-              <Label htmlFor="partner_retention">Partner Profit Backup %</Label>
-              <Input
-                id="partner_retention"
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                value={form.partner_profit_retention_percent}
-                onChange={(e) => setForm({ ...form, partner_profit_retention_percent: e.target.value })}
-                className="w-40"
-              />
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Company policy: this share of a partner's profit stays with the company as backup. Withdrawing
-                beyond it only shows a warning — an admin can still pay the full profit. 0 = no backup.
-              </p>
             </div>
             <div className="flex justify-end pt-2">
               <Button onClick={() => saveSettings.mutate()} disabled={saveSettings.isPending}>

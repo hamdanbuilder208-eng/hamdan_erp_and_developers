@@ -2,7 +2,6 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.sequences import next_sequence_number
 from app.models.account import AccountNature
-from app.models.company_settings import CompanySettings
 from app.models.partner import (
     Partner,
     PartnerContribution,
@@ -18,6 +17,7 @@ from app.schemas.partner import (
     PartnerSummary,
     PartnerUpdate,
     ProjectPartnerShareCreate,
+    ProjectPartnerShareUpdate,
 )
 
 
@@ -105,6 +105,15 @@ def get_share(db: Session, share_id: int) -> ProjectPartnerShare | None:
     return db.query(ProjectPartnerShare).filter(ProjectPartnerShare.id == share_id).first()
 
 
+def update_share(
+    db: Session, db_share: ProjectPartnerShare, share_in: ProjectPartnerShareUpdate
+) -> ProjectPartnerShare:
+    db_share.retention_percent = share_in.retention_percent
+    db.commit()
+    db.refresh(db_share)
+    return db_share
+
+
 def delete_share(db: Session, db_share: ProjectPartnerShare) -> None:
     db.delete(db_share)
     db.commit()
@@ -142,11 +151,9 @@ def get_partner_summary(db: Session, partner_id: int) -> PartnerSummary | None:
         .all()
     )
 
-    settings_row = db.query(CompanySettings).first()
-    retention_percent = float(settings_row.partner_profit_retention_percent or 0) if settings_row else 0.0
-
     rows: list[PartnerProjectRow] = []
     for share in shares:
+        retention_percent = float(share.retention_percent or 0)
         revenue, expense = compute_project_profit(db, share.project_id)
         net_profit = revenue - expense
         partner_share_amount = round(net_profit * float(share.share_percent) / 100, 2)
@@ -202,7 +209,7 @@ def get_partner_summary(db: Session, partner_id: int) -> PartnerSummary | None:
             distributable_amount * float(share.share_percent) / 100, 2
         )
 
-        # Company policy keeps retention_percent of the (positive) profit share
+        # This share's policy keeps retention_percent of the (positive) profit share
         # as backup; this is what the partner can take without breaching it.
         retained_amount = round(max(partner_share_amount, 0) * retention_percent / 100, 2)
         withdrawable_per_policy = round(

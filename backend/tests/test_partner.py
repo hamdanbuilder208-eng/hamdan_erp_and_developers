@@ -210,15 +210,14 @@ def test_delete_partner_blocked_while_shares_exist(db: Session, project, partner
 # ---------------------------------------------------------------------------
 
 def test_summary_shows_pending_pledge_and_retention(db: Session, partner, project):
-    from app.models.company_settings import CompanySettings
     from app.models.partner import PartnerContribution, ProjectPartnerShare
     from app.models.account import Account, AccountNature
     from app.models.voucher import Voucher, VoucherLine, VoucherType
 
-    db.add(CompanySettings(id=1, partner_profit_retention_percent=20))
     db.add(
         ProjectPartnerShare(
-            project_id=project.id, partner_id=partner.id, investment_amount=20_000_000, share_percent=50
+            project_id=project.id, partner_id=partner.id, investment_amount=20_000_000,
+            share_percent=50, retention_percent=20,
         )
     )
     bank = Account(code="1015", name="Bank", nature=AccountNature.ASSET)
@@ -249,3 +248,17 @@ def test_summary_shows_pending_pledge_and_retention(db: Session, partner, projec
     assert row.withdrawable_per_policy == 200_000
     # The hard cap is still the full profit balance — the policy only warns.
     assert row.balance == 250_000
+
+
+def test_backup_percent_is_set_per_partner_share(db: Session, partner, project):
+    from app.schemas.partner import ProjectPartnerShareCreate, ProjectPartnerShareUpdate
+
+    share = partner_crud.add_project_share(
+        db, project.id,
+        ProjectPartnerShareCreate(partner_id=partner.id, share_percent=40, retention_percent=10),
+    )
+    assert float(share.retention_percent) == 10
+    assert partner_crud.get_partner_summary(db, partner.id).projects[0].retention_percent == 10
+
+    partner_crud.update_share(db, share, ProjectPartnerShareUpdate(retention_percent=25))
+    assert partner_crud.get_partner_summary(db, partner.id).projects[0].retention_percent == 25

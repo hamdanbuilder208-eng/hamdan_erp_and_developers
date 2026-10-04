@@ -8,7 +8,11 @@ from app.crud import project as project_crud
 from app.db.session import get_db
 from app.models.unit import UnitCategory
 from app.models.user import User
-from app.schemas.partner import ProjectPartnerShareCreate, ProjectPartnerShareOut
+from app.schemas.partner import (
+    ProjectPartnerShareCreate,
+    ProjectPartnerShareOut,
+    ProjectPartnerShareUpdate,
+)
 from app.schemas.project import (
     PaymentTemplateOut,
     PaymentTemplateUpsert,
@@ -174,6 +178,16 @@ def add_partner_share(
         return partner_crud.add_project_share(db, project_id, share_in)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.put("/partner-shares/{share_id}", response_model=ProjectPartnerShareOut)
+def update_partner_share(
+    share_id: int, share_in: ProjectPartnerShareUpdate, db: Session = Depends(get_db)
+):
+    db_share = partner_crud.get_share(db, share_id)
+    if not db_share:
+        raise HTTPException(status_code=404, detail="Share not found")
+    return partner_crud.update_share(db, db_share, share_in)
 
 
 @router.delete("/partner-shares/{share_id}", status_code=status.HTTP_204_NO_CONTENT)

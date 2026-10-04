@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Printer } from "lucide-react";
 import { api } from "../lib/api";
 import { REPORT_SCOPES, isReportScope, reportFilterParams, withReportFilter } from "../lib/reportFilter";
-import { REPORT_SCOPES, isReportScope, reportFilterParams, withReportFilter } from "../lib/reportFilter";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
 import { Select } from "../components/ui/Input";

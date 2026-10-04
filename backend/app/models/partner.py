@@ -27,6 +27,10 @@ class ProjectPartnerShare(Base, TimestampMixin):
 
     investment_amount: Mapped[float] = mapped_column(Numeric(18, 2), default=0)
     share_percent: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    # Policy for this partner on this project: this % of their profit share
+    # stays with the company as backup. Advisory only — withdrawing past it
+    # shows a warning, but an admin can still pay the full profit.
+    retention_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0, server_default="0")
 
     project: Mapped["Project"] = relationship()
     partner: Mapped["Partner"] = relationship()

@@ -1,4 +1,4 @@
-from sqlalchemy import Numeric, String
+from sqlalchemy import String
 
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,7 +16,4 @@ class CompanySettings(Base, TimestampMixin):
     accountant_name: Mapped[str | None] = mapped_column(String(150))
     accountant_designation: Mapped[str | None] = mapped_column(String(100))
     signature_image_url: Mapped[str | None] = mapped_column(String(255))
-    # Company policy: this % of a partner's profit share stays with the company
-    # as backup. Advisory only — withdrawing past it shows a warning, but an
-    # admin can still pay the full profit.
-    partner_profit_retention_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
+    # (The partner profit backup % now lives on each ProjectPartnerShare.)

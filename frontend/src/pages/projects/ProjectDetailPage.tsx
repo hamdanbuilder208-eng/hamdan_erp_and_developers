@@ -260,8 +260,24 @@ export default function ProjectDetailPage() {
   });
 
   const [shareModalOpen, setShareModalOpen] = React.useState(false);
-  const [shareForm, setShareForm] = React.useState({ partner_id: "", investment_amount: "", share_percent: "" });
+  const emptyShareForm = { partner_id: "", investment_amount: "", share_percent: "", retention_percent: "" };
+  const [shareForm, setShareForm] = React.useState(emptyShareForm);
   const [shareError, setShareError] = React.useState<string | null>(null);
+
+  const [editingBackup, setEditingBackup] = React.useState<{ id: number; value: string } | null>(null);
+  const updateBackup = useMutation({
+    mutationFn: async () =>
+      api.put(`/projects/partner-shares/${editingBackup!.id}`, {
+        retention_percent: Number(editingBackup!.value) || 0,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-partner-shares", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["partner-summary"] });
+      setEditingBackup(null);
+      toast.success("Profit backup % updated.");
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to update profit backup %.")),
+  });
 
   const totalSharePercent = shares?.reduce((s, sh) => s + Number(sh.share_percent), 0) ?? 0;
 
@@ -272,12 +288,14 @@ export default function ProjectDetailPage() {
           partner_id: Number(shareForm.partner_id),
           investment_amount: shareForm.investment_amount ? Number(shareForm.investment_amount) : 0,
           share_percent: Number(shareForm.share_percent),
+          retention_percent: Number(shareForm.retention_percent) || 0,
         })
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["project-partner-shares", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["partner-summary"] });
       setShareModalOpen(false);
-      setShareForm({ partner_id: "", investment_amount: "", share_percent: "" });
+      setShareForm(emptyShareForm);
       setShareError(null);
     },
     onError: (err: unknown) => {
@@ -447,13 +465,14 @@ export default function ProjectDetailPage() {
                   <th className="px-5 py-3 font-medium">Partner</th>
                   <th className="px-5 py-3 font-medium">Investment</th>
                   <th className="px-5 py-3 font-medium">Share %</th>
+                  <th className="px-5 py-3 font-medium">Profit Backup %</th>
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
                 {shares?.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                    <td colSpan={5}className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
                       No partners configured for this project yet.
                     </td>
                   </tr>
@@ -465,6 +484,46 @@ export default function ProjectDetailPage() {
                       {s.investment_amount ? `PKR ${Number(s.investment_amount).toLocaleString()}` : "—"}
                     </td>
                     <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{s.share_percent}%</td>
+                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
+                      {editingBackup?.id === s.id ? (
+                        <form
+                          className="flex items-center gap-1.5"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            updateBackup.mutate();
+                          }}
+                        >
+                          <Input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            required
+                            autoFocus
+                            value={editingBackup.value}
+                            onChange={(e) => setEditingBackup({ id: s.id, value: e.target.value })}
+                            className="h-8 w-20"
+                          />
+                          <Button type="submit" size="sm" disabled={updateBackup.isPending}>
+                            Save
+                          </Button>
+                          <Button type="button" size="sm" variant="secondary" onClick={() => setEditingBackup(null)}>
+                            Cancel
+                          </Button>
+                        </form>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5">
+                          {Number(s.retention_percent)}%
+                          <button
+                            onClick={() => setEditingBackup({ id: s.id, value: String(Number(s.retention_percent)) })}
+                            title="Change profit backup %"
+                            className="rounded-md p-1 text-slate-400 hover:bg-brand-50 hover:text-brand-600 dark:text-slate-500"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        </span>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-right">
                       <button
                         onClick={async () => {
@@ -845,6 +904,24 @@ export default function ProjectDetailPage() {
           <p className="text-xs text-slate-400 dark:text-slate-500">
             Currently allocated: {totalSharePercent}% · Remaining: {Math.max(0, 100 - totalSharePercent)}%
           </p>
+          <div>
+            <Label htmlFor="share_retention">Profit Backup %</Label>
+            <Input
+              id="share_retention"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              required
+              value={shareForm.retention_percent}
+              onChange={(e) => setShareForm({ ...shareForm, retention_percent: e.target.value })}
+              className="w-40"
+            />
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              How much of this partner's profit on this project stays with the company as backup.
+              Withdrawing beyond it only shows a warning. 0 = no backup.
+            </p>
+          </div>
           {shareError && (
             <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{shareError}</p>
           )}
