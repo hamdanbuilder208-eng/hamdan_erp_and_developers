@@ -107,7 +107,6 @@ export default function PartnerStatementPrintPage() {
             <p className="text-lg font-bold text-navy-950">
               {companySettings?.company_name ?? "Hamdan Builders and Developers"}
             </p>
-            <p className="text-xs text-slate-500">Real Estate Builder &amp; Developer</p>
           </div>
           <div className="text-right">
             <p className="text-xl font-bold uppercase tracking-wide text-navy-950">

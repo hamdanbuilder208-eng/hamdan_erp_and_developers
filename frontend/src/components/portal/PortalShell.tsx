@@ -21,7 +21,7 @@ export function PortalShell() {
           <div className="flex items-center gap-2.5">
             <img src={hamdanIcon} alt="Hamdan" className="h-9 w-9 rounded-lg object-cover" />
             <div>
-              <p className="text-sm font-semibold text-navy-900 dark:text-white">Hamdan ERP</p>
+              <p className="text-sm font-semibold text-navy-900 dark:text-white">Hamdan Builders and Developers</p>
               <p className="text-[11px] text-slate-400 dark:text-slate-500">Customer Portal</p>
             </div>
           </div>

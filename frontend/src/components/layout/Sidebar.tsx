@@ -95,8 +95,7 @@ export function Sidebar({
         />
         {!collapsed && (
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-white">Hamdan ERP</p>
-            <p className="truncate text-[11px] text-slate-400">Real Estate Management</p>
+            <p className="text-sm font-semibold leading-tight text-white">Hamdan Builders and Developers</p>
           </div>
         )}
       </div>

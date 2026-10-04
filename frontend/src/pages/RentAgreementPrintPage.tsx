@@ -55,7 +55,6 @@ export default function RentAgreementPrintPage() {
         <div className="flex items-start justify-between border-b border-slate-200 pb-5">
           <div>
             <p className="text-lg font-bold text-navy-950">{companyName}</p>
-            <p className="text-xs text-slate-500">Real Estate Builder &amp; Developer</p>
           </div>
           <div className="text-right">
             <p className="text-xl font-bold uppercase tracking-wide text-navy-950">Rent Agreement</p>
