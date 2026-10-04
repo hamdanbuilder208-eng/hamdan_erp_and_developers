@@ -80,7 +80,7 @@ export default function CustomerReceiptPrintPage() {
 
         <div className="grid grid-cols-2 gap-4 py-5 text-sm">
           <div>
-            <p className="text-xs text-slate-500">Allottee</p>
+            <p className="text-xs text-slate-500">Customer</p>
             <p className="mt-0.5 font-medium text-navy-900">{booking.allottee.name}</p>
           </div>
           <div>

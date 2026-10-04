@@ -743,6 +743,11 @@ export interface Receipt {
   narration: string | null;
   credit_account: Account;
   booking: Booking;
+  /** Which installment(s) this receipt paid, and how much went to each. */
+  allocations: {
+    amount: number;
+    schedule_line: { id: number; installment_no: number; label: string; due_date: string };
+  }[];
 }
 
 export interface Allottee {

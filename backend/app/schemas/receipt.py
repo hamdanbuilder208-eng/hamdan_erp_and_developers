@@ -55,6 +55,22 @@ class ReceiptUpdate(BaseModel):
     narration: str | None = None
 
 
+class AllocatedScheduleLineOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    installment_no: int
+    label: str
+    due_date: date
+
+
+class ReceiptAllocationOut(BaseModel):
+    """Which installment(s) this receipt paid, and how much went to each."""
+
+    model_config = ConfigDict(from_attributes=True)
+    amount: float
+    schedule_line: AllocatedScheduleLineOut
+
+
 class ReceiptOut(ReceiptBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -62,6 +78,7 @@ class ReceiptOut(ReceiptBase):
     voucher_id: int | None
     cheque_status: ChequeStatus | None
     credit_account: AccountOut
+    allocations: list[ReceiptAllocationOut] = []
 
 
 class ReceiptWithBookingOut(ReceiptOut):

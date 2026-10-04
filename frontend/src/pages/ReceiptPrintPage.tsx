@@ -11,6 +11,10 @@ import type { CompanySettings, Receipt } from "../types";
 const API_ORIGIN = new URL(api.defaults.baseURL ?? "", window.location.origin).origin;
 const photoUrl = (path: string | null) => (path ? `${API_ORIGIN}${path}` : null);
 
+// "2026-10-10" → "Oct 2026"
+const monthLabel = (isoDate: string) =>
+  new Date(`${isoDate}T00:00:00`).toLocaleDateString("en-GB", { month: "short", year: "numeric" });
+
 const RECEIPT_TERMS = [
   "Payment received is subject to clearance and realization of the payment instrument, where applicable.",
   "Any applicable documentation, utility, development, maintenance, taxes, government charges or other charges shall be payable separately as per the agreed terms.",
@@ -32,13 +36,6 @@ export default function ReceiptPrintPage() {
     queryFn: async () => (await api.get<CompanySettings>("/admin/settings")).data,
   });
 
-  const { data: history } = useQuery({
-    queryKey: ["receipts", "booking", receipt?.booking_id],
-    queryFn: async () =>
-      (await api.get<Receipt[]>("/receipts/", { params: { booking_id: receipt!.booking_id } })).data,
-    enabled: !!receipt,
-  });
-
   if (isLoading || !receipt) {
     return <div className="p-10 text-sm text-slate-400">Loading receipt...</div>;
   }
@@ -51,9 +48,9 @@ export default function ReceiptPrintPage() {
     .sort((a, b) => a.due_date.localeCompare(b.due_date))
     .find((l) => Number(l.paid_amount) < Number(l.amount));
 
-  const orderedHistory = (history ?? [])
+  const paidLines = receipt.allocations
     .slice()
-    .sort((a, b) => a.receipt_date.localeCompare(b.receipt_date));
+    .sort((a, b) => a.schedule_line.due_date.localeCompare(b.schedule_line.due_date));
 
   const facilities = [booking.unit.facility_1, booking.unit.facility_2, booking.unit.facility_3, booking.unit.facility_4]
     .filter(Boolean)
@@ -86,7 +83,8 @@ export default function ReceiptPrintPage() {
         <div className="flex gap-4 py-5">
           <div className="grid flex-1 grid-cols-2 gap-4 text-sm">
             <div>
-              <p className="text-xs text-slate-500">Allottee</p>
+              {/* The booking's current holder (after any transfer), not necessarily the first allottee. */}
+              <p className="text-xs text-slate-500">Customer</p>
               <p className="mt-0.5 font-medium text-navy-900">{booking.allottee.name}</p>
             </div>
             <div>
@@ -123,7 +121,7 @@ export default function ReceiptPrintPage() {
                     alt={booking.allottee.name}
                     className="h-20 w-20 rounded-lg border border-slate-200 object-cover"
                   />
-                  <p className="mt-1 text-[10px] text-slate-400">Allottee</p>
+                  <p className="mt-1 text-[10px] text-slate-400">Customer</p>
                 </div>
               )}
               {booking.allottee.nominee_picture_url && (
@@ -140,34 +138,34 @@ export default function ReceiptPrintPage() {
           )}
         </div>
 
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Payment History</p>
+        {/* Only this payment — the full history is on the customer portal / ledger. */}
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">This Payment</p>
         <table className="w-full border-collapse text-left text-sm">
           <thead>
             <tr className="border-y border-slate-300 bg-slate-50">
-              <th className="px-3 py-2 font-semibold text-slate-600">Receipt #</th>
-              <th className="px-3 py-2 font-semibold text-slate-600">Date</th>
+              <th className="px-3 py-2 font-semibold text-slate-600">Installment</th>
+              <th className="px-3 py-2 font-semibold text-slate-600">Month</th>
               <th className="px-3 py-2 font-semibold text-slate-600">Mode</th>
               <th className="px-3 py-2 text-right font-semibold text-slate-600">Amount</th>
             </tr>
           </thead>
           <tbody>
-            {orderedHistory.map((r) => (
-              <tr
-                key={r.id}
-                className={`border-b border-slate-100 ${r.id === receipt.id ? "bg-brand-50" : ""}`}
-              >
-                <td className="px-3 py-2 font-mono text-xs text-slate-500">{r.receipt_no}</td>
-                <td className="px-3 py-2 text-navy-900">{r.receipt_date}</td>
+            {(paidLines.length > 0 ? paidLines : [null]).map((a, i) => (
+              <tr key={a?.schedule_line.id ?? i} className="border-b border-slate-100">
+                <td className="px-3 py-2 text-navy-900">{a ? a.schedule_line.label : "Payment"}</td>
+                <td className="px-3 py-2 text-navy-900">
+                  {monthLabel(a ? a.schedule_line.due_date : receipt.receipt_date)}
+                </td>
                 <td className="px-3 py-2 text-slate-500">
-                  {r.mode_of_payment}
-                  {paymentDetailsSummary(r.mode_of_payment, r) && (
+                  {receipt.mode_of_payment}
+                  {paymentDetailsSummary(receipt.mode_of_payment, receipt) && (
                     <span className="block text-xs text-slate-400">
-                      {paymentDetailsSummary(r.mode_of_payment, r)}
+                      {paymentDetailsSummary(receipt.mode_of_payment, receipt)}
                     </span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-navy-900">
-                  {Number(r.amount).toLocaleString()}
+                  {Number(a ? a.amount : receipt.amount).toLocaleString()}
                 </td>
               </tr>
             ))}

@@ -141,3 +141,13 @@ def test_delete_receipt_reverses_allocation_and_voucher(db: Session, booking, ca
     db.refresh(booking)
     assert all(l.paid_amount == 0 for l in booking.schedule_lines)
     assert db.get(Voucher, voucher_id) is None
+
+
+def test_receipt_out_lists_the_installments_it_paid(db: Session, booking, cash_account):
+    from app.schemas.receipt import ReceiptOut
+
+    # 2 installments of 500,000 — 600,000 pays the 1st in full and 100,000 of the 2nd.
+    receipt = receipt_crud.create_receipt(db, _receipt_in(booking, cash_account, amount=600_000))
+    out = ReceiptOut.model_validate(receipt)
+    paid = sorted((a.schedule_line.installment_no, a.amount) for a in out.allocations)
+    assert [amount for _, amount in paid] == [500_000, 100_000]
