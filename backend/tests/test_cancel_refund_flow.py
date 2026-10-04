@@ -70,6 +70,39 @@ def test_booking_cancelled_from_bookings_creates_refund(
     _check(db, booking)
 
 
+def test_cancelled_unit_can_be_booked_again(
+    db: Session, project, unit, allottee, accounting_accounts, cash_account
+):
+    import pytest
+
+    from app.models.unit import UnitStatus
+
+    old_booking = _paid_booking(db, project, unit, allottee, cash_account)
+    unit_crud.update_unit(db, unit, UnitUpdate(status="Cancelled"))
+    assert unit.status == UnitStatus.CANCELLED
+
+    new_booking = booking_crud.create_booking(
+        db,
+        BookingCreate(
+            booking_date=TODAY,
+            project_id=project.id,
+            unit_id=unit.id,
+            allottee_id=allottee.id,
+            status_date=TODAY,
+            down_payment_amount=1_000_000,
+            one_shot=True,
+        ),
+    )
+    db.refresh(unit)
+    assert new_booking.status != BookingStatus.CANCELLED
+    assert unit.status == UnitStatus.BOOKED
+
+    # The old cancelled booking can't be revived on top of the new one.
+    db.refresh(old_booking)
+    with pytest.raises(ValueError, match="already has an active booking"):
+        booking_crud.update_booking_status(db, old_booking, BookingStatus.BOOKED, TODAY)
+
+
 def test_auto_refund_can_be_paid_out_in_installments(
     db: Session, project, unit, allottee, accounting_accounts, cash_account
 ):

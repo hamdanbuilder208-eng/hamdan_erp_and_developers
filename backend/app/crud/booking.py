@@ -238,12 +238,27 @@ def add_installment_plan(db: Session, booking: Booking, plan_in: InstallmentPlan
     return get_booking(db, booking.id)
 
 
+def _ensure_no_active_booking(db: Session, unit: Unit) -> None:
+    active = (
+        db.query(Booking)
+        .filter(Booking.unit_id == unit.id, Booking.status != BookingStatus.CANCELLED)
+        .first()
+    )
+    if active:
+        raise ValueError(
+            f"Unit {unit.unit_number} already has an active booking ({active.booking_ref_no})."
+        )
+
+
 def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
     unit = db.query(Unit).filter(Unit.id == booking_in.unit_id).first()
     if not unit:
         raise ValueError("Unit not found")
-    if unit.status != UnitStatus.AVAILABLE:
+    # A "Cancelled" unit's booking was cancelled, so it can be sold again —
+    # the old cancelled booking just stays on record.
+    if unit.status not in (UnitStatus.AVAILABLE, UnitStatus.CANCELLED):
         raise ValueError(f"Unit is not available (current status: {unit.status.value})")
+    _ensure_no_active_booking(db, unit)
 
     # Extra charges are posted separately below (each its own line + voucher)
     # and layered on top, so they don't factor into the installment-plan math.
@@ -429,6 +444,8 @@ def update_booking_status(
             unit.status = UnitStatus.SOLD
     elif db_booking.status == BookingStatus.CANCELLED and new_status != BookingStatus.CANCELLED:
         if unit:
+            # The unit may have been re-booked to someone else since.
+            _ensure_no_active_booking(db, unit)
             unit.status = UnitStatus.BOOKED
 
     db_booking.status = new_status
