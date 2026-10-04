@@ -4,6 +4,7 @@ import { Printer } from "lucide-react";
 import { portalApi } from "../../lib/portalApi";
 import { Button } from "../../components/ui/Button";
 import { AccountantSignature } from "../../components/print/SignatureBlock";
+import hamdanIcon from "../../assets/hamdan-icon-transparent.png";
 import type { CompanySettings, Receipt } from "../../types";
 
 const RECEIPT_TERMS = [
@@ -64,13 +65,14 @@ export default function CustomerReceiptPrintPage() {
 
       <div className="mx-auto w-full max-w-[210mm] bg-white p-10 shadow-sm print:shadow-none print:p-6">
         <div className="flex items-start justify-between border-b border-slate-200 pb-5">
-          <div>
+          <div className="flex items-center gap-3">
+            <img src={hamdanIcon} alt="Hamdan" className="h-14 w-auto shrink-0" />
             <p className="text-lg font-bold text-navy-950">
               {companySettings?.company_name ?? "Hamdan Builders and Developers"}
             </p>
           </div>
           <div className="text-right">
-            <p className="text-xl font-bold uppercase tracking-wide text-navy-950">Installment Slip</p>
+            <p className="text-xl font-bold uppercase tracking-wide text-navy-950">Booking Slip</p>
             <p className="mt-1 font-mono text-sm text-slate-500">{receipt.receipt_no}</p>
             <p className="text-xs text-slate-400">{receipt.receipt_date}</p>
           </div>

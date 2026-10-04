@@ -902,7 +902,7 @@ export default function ReceiptsPage() {
           {!editingReceiptId && (
             <p className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
               <ReceiptIcon className="h-3.5 w-3.5" />
-              The installment slip will open automatically after saving.
+              The booking slip will open automatically after saving.
             </p>
           )}
 
