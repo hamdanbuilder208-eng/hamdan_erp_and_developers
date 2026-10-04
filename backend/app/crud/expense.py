@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.payment_details import apply_payment_mode
 from app.core.sequences import next_sequence_number
 from app.models.account import Account
 from app.models.expense import Employee, OfficeExpense, OwnerPersonalExpense, WagePayment
@@ -70,6 +71,7 @@ def create_office_expense(db: Session, expense_in: OfficeExpenseCreate) -> Offic
         expense_no=_next_office_expense_no(db),
         **expense_in.model_dump(),
     )
+    apply_payment_mode(db_expense, expense_in)
     db.add(db_expense)
     db.flush()
 
@@ -196,6 +198,7 @@ def create_wage_payment(db: Session, payment_in: WagePaymentCreate) -> WagePayme
         net_paid=net_paid,
         **payment_in.model_dump(),
     )
+    apply_payment_mode(db_payment, payment_in)
     db.add(db_payment)
     db.flush()
 
@@ -271,6 +274,7 @@ def create_owner_expense(db: Session, expense_in: OwnerPersonalExpenseCreate) ->
         expense_no=_next_owner_expense_no(db),
         **expense_in.model_dump(),
     )
+    apply_payment_mode(db_expense, expense_in)
     db.add(db_expense)
     db.flush()
 

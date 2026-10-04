@@ -4,6 +4,7 @@ from sqlalchemy import Boolean, Date, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base, TimestampMixin
+from app.models.payment_details import PaymentModeMixin
 
 
 class PettyCashFloat(Base, TimestampMixin):
@@ -22,7 +23,7 @@ class PettyCashFloat(Base, TimestampMixin):
     account: Mapped["Account"] = relationship()
 
 
-class PettyCashTopup(Base, TimestampMixin):
+class PettyCashTopup(Base, PaymentModeMixin, TimestampMixin):
     """Owner (or accounts) handing more cash to a float."""
 
     __tablename__ = "petty_cash_topups"

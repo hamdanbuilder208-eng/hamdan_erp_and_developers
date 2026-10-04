@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { Printer } from "lucide-react";
+import { paymentModeLabel } from "../components/payments/PaymentDetailsFields";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
@@ -186,6 +187,7 @@ function GRNPrint({ id }: { id: string }) {
       <Row label="Vendor" value={data.vendor.name} />
       <Row label="Project" value={data.project?.project_name ?? "General (Company-wide)"} />
       <Row label="Paid From" value={data.payment_account.name} />
+      <Row label="Mode of Payment" value={paymentModeLabel(data) || "Cash"} />
       <Row label="Narration" value={data.narration || "—"} />
       <LinesTable lines={data.lines} showRate />
     </PrintShell>

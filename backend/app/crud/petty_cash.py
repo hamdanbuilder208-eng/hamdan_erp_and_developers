@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.payment_details import apply_payment_mode
 from app.core.sequences import next_sequence_number
 from app.crud.account import _next_account_code
 from app.crud.account import account_balance
@@ -192,6 +193,7 @@ def create_topup(db: Session, topup_in: PettyCashTopupCreate) -> PettyCashTopup:
         paid_from_id=topup_in.paid_from_id,
         narration=topup_in.narration,
     )
+    apply_payment_mode(db_topup, topup_in)
     db.add(db_topup)
     db.flush()
 

@@ -3,6 +3,7 @@ from datetime import date
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.payment_details import apply_payment_mode
 from app.core.sequences import next_persistent_sequence_number, next_sequence_number
 from app.models.account import Account, AccountNature
 from app.models.inventory import (
@@ -413,6 +414,7 @@ def create_grn(db: Session, grn_in: GRNCreate) -> GRN:
         total_amount=total_amount,
         narration=grn_in.narration,
     )
+    apply_payment_mode(db_grn, grn_in)
     db.add(db_grn)
     db.flush()
 

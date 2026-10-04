@@ -4,6 +4,7 @@ from sqlalchemy import Date, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base, TimestampMixin
+from app.models.payment_details import PaymentModeMixin
 
 
 class Partner(Base, TimestampMixin):
@@ -36,7 +37,7 @@ class ProjectPartnerShare(Base, TimestampMixin):
     partner: Mapped["Partner"] = relationship()
 
 
-class PartnerContribution(Base, TimestampMixin):
+class PartnerContribution(Base, PaymentModeMixin, TimestampMixin):
     """Money the partner actually pays into a project, logged against their
     pledged `ProjectPartnerShare.investment_amount` over time — the initial
     payment, a start-of-work installment, later top-ups when site recovery
@@ -89,7 +90,7 @@ class PartnerExpense(Base, TimestampMixin):
     expense_account: Mapped["Account"] = relationship()
 
 
-class PartnerDrawing(Base, TimestampMixin):
+class PartnerDrawing(Base, PaymentModeMixin, TimestampMixin):
     __tablename__ = "partner_drawings"
 
     id: Mapped[int] = mapped_column(primary_key=True)

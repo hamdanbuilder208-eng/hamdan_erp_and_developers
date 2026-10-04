@@ -6,6 +6,11 @@ import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import {
+  PaymentModeSection,
+  emptyPaymentMode,
+  paymentModePayload,
+} from "../components/payments/PaymentDetailsFields";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
 import type { Account, BookingAgent, BookingAgentSummary, CommissionPayout } from "../types";
@@ -21,6 +26,7 @@ const emptyPayoutForm = {
   amount: "",
   credit_account_id: "",
   narration: "",
+  ...emptyPaymentMode(),
 };
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -121,6 +127,7 @@ export default function BrokersPage() {
           credit_account_id: Number(payoutForm.credit_account_id),
           amount: Number(payoutForm.amount),
           narration: payoutForm.narration || null,
+          ...paymentModePayload(payoutForm),
         })
       ).data,
     onSuccess: () => {
@@ -496,6 +503,11 @@ export default function BrokersPage() {
               ))}
             </Select>
           </div>
+          <PaymentModeSection
+            idPrefix="p"
+            value={payoutForm}
+            onChange={(patch) => setPayoutForm({ ...payoutForm, ...patch })}
+          />
           <div>
             <Label htmlFor="p_narration">Narration</Label>
             <Input

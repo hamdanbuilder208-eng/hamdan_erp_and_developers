@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.account import AccountWithBalance
 from app.schemas.inventory import MaterialOut, WarehouseOut
+from app.schemas.payment_details import PaymentModeFields
 from app.schemas.project import ProjectOut
 
 
@@ -37,7 +38,7 @@ class PettyCashFloatOut(PettyCashFloatBase):
 # Top-up
 
 
-class PettyCashTopupBase(BaseModel):
+class PettyCashTopupBase(PaymentModeFields):
     topup_date: date
     float_id: int
     amount: float = Field(gt=0)

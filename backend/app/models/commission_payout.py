@@ -4,9 +4,10 @@ from sqlalchemy import Date, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base, TimestampMixin
+from app.models.payment_details import PaymentModeMixin
 
 
-class CommissionPayout(Base, TimestampMixin):
+class CommissionPayout(Base, PaymentModeMixin, TimestampMixin):
     __tablename__ = "commission_payouts"
 
     id: Mapped[int] = mapped_column(primary_key=True)

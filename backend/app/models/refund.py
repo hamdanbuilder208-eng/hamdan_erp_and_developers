@@ -5,6 +5,7 @@ from sqlalchemy import Date, Enum, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base, TimestampMixin
+from app.models.payment_details import PaymentModeMixin
 
 
 class RefundType(str, enum.Enum):
@@ -48,7 +49,7 @@ class Refund(Base, TimestampMixin):
     )
 
 
-class RefundPayment(Base, TimestampMixin):
+class RefundPayment(Base, PaymentModeMixin, TimestampMixin):
     """One installment actually paid out against a Refund — its own
     complete journal entry (account_id <-> cash_account_id), so each
     installment is independently traceable and reversible."""

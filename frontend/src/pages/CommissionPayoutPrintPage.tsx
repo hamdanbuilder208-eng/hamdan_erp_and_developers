@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { Printer } from "lucide-react";
+import { paymentModeLabel } from "../components/payments/PaymentDetailsFields";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
@@ -72,6 +73,7 @@ export default function CommissionPayoutPrintPage() {
           />
           <Row label="Allottee" value={data.booking.allottee.name} />
           <Row label="Paid From" value={data.credit_account.name} />
+          <Row label="Mode of Payment" value={paymentModeLabel(data) || "Cash"} />
           <Row label="Narration" value={data.narration || "—"} />
           <div className="mt-4 rounded-lg bg-brand-50 px-4 py-3 text-right">
             <span className="text-sm text-brand-700">Amount Paid: </span>

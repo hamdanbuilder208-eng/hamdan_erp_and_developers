@@ -5,6 +5,7 @@ from sqlalchemy import Date, Enum, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base, TimestampMixin
+from app.models.payment_details import PaymentModeMixin
 
 
 class Vendor(Base, TimestampMixin):
@@ -94,7 +95,7 @@ class PurchaseOrderLine(Base, TimestampMixin):
     material: Mapped["Material"] = relationship()
 
 
-class GRN(Base, TimestampMixin):
+class GRN(Base, PaymentModeMixin, TimestampMixin):
     __tablename__ = "grns"
 
     id: Mapped[int] = mapped_column(primary_key=True)

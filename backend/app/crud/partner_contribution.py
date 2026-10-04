@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.payment_details import apply_payment_mode
 from app.core.sequences import next_sequence_number
 from app.models.account import Account
 from app.models.partner import PartnerContribution
@@ -56,6 +57,7 @@ def create_contribution(
         purpose=contribution_in.purpose,
         narration=contribution_in.narration,
     )
+    apply_payment_mode(db_contribution, contribution_in)
     db.add(db_contribution)
     db.flush()
 

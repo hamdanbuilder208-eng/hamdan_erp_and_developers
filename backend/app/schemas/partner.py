@@ -3,6 +3,7 @@ from datetime import date
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.account import AccountOut
+from app.schemas.payment_details import PaymentModeFields
 
 
 class PartnerBase(BaseModel):
@@ -50,7 +51,7 @@ class ProjectPartnerShareOut(ProjectPartnerShareBase):
     partner: PartnerOut
 
 
-class PartnerContributionBase(BaseModel):
+class PartnerContributionBase(PaymentModeFields):
     contribution_date: date
     partner_id: int
     project_id: int
@@ -95,7 +96,7 @@ class PartnerExpenseOut(PartnerExpenseBase):
     expense_account: AccountOut
 
 
-class PartnerDrawingBase(BaseModel):
+class PartnerDrawingBase(PaymentModeFields):
     drawing_date: date
     partner_id: int
     project_id: int

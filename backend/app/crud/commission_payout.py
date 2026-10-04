@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.payment_details import apply_payment_mode
 from app.core.sequences import next_sequence_number
 from app.crud.booking_agent import _commission_row
 from app.models.account import Account, AccountNature
@@ -92,6 +93,7 @@ def create_payout(db: Session, payout_in: CommissionPayoutCreate) -> CommissionP
         amount=payout_in.amount,
         narration=payout_in.narration,
     )
+    apply_payment_mode(db_payout, payout_in)
     db.add(db_payout)
     db.flush()
 

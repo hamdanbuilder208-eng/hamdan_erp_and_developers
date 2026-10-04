@@ -7,7 +7,6 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.api import api_router
 from app.core.config import settings
-from app.core.petty_cash_guard import InsufficientPettyCash
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
@@ -33,10 +32,12 @@ app.add_middleware(
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 
-# A payment that would overdraw a petty cash float can come from any form —
-# surface it as a clear 400 even where the endpoint doesn't catch ValueError.
-@app.exception_handler(InsufficientPettyCash)
-def insufficient_petty_cash_handler(request: Request, exc: InsufficientPettyCash):
+# Business-rule errors (e.g. a payment that would overdraw a petty cash float,
+# or a cheque payment without its cheque number) are raised as ValueError from
+# the CRUD layer — surface them as a clear 400 even where the endpoint
+# doesn't catch ValueError itself.
+@app.exception_handler(ValueError)
+def value_error_handler(request: Request, exc: ValueError):
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 

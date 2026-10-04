@@ -13,3 +13,10 @@ class PaymentDetailsMixin:
     transfer_ref_no: Mapped[str | None] = mapped_column(String(80))
     transfer_to_account_title: Mapped[str | None] = mapped_column(String(150))
     transfer_to_account_no: Mapped[str | None] = mapped_column(String(50))
+
+
+class PaymentModeMixin(PaymentDetailsMixin):
+    """Mode of payment plus its cheque / transfer details, for payments made
+    from or into an account (expenses, wages, GRNs, refunds, top-ups, ...)."""
+
+    mode_of_payment: Mapped[str] = mapped_column(String(30), default="Cash", server_default="Cash")

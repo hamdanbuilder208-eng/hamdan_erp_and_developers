@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { Printer } from "lucide-react";
+import { paymentModeLabel } from "../components/payments/PaymentDetailsFields";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
@@ -93,6 +94,7 @@ function TopupPrint({ id }: { id: string }) {
     <PrintShell title="Petty Cash Top-up" refNo={data.topup_no} date={data.topup_date}>
       <Row label="Float / Holder" value={data.float.holder_name} />
       <Row label="Paid From" value={data.paid_from.name} />
+      <Row label="Mode of Payment" value={paymentModeLabel(data) || "Cash"} />
       <Row label="Narration" value={data.narration || "—"} />
       <div className="mt-4 rounded-lg bg-brand-50 px-4 py-3 text-right">
         <span className="text-sm text-brand-700">Amount: </span>

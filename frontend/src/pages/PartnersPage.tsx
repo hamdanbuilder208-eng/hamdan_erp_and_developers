@@ -6,6 +6,11 @@ import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import {
+  PaymentModeSection,
+  emptyPaymentMode,
+  paymentModePayload,
+} from "../components/payments/PaymentDetailsFields";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
 import type { Account, Partner, PartnerContribution, PartnerExpense, PartnerSummary } from "../types";
@@ -19,6 +24,7 @@ const emptyDrawingForm = {
   amount: "",
   credit_account_id: "",
   narration: "",
+  ...emptyPaymentMode(),
 };
 
 const CONTRIBUTION_PURPOSES = [
@@ -36,6 +42,7 @@ const emptyContributionForm = {
   purpose: CONTRIBUTION_PURPOSES[0],
   debit_account_id: "",
   narration: "",
+  ...emptyPaymentMode(),
 };
 
 const emptyExpenseForm = {
@@ -141,6 +148,7 @@ export default function PartnersPage() {
           credit_account_id: Number(drawingForm.credit_account_id),
           amount: Number(drawingForm.amount),
           narration: drawingForm.narration || null,
+          ...paymentModePayload(drawingForm),
         })
       ).data,
     onSuccess: () => {
@@ -167,6 +175,7 @@ export default function PartnersPage() {
           amount: Number(contributionForm.amount),
           purpose: contributionForm.purpose || null,
           narration: contributionForm.narration || null,
+          ...paymentModePayload(contributionForm),
         })
       ).data,
     onSuccess: () => {
@@ -795,6 +804,11 @@ export default function PartnersPage() {
               ))}
             </Select>
           </div>
+          <PaymentModeSection
+            idPrefix="d"
+            value={drawingForm}
+            onChange={(patch) => setDrawingForm({ ...drawingForm, ...patch })}
+          />
           <div>
             <Label htmlFor="d_narration">Narration</Label>
             <Input
@@ -1002,6 +1016,11 @@ export default function PartnersPage() {
               ))}
             </Select>
           </div>
+          <PaymentModeSection
+            idPrefix="c"
+            value={contributionForm}
+            onChange={(patch) => setContributionForm({ ...contributionForm, ...patch })}
+          />
           <div>
             <Label htmlFor="c_narration">Narration</Label>
             <Input

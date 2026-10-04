@@ -16,6 +16,11 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import {
+  PaymentModeSection,
+  emptyPaymentMode,
+  paymentModePayload,
+} from "../components/payments/PaymentDetailsFields";
 import { QrImage } from "../components/ui/QrImage";
 import { QrScannerModal } from "../components/ui/QrScannerModal";
 import { Badge, PurchaseOrderStatusBadge, MaterialIssueStatusBadge } from "../components/ui/Badge";
@@ -238,14 +243,16 @@ export default function MaterialInventoryPage() {
 
   // ---- GRN ----
   const [grnModalOpen, setGrnModalOpen] = React.useState(false);
-  const [grnForm, setGrnForm] = React.useState({
+  const emptyGrnForm = () => ({
     vendor_id: "",
     warehouse_id: "",
     project_id: "",
     payment_account_id: "",
     narration: "",
     po_id: "",
+    ...emptyPaymentMode(),
   });
+  const [grnForm, setGrnForm] = React.useState(emptyGrnForm);
   const [grnLines, setGrnLines] = React.useState<QtyRateLine[]>([emptyLine()]);
   const [grnError, setGrnError] = React.useState<string | null>(null);
 
@@ -257,14 +264,7 @@ export default function MaterialInventoryPage() {
   const grnTotal = grnLines.reduce((sum, l) => sum + (Number(l.quantity) || 0) * (Number(l.rate) || 0), 0);
 
   const resetGrnForm = () => {
-    setGrnForm({
-      vendor_id: "",
-      warehouse_id: "",
-      project_id: "",
-      payment_account_id: "",
-      narration: "",
-      po_id: "",
-    });
+    setGrnForm(emptyGrnForm());
     setGrnLines([emptyLine()]);
     setGrnError(null);
   };
@@ -308,6 +308,7 @@ export default function MaterialInventoryPage() {
           po_id: grnForm.po_id ? Number(grnForm.po_id) : null,
           payment_account_id: Number(grnForm.payment_account_id),
           narration: grnForm.narration || null,
+          ...paymentModePayload(grnForm),
           lines: grnLines
             .filter((l) => l.material_id)
             .map((l) => ({
@@ -1994,6 +1995,12 @@ export default function MaterialInventoryPage() {
               ))}
             </Select>
           </div>
+
+          <PaymentModeSection
+            idPrefix="grn"
+            value={grnForm}
+            onChange={(patch) => setGrnForm({ ...grnForm, ...patch })}
+          />
 
           <LineItemsEditor lines={grnLines} setLines={setGrnLines} materials={materials} showRate />
 

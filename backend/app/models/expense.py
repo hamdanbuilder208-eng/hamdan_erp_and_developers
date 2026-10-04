@@ -5,9 +5,10 @@ from sqlalchemy import Date, Enum, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base, TimestampMixin
+from app.models.payment_details import PaymentModeMixin
 
 
-class OfficeExpense(Base, TimestampMixin):
+class OfficeExpense(Base, PaymentModeMixin, TimestampMixin):
     __tablename__ = "office_expenses"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -52,7 +53,7 @@ class Employee(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(default=True)
 
 
-class WagePayment(Base, TimestampMixin):
+class WagePayment(Base, PaymentModeMixin, TimestampMixin):
     __tablename__ = "wage_payments"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -76,7 +77,7 @@ class WagePayment(Base, TimestampMixin):
     paid_from: Mapped["Account"] = relationship()
 
 
-class OwnerPersonalExpense(Base, TimestampMixin):
+class OwnerPersonalExpense(Base, PaymentModeMixin, TimestampMixin):
     __tablename__ = "owner_personal_expenses"
 
     id: Mapped[int] = mapped_column(primary_key=True)

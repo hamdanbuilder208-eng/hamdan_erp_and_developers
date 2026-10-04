@@ -4,13 +4,14 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.models.expense import WageType
 from app.schemas.account import AccountOut
+from app.schemas.payment_details import PaymentModeFields
 from app.schemas.project import ProjectOut
 
 
 # Office Expense
 
 
-class OfficeExpenseBase(BaseModel):
+class OfficeExpenseBase(PaymentModeFields):
     expense_date: date
     expense_head_id: int
     project_id: int | None = None
@@ -85,7 +86,7 @@ class EmployeeOut(EmployeeBase):
 # Wage Payment
 
 
-class WagePaymentBase(BaseModel):
+class WagePaymentBase(PaymentModeFields):
     payment_date: date
     employee_id: int
     period_from: date
@@ -114,7 +115,7 @@ class WagePaymentOut(WagePaymentBase):
 # Owner Personal Expense
 
 
-class OwnerPersonalExpenseBase(BaseModel):
+class OwnerPersonalExpenseBase(PaymentModeFields):
     expense_date: date
     category: str
     source_account_id: int

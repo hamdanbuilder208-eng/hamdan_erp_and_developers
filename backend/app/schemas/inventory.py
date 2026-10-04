@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.inventory import MaterialIssueReason, MaterialIssueStatus, PurchaseOrderStatus
 from app.schemas.account import AccountOut
+from app.schemas.payment_details import PaymentModeFields
 from app.schemas.project import ProjectOut
 
 
@@ -164,7 +165,7 @@ class GRNLineOut(GRNLineBase):
     material: MaterialOut
 
 
-class GRNBase(BaseModel):
+class GRNBase(PaymentModeFields):
     grn_date: date
     vendor_id: int
     # Received into a warehouse (goes into store stock) or, when the vendor

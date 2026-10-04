@@ -7,6 +7,11 @@ import { Card } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Badge } from "../components/ui/Badge";
+import {
+  PaymentModeSection,
+  emptyPaymentMode,
+  paymentModePayload,
+} from "../components/payments/PaymentDetailsFields";
 import { SendMessageModal } from "../components/communication/SendMessageModal";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
@@ -45,7 +50,14 @@ const emptyForm = {
 };
 
 const emptyDeductionForm = { deduction_percent: "" };
-const emptyPaymentForm = { payment_date: "", amount: "", account_id: "", cash_account_id: "", narration: "" };
+const emptyPaymentForm = {
+  payment_date: "",
+  amount: "",
+  account_id: "",
+  cash_account_id: "",
+  narration: "",
+  ...emptyPaymentMode(),
+};
 
 export default function RefundsPage() {
   const queryClient = useQueryClient();
@@ -184,6 +196,7 @@ export default function RefundsPage() {
           account_id: Number(paymentForm.account_id),
           cash_account_id: Number(paymentForm.cash_account_id),
           narration: paymentForm.narration || null,
+          ...paymentModePayload(paymentForm),
         })
       ).data,
     onSuccess: () => {
@@ -702,6 +715,11 @@ export default function RefundsPage() {
               </Select>
             </div>
           </div>
+          <PaymentModeSection
+            idPrefix="rp"
+            value={paymentForm}
+            onChange={(patch) => setPaymentForm({ ...paymentForm, ...patch })}
+          />
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setPaymentModalOpen(false)}>
               Cancel

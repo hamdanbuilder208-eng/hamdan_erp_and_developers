@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { Printer } from "lucide-react";
+import { paymentModeLabel } from "../components/payments/PaymentDetailsFields";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
@@ -106,7 +107,10 @@ export default function RefundPrintPage() {
             {refund.payments.map((p) => (
               <tr key={p.id} className="border-b border-slate-100">
                 <td className="px-3 py-2 text-navy-900">{p.payment_date}</td>
-                <td className="px-3 py-2 text-slate-500">{p.cash_account.name}</td>
+                <td className="px-3 py-2 text-slate-500">
+                  {p.cash_account.name}
+                  {paymentModeLabel(p) && <span className="block text-xs">{paymentModeLabel(p)}</span>}
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums text-navy-900">
                   {Number(p.amount).toLocaleString()}
                 </td>

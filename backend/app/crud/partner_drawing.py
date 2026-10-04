@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.payment_details import apply_payment_mode
 from app.core.sequences import next_sequence_number
 from app.crud.partner import get_partner_summary
 from app.models.account import Account
@@ -68,6 +69,7 @@ def create_drawing(db: Session, drawing_in: PartnerDrawingCreate) -> PartnerDraw
         amount=drawing_in.amount,
         narration=drawing_in.narration,
     )
+    apply_payment_mode(db_drawing, drawing_in)
     db.add(db_drawing)
     db.flush()
 

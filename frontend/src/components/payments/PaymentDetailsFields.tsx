@@ -1,4 +1,4 @@
-import { Input, Label } from "../ui/Input";
+import { Input, Label, Select } from "../ui/Input";
 
 /** Cheque / bank-transfer details, shared by every form that records a
  * payment mode (booking receipts, rent receipts, land/plot payments). The
@@ -135,4 +135,65 @@ export function PaymentDetailsFields({
   }
 
   return null;
+}
+
+export const PAYMENT_MODES = ["Cash", "Cheque", "Bank Transfer", "Online"];
+
+/** Mode of payment plus its cheque / transfer details, as kept in a form's state. */
+export type PaymentModeForm = PaymentDetails & { mode_of_payment: string };
+
+export const emptyPaymentMode = (): PaymentModeForm => ({ mode_of_payment: "Cash", ...emptyPaymentDetails() });
+
+/** The record fields every payment row now carries (expenses, wages, GRNs, refunds, ...). */
+export type PaymentModeRecord = { mode_of_payment: string } & { [K in keyof PaymentDetails]: string | null };
+
+/** Form values → API payload. */
+export const paymentModePayload = (f: PaymentModeForm) => ({
+  mode_of_payment: f.mode_of_payment,
+  ...paymentDetailsPayload(f.mode_of_payment, f),
+});
+
+/** "Cheque · Cheque #000123 · HBL" — for lists and prints. Empty for plain cash. */
+export function paymentModeLabel(r: Partial<PaymentModeRecord>): string {
+  const mode = r.mode_of_payment ?? "Cash";
+  const details = paymentDetailsSummary(mode, r);
+  return mode === "Cash" && !details ? "" : [mode, details].filter(Boolean).join(" · ");
+}
+
+/** Mode of Payment select + the cheque / bank-transfer fields it needs —
+ * the same section the Unit Booking receipt form uses, for every other form
+ * that pays from or into an account. */
+export function PaymentModeSection({
+  value,
+  onChange,
+  idPrefix = "pm",
+}: {
+  value: PaymentModeForm;
+  onChange: (patch: Partial<PaymentModeForm>) => void;
+  idPrefix?: string;
+}) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label htmlFor={`${idPrefix}_mode`}>Mode of Payment</Label>
+        <Select
+          id={`${idPrefix}_mode`}
+          value={value.mode_of_payment}
+          onChange={(e) => onChange({ mode_of_payment: e.target.value })}
+        >
+          {PAYMENT_MODES.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <PaymentDetailsFields
+        mode={value.mode_of_payment}
+        value={value}
+        onChange={onChange}
+        idPrefix={idPrefix}
+      />
+    </div>
+  );
 }

@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from app.models.refund import RefundStatus, RefundType
 from app.schemas.account import AccountOut
 from app.schemas.booking import BookingOut
+from app.schemas.payment_details import PaymentModeFields
 
 
 class RefundBase(BaseModel):
@@ -39,7 +40,7 @@ class RefundDeductionUpdate(BaseModel):
     deduction_amount: float = 0
 
 
-class RefundPaymentCreate(BaseModel):
+class RefundPaymentCreate(PaymentModeFields):
     payment_date: date
     amount: float
     account_id: int
@@ -53,7 +54,7 @@ class RefundPaymentCreate(BaseModel):
         return self
 
 
-class RefundPaymentOut(BaseModel):
+class RefundPaymentOut(PaymentModeFields):
     model_config = ConfigDict(from_attributes=True)
     id: int
     refund_id: int

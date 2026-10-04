@@ -6,6 +6,11 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import {
+  PaymentModeSection,
+  emptyPaymentMode,
+  paymentModePayload,
+} from "../components/payments/PaymentDetailsFields";
 import { confirm } from "../lib/confirm";
 import { toast, apiErrorMessage } from "../lib/toast";
 import type {
@@ -62,13 +67,15 @@ export default function ExpensesPage() {
 
   // ---- Office Expenses ----
   const [officeModalOpen, setOfficeModalOpen] = React.useState(false);
-  const [officeForm, setOfficeForm] = React.useState({
+  const emptyOfficeForm = () => ({
     expense_head_id: "",
     charge_to: "",
     paid_from_id: "",
     amount: "",
     narration: "",
+    ...emptyPaymentMode(),
   });
+  const [officeForm, setOfficeForm] = React.useState(emptyOfficeForm);
   const { data: landProperties } = useQuery({
     queryKey: ["land-properties", "", ""],
     queryFn: async () => (await api.get<LandProperty[]>("/land-properties/")).data,
@@ -94,13 +101,14 @@ export default function ExpensesPage() {
           paid_from_id: Number(officeForm.paid_from_id),
           amount: Number(officeForm.amount),
           narration: officeForm.narration || null,
+          ...paymentModePayload(officeForm),
         })
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["office-expenses"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       setOfficeModalOpen(false);
-      setOfficeForm({ expense_head_id: "", charge_to: "", paid_from_id: "", amount: "", narration: "" });
+      setOfficeForm(emptyOfficeForm());
       setOfficeError(null);
     },
     onError: (err: unknown) => setOfficeError(errorMessage(err, "Failed to save office expense")),
@@ -151,7 +159,7 @@ export default function ExpensesPage() {
   });
 
   const [wageModalOpen, setWageModalOpen] = React.useState(false);
-  const [wageForm, setWageForm] = React.useState({
+  const emptyWageForm = () => ({
     employee_id: "",
     period_from: "",
     period_to: "",
@@ -159,7 +167,9 @@ export default function ExpensesPage() {
     advances_deductions: "",
     paid_from_id: "",
     narration: "",
+    ...emptyPaymentMode(),
   });
+  const [wageForm, setWageForm] = React.useState(emptyWageForm);
   const [wageError, setWageError] = React.useState<string | null>(null);
 
   const { data: wagePayments, isLoading: wagesLoading } = useQuery({
@@ -191,21 +201,14 @@ export default function ExpensesPage() {
           advances_deductions: wageForm.advances_deductions ? Number(wageForm.advances_deductions) : 0,
           paid_from_id: Number(wageForm.paid_from_id),
           narration: wageForm.narration || null,
+          ...paymentModePayload(wageForm),
         })
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["wage-payments"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       setWageModalOpen(false);
-      setWageForm({
-        employee_id: "",
-        period_from: "",
-        period_to: "",
-        gross_amount: "",
-        advances_deductions: "",
-        paid_from_id: "",
-        narration: "",
-      });
+      setWageForm(emptyWageForm());
       setWageError(null);
     },
     onError: (err: unknown) => setWageError(errorMessage(err, "Failed to record wage payment")),
@@ -221,12 +224,14 @@ export default function ExpensesPage() {
 
   // ---- Owner Personal Expenses ----
   const [ownerModalOpen, setOwnerModalOpen] = React.useState(false);
-  const [ownerForm, setOwnerForm] = React.useState({
+  const emptyOwnerForm = () => ({
     category: "",
     source_account_id: "",
     amount: "",
     remarks: "",
+    ...emptyPaymentMode(),
   });
+  const [ownerForm, setOwnerForm] = React.useState(emptyOwnerForm);
 
   const { data: ownerExpenses, isLoading: ownerLoading } = useQuery({
     queryKey: ["owner-expenses"],
@@ -261,13 +266,14 @@ export default function ExpensesPage() {
           source_account_id: Number(ownerForm.source_account_id),
           amount: Number(ownerForm.amount),
           remarks: ownerForm.remarks || null,
+          ...paymentModePayload(ownerForm),
         })
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["owner-expenses"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       setOwnerModalOpen(false);
-      setOwnerForm({ category: "", source_account_id: "", amount: "", remarks: "" });
+      setOwnerForm(emptyOwnerForm());
       setOwnerError(null);
     },
     onError: (err: unknown) => setOwnerError(errorMessage(err, "Failed to save owner expense")),
@@ -535,6 +541,11 @@ export default function ExpensesPage() {
               onChange={(e) => setOfficeForm({ ...officeForm, amount: e.target.value })}
             />
           </div>
+          <PaymentModeSection
+            idPrefix="oe"
+            value={officeForm}
+            onChange={(patch) => setOfficeForm({ ...officeForm, ...patch })}
+          />
           <div>
             <Label htmlFor="oe_narration">Narration</Label>
             <Input
@@ -747,6 +758,11 @@ export default function ExpensesPage() {
               ))}
             </Select>
           </div>
+          <PaymentModeSection
+            idPrefix="wp"
+            value={wageForm}
+            onChange={(patch) => setWageForm({ ...wageForm, ...patch })}
+          />
           {netPreview > 0 && (
             <div className="rounded-lg bg-brand-50 px-4 py-2.5 text-sm text-brand-800">
               Net Paid: <span className="font-semibold">PKR {netPreview.toLocaleString()}</span>
@@ -838,6 +854,11 @@ export default function ExpensesPage() {
               />
             </div>
           </div>
+          <PaymentModeSection
+            idPrefix="ope"
+            value={ownerForm}
+            onChange={(patch) => setOwnerForm({ ...ownerForm, ...patch })}
+          />
           <div>
             <Label htmlFor="ope_remarks">Remarks</Label>
             <Input

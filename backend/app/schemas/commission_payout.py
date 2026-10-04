@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict
 from app.schemas.account import AccountOut
 from app.schemas.allottee import AllotteeOut
 from app.schemas.booking_agent import BookingAgentOut
+from app.schemas.payment_details import PaymentModeFields
 from app.schemas.project import ProjectOut
 from app.schemas.unit import UnitOut
 
@@ -17,7 +18,7 @@ class PayoutBookingOut(BaseModel):
     allottee: AllotteeOut
 
 
-class CommissionPayoutBase(BaseModel):
+class CommissionPayoutBase(PaymentModeFields):
     payout_date: date
     booking_id: int
     agent_id: int

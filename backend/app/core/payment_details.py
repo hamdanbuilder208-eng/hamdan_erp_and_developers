@@ -1,6 +1,8 @@
 """Instrument details for money received/paid by Cheque or Bank Transfer —
-shared by every form that records a payment mode (booking receipts, rent
-receipts, land/plot payments), so they all ask for and check the same things."""
+shared by every form that records a payment mode (booking/rent receipts,
+land/plot payments, expenses, wages, GRNs, refunds, petty cash top-ups,
+partner contributions/drawings, commission payouts), so they all ask for and
+check the same things."""
 
 CHEQUE_FIELDS = ("cheque_no", "cheque_bank_name")
 TRANSFER_FIELDS = (
@@ -41,6 +43,14 @@ def validate_payment_details(mode, details: dict) -> None:
         ]
         if missing:
             raise ValueError(f"For {mode} payments, enter the {', '.join(missing)}.")
+
+
+def apply_payment_mode(target, payment_in) -> None:
+    """Copies mode_of_payment (as plain text) and its validated details from a
+    PaymentModeFields schema onto a PaymentModeMixin row."""
+    mode = _mode_str(payment_in.mode_of_payment)
+    target.mode_of_payment = mode
+    apply_payment_details(target, mode, payment_in.model_dump())
 
 
 def apply_payment_details(target, mode, details: dict, validate: bool = True) -> None:

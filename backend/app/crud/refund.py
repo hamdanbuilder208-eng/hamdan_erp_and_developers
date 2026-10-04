@@ -3,6 +3,7 @@ from datetime import date
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.payment_details import apply_payment_mode
 from app.core.sequences import next_sequence_number
 from app.crud.booking import update_booking_status
 from app.models.booking import Booking, BookingStatus
@@ -176,6 +177,7 @@ def add_payment(db: Session, db_refund: Refund, payment_in: RefundPaymentCreate)
         cash_account_id=payment_in.cash_account_id,
         narration=payment_in.narration,
     )
+    apply_payment_mode(db_payment, payment_in)
     db.add(db_payment)
     db.flush()
 

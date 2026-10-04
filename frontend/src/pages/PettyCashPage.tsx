@@ -6,6 +6,11 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input, Label, Select } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
+import {
+  PaymentModeSection,
+  emptyPaymentMode,
+  paymentModePayload,
+} from "../components/payments/PaymentDetailsFields";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
 import type {
@@ -126,12 +131,14 @@ export default function PettyCashPage() {
 
   // ---- Top-up ----
   const [topupModalOpen, setTopupModalOpen] = React.useState(false);
-  const [topupForm, setTopupForm] = React.useState({
+  const emptyTopupForm = () => ({
     float_id: "",
     amount: "",
     paid_from_id: "",
     narration: "",
+    ...emptyPaymentMode(),
   });
+  const [topupForm, setTopupForm] = React.useState(emptyTopupForm);
   const [topupError, setTopupError] = React.useState<string | null>(null);
 
   const createTopup = useMutation({
@@ -143,12 +150,13 @@ export default function PettyCashPage() {
           amount: Number(topupForm.amount),
           paid_from_id: Number(topupForm.paid_from_id),
           narration: topupForm.narration || null,
+          ...paymentModePayload(topupForm),
         })
       ).data,
     onSuccess: () => {
       invalidateAll();
       setTopupModalOpen(false);
-      setTopupForm({ float_id: "", amount: "", paid_from_id: "", narration: "" });
+      setTopupForm(emptyTopupForm());
       setTopupError(null);
     },
     onError: (err: unknown) => setTopupError(apiErrorMessage(err, "Failed to record top-up")),
@@ -673,6 +681,11 @@ export default function PettyCashPage() {
               </Select>
             </div>
           </div>
+          <PaymentModeSection
+            idPrefix="topup"
+            value={topupForm}
+            onChange={(patch) => setTopupForm({ ...topupForm, ...patch })}
+          />
           <div>
             <Label htmlFor="topup_narration">Narration (optional)</Label>
             <Input

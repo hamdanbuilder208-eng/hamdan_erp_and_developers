@@ -1,3 +1,5 @@
+import type { PaymentModeRecord } from "../components/payments/PaymentDetailsFields";
+
 export interface Role {
   id: number;
   name: string;
@@ -148,7 +150,7 @@ export interface Voucher {
 export type RefundType = "Customer" | "Vendor" | "Employee";
 export type RefundStatus = "Pending" | "Partially Paid" | "Paid";
 
-export interface RefundPayment {
+export interface RefundPayment extends PaymentModeRecord {
   id: number;
   refund_id: number;
   payment_date: string;
@@ -176,7 +178,7 @@ export interface Refund {
   payments: RefundPayment[];
 }
 
-export interface OfficeExpense {
+export interface OfficeExpense extends PaymentModeRecord {
   id: number;
   expense_no: string;
   expense_date: string;
@@ -201,7 +203,7 @@ export interface PettyCashFloat {
   account: Account;
 }
 
-export interface PettyCashTopup {
+export interface PettyCashTopup extends PaymentModeRecord {
   id: number;
   topup_no: string;
   topup_date: string;
@@ -247,7 +249,7 @@ export interface Employee {
   is_active: boolean;
 }
 
-export interface WagePayment {
+export interface WagePayment extends PaymentModeRecord {
   id: number;
   payment_no: string;
   payment_date: string;
@@ -265,7 +267,7 @@ export interface WagePayment {
   paid_from: Account;
 }
 
-export interface OwnerPersonalExpense {
+export interface OwnerPersonalExpense extends PaymentModeRecord {
   id: number;
   expense_no: string;
   expense_date: string;
@@ -536,7 +538,7 @@ export interface PartnerSummary {
   total_current_account_balance: number;
 }
 
-export interface PartnerDrawing {
+export interface PartnerDrawing extends PaymentModeRecord {
   id: number;
   drawing_no: string;
   drawing_date: string;
@@ -550,7 +552,7 @@ export interface PartnerDrawing {
   credit_account: Account;
 }
 
-export interface PartnerContribution {
+export interface PartnerContribution extends PaymentModeRecord {
   id: number;
   contribution_no: string;
   contribution_date: string;
@@ -621,7 +623,7 @@ export interface PayoutBooking {
   allottee: Allottee;
 }
 
-export interface CommissionPayout {
+export interface CommissionPayout extends PaymentModeRecord {
   id: number;
   payout_no: string;
   payout_date: string;
@@ -936,7 +938,7 @@ export interface GRNLine {
   material: Material;
 }
 
-export interface GRN {
+export interface GRN extends PaymentModeRecord {
   id: number;
   grn_no: string;
   grn_date: string;
