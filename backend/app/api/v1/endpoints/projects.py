@@ -95,7 +95,10 @@ def create_floor(project_id: int, floor_in: ProjectFloorCreate, db: Session = De
     db_project = project_crud.get_project(db, project_id)
     if not db_project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return project_crud.create_floor(db, project_id, floor_in)
+    try:
+        return project_crud.create_floor(db, project_id, floor_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.delete("/floors/{floor_id}", status_code=status.HTTP_204_NO_CONTENT)

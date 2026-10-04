@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Enum, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Enum, ForeignKey, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base, TimestampMixin
@@ -31,6 +31,11 @@ class Project(Base, TimestampMixin):
     total_budget: Mapped[float | None] = mapped_column(Numeric(18, 2))
     commission_percent: Mapped[float | None] = mapped_column(Numeric(5, 2), default=0)
     total_floors: Mapped[int | None] = mapped_column(default=0)
+    # Which special levels this project has besides its numbered floors —
+    # only these are offered when adding a floor.
+    has_lower_ground: Mapped[bool] = mapped_column(default=False, server_default=text("0"))
+    has_ground: Mapped[bool] = mapped_column(default=True, server_default=text("1"))
+    has_mezzanine: Mapped[bool] = mapped_column(default=False, server_default=text("0"))
     status: Mapped[ProjectStatus] = mapped_column(
         Enum(ProjectStatus), default=ProjectStatus.ACTIVE
     )

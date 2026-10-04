@@ -9,6 +9,7 @@ function floorSortKey(f: ProjectFloor): number {
   const s = f.floor_no.toLowerCase();
   if (s.includes("lower ground")) return -1;
   if (s.includes("ground")) return 0;
+  if (s.includes("mezzanine")) return 0.5;
   const match = s.match(/\d+/);
   return match ? parseInt(match[0], 10) : -2;
 }

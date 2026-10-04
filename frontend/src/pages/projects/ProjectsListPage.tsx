@@ -12,6 +12,18 @@ import { TableRowsSkeleton } from "../../components/ui/Skeleton";
 import { toast, apiErrorMessage } from "../../lib/toast";
 import { confirm } from "../../lib/confirm";
 import type { Project, ProjectGroup } from "../../types";
+import { SpecialLevelsPicker } from "../../components/projects/SpecialLevelsPicker";
+
+const emptyProjectForm = {
+  project_name: "",
+  address: "",
+  total_budget: "",
+  total_floors: "",
+  project_group_id: "",
+  has_lower_ground: false,
+  has_ground: true,
+  has_mezzanine: false,
+};
 
 export default function ProjectsListPage() {
   const navigate = useNavigate();
@@ -28,13 +40,7 @@ export default function ProjectsListPage() {
     queryFn: async () => (await api.get<ProjectGroup[]>("/projects/groups")).data,
   });
 
-  const [form, setForm] = React.useState({
-    project_name: "",
-    address: "",
-    total_budget: "",
-    total_floors: "",
-    project_group_id: "",
-  });
+  const [form, setForm] = React.useState(emptyProjectForm);
   const [newGroupName, setNewGroupName] = React.useState("");
 
   const createGroup = useMutation({
@@ -74,19 +80,16 @@ export default function ProjectsListPage() {
           address: form.address || null,
           total_budget: form.total_budget ? Number(form.total_budget) : null,
           total_floors: form.total_floors ? Number(form.total_floors) : 0,
+          has_lower_ground: form.has_lower_ground,
+          has_ground: form.has_ground,
+          has_mezzanine: form.has_mezzanine,
           project_group_id: form.project_group_id ? Number(form.project_group_id) : null,
         })
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       setModalOpen(false);
-      setForm({
-        project_name: "",
-        address: "",
-        total_budget: "",
-        total_floors: "",
-        project_group_id: "",
-      });
+      setForm(emptyProjectForm);
     },
     onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to create project.")),
   });
@@ -216,9 +219,14 @@ export default function ProjectsListPage() {
               placeholder="e.g. 5"
             />
             <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-              Used to limit the floor numbers you can add for this project.
+              Numbered floors (1st, 2nd, ...) — used to limit the floors you can add for this project.
             </p>
           </div>
+
+          <SpecialLevelsPicker
+            value={form}
+            onChange={(levels) => setForm({ ...form, ...levels })}
+          />
 
           <div>
             <Label htmlFor="project_group_id">Project Group</Label>

@@ -83,11 +83,31 @@ def update_project(db: Session, db_project: Project, project_in: ProjectUpdate) 
                 f"This project already has {floor_count} floor(s) added — total floors can't be less than that. "
                 "Remove floors first (Units > Floors)."
             )
+    for field, floor_no in _SPECIAL_LEVELS.items():
+        if changes.get(field) is False:
+            in_use = (
+                db.query(ProjectFloor)
+                .filter(ProjectFloor.project_id == db_project.id, ProjectFloor.floor_no == floor_no)
+                .first()
+            )
+            if in_use:
+                raise ValueError(
+                    f"This project already has a {floor_no} floor added — remove it first "
+                    "(Units > Floors / Blocks)."
+                )
     for field, value in changes.items():
         setattr(db_project, field, value)
     db.commit()
     db.refresh(db_project)
     return db_project
+
+
+# Project flag -> the floor_no that level is saved under.
+_SPECIAL_LEVELS = {
+    "has_lower_ground": "Lower Ground",
+    "has_ground": "Ground",
+    "has_mezzanine": "Mezzanine",
+}
 
 
 def delete_project(db: Session, db_project: Project) -> None:
@@ -127,6 +147,12 @@ def get_floor(db: Session, floor_id: int) -> ProjectFloor | None:
 
 
 def create_floor(db: Session, project_id: int, floor_in: ProjectFloorCreate) -> ProjectFloor:
+    project = get_project(db, project_id)
+    for field, floor_no in _SPECIAL_LEVELS.items():
+        if floor_in.floor_no == floor_no and project and not getattr(project, field):
+            raise ValueError(
+                f"This project has no {floor_no} — turn it on from Projects > Edit Project first."
+            )
     db_floor = ProjectFloor(project_id=project_id, **floor_in.model_dump())
     db.add(db_floor)
     db.commit()

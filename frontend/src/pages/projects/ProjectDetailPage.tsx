@@ -21,6 +21,7 @@ import type {
 } from "../../types";
 import { confirm } from "../../lib/confirm";
 import { useAuthStore } from "../../store/authStore";
+import { SpecialLevelsPicker } from "../../components/projects/SpecialLevelsPicker";
 
 type Tab = "overview" | "partners" | "payment-plan";
 
@@ -200,6 +201,9 @@ export default function ProjectDetailPage() {
     address: "",
     total_budget: "",
     total_floors: "",
+    has_lower_ground: false,
+    has_ground: true,
+    has_mezzanine: false,
     project_group_id: "",
     status: "Active" as ProjectDetail["status"],
   });
@@ -210,6 +214,9 @@ export default function ProjectDetailPage() {
       address: project.address ?? "",
       total_budget: project.total_budget ? String(project.total_budget) : "",
       total_floors: project.total_floors ? String(project.total_floors) : "",
+      has_lower_ground: project.has_lower_ground,
+      has_ground: project.has_ground,
+      has_mezzanine: project.has_mezzanine,
       project_group_id: project.project_group_id ? String(project.project_group_id) : "",
       status: project.status,
     });
@@ -223,6 +230,9 @@ export default function ProjectDetailPage() {
           address: editForm.address || null,
           total_budget: editForm.total_budget ? Number(editForm.total_budget) : null,
           total_floors: editForm.total_floors ? Number(editForm.total_floors) : 0,
+          has_lower_ground: editForm.has_lower_ground,
+          has_ground: editForm.has_ground,
+          has_mezzanine: editForm.has_mezzanine,
           project_group_id: editForm.project_group_id ? Number(editForm.project_group_id) : null,
           status: editForm.status,
         })
@@ -731,6 +741,10 @@ export default function ProjectDetailPage() {
               )}
             </div>
           </div>
+          <SpecialLevelsPicker
+            value={editForm}
+            onChange={(levels) => setEditForm({ ...editForm, ...levels })}
+          />
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="edit_group">Project Group</Label>

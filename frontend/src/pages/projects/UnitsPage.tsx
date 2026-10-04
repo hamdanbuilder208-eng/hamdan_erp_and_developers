@@ -19,6 +19,7 @@ type UnitView = "grid" | "table";
 function floorNumberLabel(floorNo: string): string | null {
   const lower = floorNo.toLowerCase();
   if (lower.includes("lower ground")) return "LG";
+  if (lower.includes("mezzanine")) return "M";
   if (lower.includes("ground")) return "0";
   const match = lower.match(/\d+/);
   return match ? match[0] : null;
@@ -93,6 +94,12 @@ export default function UnitsPage() {
   // Total floors comes from the project itself (set at creation, changed only
   // by an admin via Project > Edit Project) — it caps the floor numbers below.
   const totalFloors = project?.total_floors ?? 0;
+  // Only the levels this project was set up with (Edit Project), in building order.
+  const specialLevels = [
+    { value: "Lower Ground", label: "Lower Ground Floor", on: project?.has_lower_ground },
+    { value: "Ground", label: "Ground Floor", on: project?.has_ground },
+    { value: "Mezzanine", label: "Mezzanine", on: project?.has_mezzanine },
+  ].filter((l) => l.on);
 
   // Floor form
   const [floorForm, setFloorForm] = React.useState({ block: "", floor_no: "", no_of_units: "" });
@@ -601,7 +608,11 @@ export default function UnitsPage() {
           <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-navy-800/60">
             {totalFloors ? (
               <span className="text-slate-600 dark:text-slate-300">
-                This project has <strong>{totalFloors}</strong> floor(s), plus Ground / Lower Ground.
+                This project has <strong>{totalFloors}</strong> floor(s)
+                {specialLevels.length > 0 ? `, plus ${specialLevels.map((l) => l.label).join(" / ")}` : ""}.
+                <span className="block text-xs text-slate-400 dark:text-slate-500">
+                  Lower Ground / Ground / Mezzanine are chosen in Projects &gt; Edit Project.
+                </span>
               </span>
             ) : (
               <span className="text-danger-600">
@@ -632,12 +643,11 @@ export default function UnitsPage() {
               <option value="">
                 {totalFloors ? "Select floor" : "Total floors not set"}
               </option>
-              <option value="Lower Ground" disabled={takenFloorNos.has("Lower Ground")}>
-                Lower Ground Floor{takenFloorNos.has("Lower Ground") ? " (already added)" : ""}
-              </option>
-              <option value="Ground" disabled={takenFloorNos.has("Ground")}>
-                Ground Floor{takenFloorNos.has("Ground") ? " (already added)" : ""}
-              </option>
+              {specialLevels.map((l) => (
+                <option key={l.value} value={l.value} disabled={takenFloorNos.has(l.value)}>
+                  {l.label}{takenFloorNos.has(l.value) ? " (already added)" : ""}
+                </option>
+              ))}
               {Array.from({ length: totalFloors }, (_, i) => i + 1)
                 .map((n) => ordinalFloorLabel(n))
                 .map((label) => (

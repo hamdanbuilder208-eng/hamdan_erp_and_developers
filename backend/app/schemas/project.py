@@ -39,6 +39,9 @@ class ProjectBase(BaseModel):
     total_budget: float | None = None
     commission_percent: float | None = Field(default=0, ge=0, le=100)
     total_floors: int | None = 0
+    has_lower_ground: bool = False
+    has_ground: bool = True
+    has_mezzanine: bool = False
     status: ProjectStatus = ProjectStatus.ACTIVE
     project_group_id: int | None = None
 
@@ -53,6 +56,9 @@ class ProjectUpdate(BaseModel):
     total_budget: float | None = None
     commission_percent: float | None = Field(default=None, ge=0, le=100)
     total_floors: int | None = None
+    has_lower_ground: bool | None = None
+    has_ground: bool | None = None
+    has_mezzanine: bool | None = None
     status: ProjectStatus | None = None
     project_group_id: int | None = None
 

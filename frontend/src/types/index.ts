@@ -36,6 +36,9 @@ export interface Project {
   total_budget: number | null;
   commission_percent: number | null;
   total_floors: number | null;
+  has_lower_ground: boolean;
+  has_ground: boolean;
+  has_mezzanine: boolean;
   status: ProjectStatus;
   project_group_id: number | null;
   project_group: ProjectGroup | null;
