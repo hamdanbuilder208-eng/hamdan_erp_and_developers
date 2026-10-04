@@ -28,6 +28,7 @@ import ReportPrintPage from "./pages/ReportPrintPage";
 import GeneralLedgerPrintPage from "./pages/GeneralLedgerPrintPage";
 import RefundsPage from "./pages/RefundsPage";
 import RefundPrintPage from "./pages/RefundPrintPage";
+import AllotteePrintPage from "./pages/AllotteePrintPage";
 import ExpensesPage from "./pages/ExpensesPage";
 import ExpensePrintPage from "./pages/ExpensePrintPage";
 import MaterialInventoryPage from "./pages/MaterialInventoryPage";
@@ -257,6 +258,7 @@ export default function App() {
             <Route path="/reports/print/general-ledger/:accountId" element={<GeneralLedgerPrintPage />} />
             <Route path="/reports/print/:type" element={<ReportPrintPage />} />
             <Route path="/refunds/:id/print" element={<RefundPrintPage />} />
+            <Route path="/allottees/:id/print" element={<AllotteePrintPage />} />
             <Route path="/expenses/:type/:id/print" element={<ExpensePrintPage />} />
             <Route path="/petty-cash/:type/:id/print" element={<PettyCashPrintPage />} />
             <Route path="/inventory/:type/:id/print" element={<InventoryPrintPage />} />

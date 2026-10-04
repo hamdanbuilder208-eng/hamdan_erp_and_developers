@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, KeyRound, Loader2, Phone, Plus, Search, Trash2, UserRound } from "lucide-react";
+import { Camera, KeyRound, Loader2, Pencil, Phone, Plus, Printer, Search, Trash2, UserRound } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -120,33 +120,74 @@ export default function CustomersPage() {
       (await api.get<Allottee[]>("/allottees/", { params: { search: search || undefined } })).data,
   });
 
-  const createAllottee = useMutation({
+  // null = creating a new allottee; otherwise the one being viewed/edited.
+  const [editingId, setEditingId] = React.useState<number | null>(null);
+
+  const openCreate = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setModalOpen(true);
+  };
+  const openEdit = (a: Allottee) => {
+    setEditingId(a.id);
+    setForm({
+      name: a.name,
+      father_name: a.father_name ?? "",
+      current_address: a.current_address ?? "",
+      cnic_address: a.cnic_address ?? "",
+      mobile: a.mobile ?? "",
+      tel_res: a.tel_res ?? "",
+      office_phone: a.office_phone ?? "",
+      cnic: a.cnic ?? "",
+      email: a.email ?? "",
+      referred_by: a.referred_by ?? "",
+      picture_url: a.picture_url,
+      nominee_name: a.nominee_name ?? "",
+      nominee_relation: a.nominee_relation ?? "",
+      nominee_cnic: a.nominee_cnic ?? "",
+      nominee_current_address: a.nominee_current_address ?? "",
+      nominee_cnic_address: a.nominee_cnic_address ?? "",
+      nominee_picture_url: a.nominee_picture_url,
+    });
+    setModalOpen(true);
+  };
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditingId(null);
+    setForm(emptyForm);
+  };
+
+  const saveAllottee = useMutation({
     mutationFn: async () =>
       (
-        await api.post<Allottee>("/allottees/", {
-          name: form.name,
-          father_name: form.father_name || null,
-          current_address: form.current_address || null,
-          cnic_address: form.cnic_address || null,
-          mobile: form.mobile || null,
-          tel_res: form.tel_res || null,
-          office_phone: form.office_phone || null,
-          cnic: form.cnic || null,
-          email: form.email || null,
-          referred_by: form.referred_by || null,
-          picture_url: form.picture_url || null,
-          nominee_name: form.nominee_name || null,
-          nominee_relation: form.nominee_relation || null,
-          nominee_cnic: form.nominee_cnic || null,
-          nominee_current_address: form.nominee_current_address || null,
-          nominee_cnic_address: form.nominee_cnic_address || null,
-          nominee_picture_url: form.nominee_picture_url || null,
+        await api.request<Allottee>({
+          method: editingId ? "put" : "post",
+          url: editingId ? `/allottees/${editingId}` : "/allottees/",
+          data: {
+            name: form.name,
+            father_name: form.father_name || null,
+            current_address: form.current_address || null,
+            cnic_address: form.cnic_address || null,
+            mobile: form.mobile || null,
+            tel_res: form.tel_res || null,
+            office_phone: form.office_phone || null,
+            cnic: form.cnic || null,
+            email: form.email || null,
+            referred_by: form.referred_by || null,
+            picture_url: form.picture_url || null,
+            nominee_name: form.nominee_name || null,
+            nominee_relation: form.nominee_relation || null,
+            nominee_cnic: form.nominee_cnic || null,
+            nominee_current_address: form.nominee_current_address || null,
+            nominee_cnic_address: form.nominee_cnic_address || null,
+            nominee_picture_url: form.nominee_picture_url || null,
+          },
         })
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["allottees"] });
-      setModalOpen(false);
-      setForm(emptyForm);
+      toast.success(editingId ? "Allottee updated." : "Allottee saved.");
+      closeModal();
     },
     onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to save allottee.")),
   });
@@ -167,7 +208,7 @@ export default function CustomersPage() {
       toast.error("Allottee and nominee cannot have the same CNIC.");
       return;
     }
-    createAllottee.mutate();
+    saveAllottee.mutate();
   };
 
   const deleteAllottee = useMutation({
@@ -187,7 +228,7 @@ export default function CustomersPage() {
             Buyer and nominee records, linked to bookings across projects.
           </p>
         </div>
-        <Button onClick={() => setModalOpen(true)}>
+        <Button onClick={openCreate}>
           <Plus className="h-4 w-4" />
           New Allottee
         </Button>
@@ -258,6 +299,20 @@ export default function CustomersPage() {
                 <td className="px-5 py-3 text-right">
                   <div className="flex items-center justify-end gap-1">
                     <button
+                      onClick={() => openEdit(a)}
+                      title="View / edit details"
+                      className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => window.open(`/allottees/${a.id}/print`, "_blank")}
+                      title="Print allottee form"
+                      className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                    </button>
+                    <button
                       onClick={() => setPortalShareAllottee(a)}
                       title="Share customer portal access"
                       className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
@@ -286,9 +341,13 @@ export default function CustomersPage() {
 
       <Modal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title="New Allottee"
-        description="Register a customer / allottee and their nominee."
+        onClose={closeModal}
+        title={editingId ? `Edit Allottee — ${form.name}` : "New Allottee"}
+        description={
+          editingId
+            ? "View or update this customer / allottee and their nominee."
+            : "Register a customer / allottee and their nominee."
+        }
       >
         <form
           onSubmit={(e) => {
@@ -471,11 +530,22 @@ export default function CustomersPage() {
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
+            {editingId && (
+              <Button
+                type="button"
+                variant="secondary"
+                className="mr-auto"
+                onClick={() => window.open(`/allottees/${editingId}/print`, "_blank")}
+              >
+                <Printer className="h-4 w-4" />
+                Print
+              </Button>
+            )}
+            <Button type="button" variant="secondary" onClick={closeModal}>
               Cancel
             </Button>
-            <Button type="submit" disabled={createAllottee.isPending}>
-              Save Allottee
+            <Button type="submit" disabled={saveAllottee.isPending}>
+              {editingId ? "Save Changes" : "Save Allottee"}
             </Button>
           </div>
         </form>
