@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     bookings,
     commission_payouts,
     communications,
+    contractors,
     expenses,
     inventory,
     land_properties,
@@ -154,6 +155,12 @@ api_router.include_router(
     prefix="/inventory",
     tags=["Material & Inventory"],
     dependencies=[Depends(require_module_access("inventory"))],
+)
+api_router.include_router(
+    contractors.router,
+    prefix="/contractors",
+    tags=["Contractors"],
+    dependencies=[Depends(require_module_access("contractors"))],
 )
 api_router.include_router(
     petty_cash.router,

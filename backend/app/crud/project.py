@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.sequences import next_sequence_number
 from app.models.booking import Booking
+from app.models.contractor import ContractAgreement, ContractorPayment
 from app.models.expense import OfficeExpense
 from app.models.inventory import GRN
 from app.models.petty_cash import PettyCashExpense
@@ -33,8 +34,8 @@ def list_projects(db: Session, skip: int = 0, limit: int = 100) -> list[Project]
 
 def project_total_spent(db: Session, project_id: int) -> float:
     """Everything actually spent against this project's construction budget —
-    material bought (GRN), office expenses, and petty cash expenses tagged to
-    it. Wages aren't included: WagePayment has no project link yet."""
+    material bought (GRN), office expenses, petty cash expenses and contractor
+    payments tagged to it. Wages aren't included: WagePayment has no project link yet."""
     grn_total = (
         db.query(func.coalesce(func.sum(GRN.total_amount), 0))
         .filter(GRN.project_id == project_id)
@@ -50,7 +51,13 @@ def project_total_spent(db: Session, project_id: int) -> float:
         .filter(PettyCashExpense.project_id == project_id)
         .scalar()
     )
-    return float(grn_total) + float(office_total) + float(petty_cash_total)
+    contractor_total = (
+        db.query(func.coalesce(func.sum(ContractorPayment.amount), 0))
+        .join(ContractAgreement, ContractorPayment.agreement_id == ContractAgreement.id)
+        .filter(ContractAgreement.project_id == project_id)
+        .scalar()
+    )
+    return float(grn_total) + float(office_total) + float(petty_cash_total) + float(contractor_total)
 
 
 def get_project(db: Session, project_id: int) -> Project | None:

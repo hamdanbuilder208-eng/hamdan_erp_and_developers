@@ -1125,3 +1125,107 @@ export interface Unit {
   picture_url: string | null;
   unit_category: UnitCategory | null;
 }
+
+// Contractors
+
+export type ContractBasis = "Lump Sum" | "Per Sq. Ft." | "Per Sq. Yd." | "Per Floor" | "Item Rate / BOQ";
+export type ContractStatus = "Active" | "Completed" | "Cancelled";
+export type ContractorPaymentPurpose = "Advance" | "Bill Payment" | "Retention Release";
+
+export interface Contractor {
+  id: number;
+  contractor_code: string;
+  name: string;
+  cnic: string;
+  ntn: string | null;
+  trade: string;
+  phone: string | null;
+  bank_name: string | null;
+  account_iban: string | null;
+  is_active: boolean;
+}
+
+export interface ContractorSummary extends Contractor {
+  agreement_count: number;
+  total_contract: number;
+  total_billed: number;
+  total_paid: number;
+  total_due: number;
+  total_retention_held: number;
+}
+
+export interface ContractAgreement {
+  id: number;
+  agreement_no: string;
+  agreement_date: string;
+  project_id: number;
+  project_name: string;
+  contractor_id: number;
+  contractor: Contractor;
+  scope_title: string;
+  work_type: string;
+  floors_scope: string | null;
+  basis: ContractBasis;
+  quantity: number | null;
+  rate: number | null;
+  contract_amount: number;
+  retention_percent: number;
+  wht_percent: number;
+  start_date: string | null;
+  end_date: string | null;
+  status: ContractStatus;
+  remarks: string | null;
+  billed_gross: number;
+  retention_total: number;
+  retention_released: number;
+  retention_held: number;
+  wht_total: number;
+  paid_total: number;
+  advance_paid: number;
+  due_now: number;
+  remaining_work: number;
+}
+
+export interface ContractorBill {
+  id: number;
+  bill_no: string;
+  agreement_id: number;
+  bill_date: string;
+  description: string | null;
+  work_quantity: number | null;
+  gross_amount: number;
+  retention_amount: number;
+  wht_amount: number;
+  net_amount: number;
+}
+
+export interface ContractorPayment extends PaymentModeRecord {
+  id: number;
+  payment_no: string;
+  agreement_id: number;
+  payment_date: string;
+  purpose: ContractorPaymentPurpose;
+  amount: number;
+  credit_account_id: number;
+  voucher_id: number | null;
+  narration: string | null;
+  credit_account: Account;
+}
+
+export interface ContractAgreementDetail extends ContractAgreement {
+  bills: ContractorBill[];
+  payments: ContractorPayment[];
+}
+
+export interface ContractorPaymentDetail extends ContractorPayment {
+  agreement: {
+    id: number;
+    agreement_no: string;
+    scope_title: string;
+    work_type: string;
+    floors_scope: string | null;
+    project_id: number;
+    project_name: string;
+    contractor: Contractor;
+  };
+}

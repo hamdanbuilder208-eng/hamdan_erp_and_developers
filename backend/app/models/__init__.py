@@ -21,6 +21,7 @@ from app.models.booking import (
 from app.models.receipt import Receipt, ReceiptAllocation
 from app.models.booking_agent import BookingAgent
 from app.models.commission_payout import CommissionPayout
+from app.models.contractor import ContractAgreement, Contractor, ContractorBill, ContractorPayment
 from app.models.partner import Partner, ProjectPartnerShare, PartnerDrawing
 from app.models.refund import Refund, RefundPayment
 from app.models.expense import OfficeExpense, Employee, WagePayment, OwnerPersonalExpense
@@ -71,6 +72,10 @@ __all__ = [
     "ReceiptAllocation",
     "BookingAgent",
     "CommissionPayout",
+    "Contractor",
+    "ContractAgreement",
+    "ContractorBill",
+    "ContractorPayment",
     "Partner",
     "ProjectPartnerShare",
     "PartnerDrawing",

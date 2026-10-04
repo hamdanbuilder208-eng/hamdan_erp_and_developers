@@ -21,6 +21,8 @@ import ReceiptsPage from "./pages/ReceiptsPage";
 import ReceiptPrintPage from "./pages/ReceiptPrintPage";
 import InvoicePrintPage from "./pages/InvoicePrintPage";
 import BrokersPage from "./pages/BrokersPage";
+import ContractorsPage from "./pages/ContractorsPage";
+import ContractorPaymentPrintPage from "./pages/ContractorPaymentPrintPage";
 import PartnersPage from "./pages/PartnersPage";
 import PartnerStatementPrintPage from "./pages/PartnerStatementPrintPage";
 import ReportsPage from "./pages/ReportsPage";
@@ -179,6 +181,14 @@ export default function App() {
                 }
               />
               <Route
+                path="/contractors"
+                element={
+                  <ModuleGate module="contractors">
+                    <ContractorsPage />
+                  </ModuleGate>
+                }
+              />
+              <Route
                 path="/brokers"
                 element={
                   <ModuleGate module="booking_agents">
@@ -265,6 +275,7 @@ export default function App() {
             <Route path="/warehouses/:id/dispatch" element={<WarehouseDispatchPage />} />
             <Route path="/projects/:id/deliveries" element={<ProjectDeliveriesPage />} />
             <Route path="/commission-payouts/:id/print" element={<CommissionPayoutPrintPage />} />
+            <Route path="/contractors/payments/:id/print" element={<ContractorPaymentPrintPage />} />
             <Route path="/partners/:id/statement/print" element={<PartnerStatementPrintPage />} />
             <Route path="/projects/:id/units/print" element={<UnitsPrintPage />} />
           </Route>
