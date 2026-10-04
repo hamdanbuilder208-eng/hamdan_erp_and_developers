@@ -149,25 +149,57 @@ def delete_floor(db: Session, db_floor: ProjectFloor) -> None:
 # Payment Template
 
 
-def get_payment_template(db: Session, project_id: int) -> ProjectPaymentTemplate | None:
+def list_payment_templates(db: Session, project_id: int) -> list[ProjectPaymentTemplate]:
     return (
         db.query(ProjectPaymentTemplate)
         .filter(ProjectPaymentTemplate.project_id == project_id)
-        .first()
+        .order_by(ProjectPaymentTemplate.unit_category_id.is_not(None), ProjectPaymentTemplate.id)
+        .all()
     )
 
 
+def get_payment_template(
+    db: Session, project_id: int, unit_category_id: int | None = None, fallback: bool = False
+) -> ProjectPaymentTemplate | None:
+    """The plan for one unit category (None = the project's default plan).
+    With fallback, a category without its own plan gets the default one."""
+    query = db.query(ProjectPaymentTemplate).filter(ProjectPaymentTemplate.project_id == project_id)
+    template = query.filter(
+        ProjectPaymentTemplate.unit_category_id.is_(None)
+        if unit_category_id is None
+        else ProjectPaymentTemplate.unit_category_id == unit_category_id
+    ).first()
+    if template is None and fallback and unit_category_id is not None:
+        template = query.filter(ProjectPaymentTemplate.unit_category_id.is_(None)).first()
+    return template
+
+
+def delete_payment_template(db: Session, template: ProjectPaymentTemplate) -> None:
+    db.query(ProjectPaymentTemplateLine).filter(
+        ProjectPaymentTemplateLine.template_id == template.id
+    ).delete()
+    db.delete(template)
+    db.commit()
+
+
 def upsert_payment_template(
-    db: Session, project_id: int, template_in: PaymentTemplateUpsert
+    db: Session,
+    project_id: int,
+    template_in: PaymentTemplateUpsert,
+    unit_category_id: int | None = None,
 ) -> ProjectPaymentTemplate:
-    template = get_payment_template(db, project_id)
+    template = get_payment_template(db, project_id, unit_category_id)
     if template:
         db.query(ProjectPaymentTemplateLine).filter(
             ProjectPaymentTemplateLine.template_id == template.id
         ).delete()
         template.booking_percent = template_in.booking_percent
     else:
-        template = ProjectPaymentTemplate(project_id=project_id, booking_percent=template_in.booking_percent)
+        template = ProjectPaymentTemplate(
+            project_id=project_id,
+            unit_category_id=unit_category_id,
+            booking_percent=template_in.booking_percent,
+        )
         db.add(template)
     db.flush()
 

@@ -123,10 +123,19 @@ export default function BookingsPage() {
   });
   const availableUnitCount = units?.filter((u) => u.status === "Available").length ?? 0;
 
+  // The selected unit's category plan, falling back to the project's default.
+  const templateCategoryId = units?.find((u) => u.id === Number(form.unit_id))?.unit_category_id ?? null;
   const { data: paymentTemplate } = useQuery({
-    queryKey: ["payment-template", form.project_id],
+    queryKey: ["payment-template", form.project_id, templateCategoryId],
     queryFn: async () =>
-      (await api.get<PaymentTemplate | null>(`/projects/${form.project_id}/payment-template`)).data,
+      (
+        await api.get<PaymentTemplate | null>(`/projects/${form.project_id}/payment-template`, {
+          params: {
+            ...(templateCategoryId ? { unit_category_id: templateCategoryId } : {}),
+            fallback: true,
+          },
+        })
+      ).data,
     enabled: !!form.project_id,
   });
 
@@ -741,6 +750,9 @@ export default function BookingsPage() {
                 {paymentTemplate && selectedUnit && (
                   <Button type="button" size="sm" variant="secondary" onClick={applyStandardSchedule}>
                     Use Standard Schedule
+                    {paymentTemplate.unit_category_id && selectedUnit.unit_category
+                      ? ` (${selectedUnit.unit_category.name})`
+                      : ""}
                   </Button>
                 )}
                 <Button type="button" size="sm" variant="secondary" onClick={addNormalPlan}>

@@ -6,6 +6,7 @@ from app.core.errors import delete_with_fk_guard
 from app.crud import partner as partner_crud
 from app.crud import project as project_crud
 from app.db.session import get_db
+from app.models.unit import UnitCategory
 from app.models.user import User
 from app.schemas.partner import ProjectPartnerShareCreate, ProjectPartnerShareOut
 from app.schemas.project import (
@@ -105,22 +106,49 @@ def delete_floor(floor_id: int, db: Session = Depends(get_db)):
     delete_with_fk_guard(db, lambda: project_crud.delete_floor(db, db_floor), "floor")
 
 
+@router.get("/{project_id}/payment-templates", response_model=list[PaymentTemplateOut])
+def list_payment_templates(project_id: int, db: Session = Depends(get_db)):
+    return project_crud.list_payment_templates(db, project_id)
+
+
+# unit_category_id omitted = the project's default plan. With fallback=true
+# (used by New Booking) a category without its own plan gets the default.
 @router.get("/{project_id}/payment-template", response_model=PaymentTemplateOut | None)
-def get_payment_template(project_id: int, db: Session = Depends(get_db)):
-    return project_crud.get_payment_template(db, project_id)
+def get_payment_template(
+    project_id: int,
+    unit_category_id: int | None = None,
+    fallback: bool = False,
+    db: Session = Depends(get_db),
+):
+    return project_crud.get_payment_template(db, project_id, unit_category_id, fallback)
 
 
 @router.put("/{project_id}/payment-template", response_model=PaymentTemplateOut)
 def upsert_payment_template(
-    project_id: int, template_in: PaymentTemplateUpsert, db: Session = Depends(get_db)
+    project_id: int,
+    template_in: PaymentTemplateUpsert,
+    unit_category_id: int | None = None,
+    db: Session = Depends(get_db),
 ):
     db_project = project_crud.get_project(db, project_id)
     if not db_project:
         raise HTTPException(status_code=404, detail="Project not found")
+    if unit_category_id is not None and not db.get(UnitCategory, unit_category_id):
+        raise HTTPException(status_code=404, detail="Unit category not found")
     try:
-        return project_crud.upsert_payment_template(db, project_id, template_in)
+        return project_crud.upsert_payment_template(db, project_id, template_in, unit_category_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.delete("/{project_id}/payment-template", status_code=status.HTTP_204_NO_CONTENT)
+def delete_payment_template(
+    project_id: int, unit_category_id: int | None = None, db: Session = Depends(get_db)
+):
+    template = project_crud.get_payment_template(db, project_id, unit_category_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Payment plan not found")
+    project_crud.delete_payment_template(db, template)
 
 
 @router.get("/{project_id}/partner-shares", response_model=list[ProjectPartnerShareOut])

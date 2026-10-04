@@ -66,6 +66,7 @@ export interface PaymentTemplateLine {
 export interface PaymentTemplate {
   id: number;
   project_id: number;
+  unit_category_id: number | null;
   booking_percent: number;
   lines: PaymentTemplateLine[];
 }

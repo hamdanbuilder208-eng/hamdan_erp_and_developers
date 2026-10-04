@@ -17,6 +17,7 @@ import type {
   ProjectPartnerShare,
   ScheduleFrequency,
   Unit,
+  UnitCategory,
 } from "../../types";
 import { confirm } from "../../lib/confirm";
 import { useAuthStore } from "../../store/authStore";
@@ -59,15 +60,39 @@ export default function ProjectDetailPage() {
     enabled: !!projectId,
   });
 
-  // Payment plan template — the project's standard schedule (booking %,
+  // Payment plan templates — the project's standard schedules (booking %,
   // then a milestone/installment breakdown of the rest), pulled in to
   // prefill a new booking instead of typing the same plan out every time.
-  const { data: paymentTemplate } = useQuery({
-    queryKey: ["payment-template", projectId],
+  // One plan per unit category (1 Bed Lounge, 2 Bed Lounge, ...) plus a
+  // default plan for any category without its own.
+  const { data: paymentTemplates } = useQuery({
+    queryKey: ["payment-templates", projectId],
     queryFn: async () =>
-      (await api.get<PaymentTemplate | null>(`/projects/${projectId}/payment-template`)).data,
+      (await api.get<PaymentTemplate[]>(`/projects/${projectId}/payment-templates`)).data,
     enabled: !!projectId,
   });
+
+  const { data: allCategories } = useQuery({
+    queryKey: ["unit-categories"],
+    queryFn: async () => (await api.get<UnitCategory[]>("/unit-categories/")).data,
+  });
+
+  // Categories this project actually uses, plus any that already have a plan.
+  const planCategories = React.useMemo(() => {
+    const ids = new Set<number>();
+    units?.forEach((u) => u.unit_category_id && ids.add(u.unit_category_id));
+    paymentTemplates?.forEach((t) => t.unit_category_id && ids.add(t.unit_category_id));
+    return (allCategories ?? []).filter((c) => ids.has(c.id));
+  }, [units, paymentTemplates, allCategories]);
+
+  // "" = the project's default plan
+  const [planCategoryId, setPlanCategoryId] = React.useState("");
+  const paymentTemplate = paymentTemplates?.find(
+    (t) => String(t.unit_category_id ?? "") === planCategoryId,
+  );
+  const defaultTemplate = paymentTemplates?.find((t) => t.unit_category_id === null);
+  const planCategoryName =
+    planCategories.find((c) => String(c.id) === planCategoryId)?.name ?? "Default";
 
   const [templateForm, setTemplateForm] = React.useState<{
     booking_percent: string;
@@ -76,19 +101,49 @@ export default function ProjectDetailPage() {
   const [templateError, setTemplateError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    if (paymentTemplate) {
-      setTemplateForm({
-        booking_percent: String(paymentTemplate.booking_percent),
-        lines: paymentTemplate.lines.map((l) => ({
-          label: l.label,
-          frequency: l.frequency,
-          no_of_installments: String(l.no_of_installments),
-          percent: String(l.percent),
-          months_after_booking: String(l.months_after_booking),
-        })),
-      });
-    }
-  }, [paymentTemplate]);
+    setTemplateError(null);
+    setTemplateForm(
+      paymentTemplate
+        ? {
+            booking_percent: String(paymentTemplate.booking_percent),
+            lines: paymentTemplate.lines.map((l) => ({
+              label: l.label,
+              frequency: l.frequency,
+              no_of_installments: String(l.no_of_installments),
+              percent: String(l.percent),
+              months_after_booking: String(l.months_after_booking),
+            })),
+          }
+        : { booking_percent: "", lines: [] },
+    );
+  }, [paymentTemplate, planCategoryId]);
+
+  const planParams = planCategoryId ? { unit_category_id: Number(planCategoryId) } : undefined;
+
+  const copyDefaultPlan = () => {
+    if (!defaultTemplate) return;
+    setTemplateForm({
+      booking_percent: String(defaultTemplate.booking_percent),
+      lines: defaultTemplate.lines.map((l) => ({
+        label: l.label,
+        frequency: l.frequency,
+        no_of_installments: String(l.no_of_installments),
+        percent: String(l.percent),
+        months_after_booking: String(l.months_after_booking),
+      })),
+    });
+  };
+
+  const deleteTemplate = useMutation({
+    mutationFn: async () =>
+      api.delete(`/projects/${projectId}/payment-template`, { params: planParams }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["payment-templates", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["payment-template"] });
+      toast.success("Payment plan removed.");
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to remove payment plan.")),
+  });
 
   const addTemplateLine = () =>
     setTemplateForm((f) => ({ ...f, lines: [...f.lines, emptyTemplateLine()] }));
@@ -107,21 +162,26 @@ export default function ProjectDetailPage() {
   const saveTemplate = useMutation({
     mutationFn: async () =>
       (
-        await api.put<PaymentTemplate>(`/projects/${projectId}/payment-template`, {
-          booking_percent: Number(templateForm.booking_percent) || 0,
-          lines: templateForm.lines.map((l) => ({
-            label: l.label || "Installments",
-            frequency: l.frequency,
-            no_of_installments: Number(l.no_of_installments) || 0,
-            percent: Number(l.percent) || 0,
-            months_after_booking: Number(l.months_after_booking) || 0,
-          })),
-        })
+        await api.put<PaymentTemplate>(
+          `/projects/${projectId}/payment-template`,
+          {
+            booking_percent: Number(templateForm.booking_percent) || 0,
+            lines: templateForm.lines.map((l) => ({
+              label: l.label || "Installments",
+              frequency: l.frequency,
+              no_of_installments: Number(l.no_of_installments) || 0,
+              percent: Number(l.percent) || 0,
+              months_after_booking: Number(l.months_after_booking) || 0,
+            })),
+          },
+          { params: planParams },
+        )
       ).data,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["payment-template", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["payment-templates", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["payment-template"] });
       setTemplateError(null);
-      toast.success("Payment plan template saved.");
+      toast.success(`${planCategoryName} payment plan saved.`);
     },
     onError: (err: unknown) =>
       setTemplateError(apiErrorMessage(err, "Failed to save payment plan template.")),
@@ -422,11 +482,57 @@ export default function ProjectDetailPage() {
           <CardHeader>
             <CardTitle>Standard Payment Plan</CardTitle>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Defined as percentages of a unit's price, so the same plan applies whichever unit gets
-              booked — pulled in via "Use Standard Schedule" on New Booking.
+              Set a separate plan for each unit category (percentages of the unit's price) —
+              pulled in via "Use Standard Schedule" on New Booking. Categories without their own
+              plan use the Default plan.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {[{ id: "", name: "Default (all categories)" }, ...planCategories.map((c) => ({ id: String(c.id), name: c.name }))].map(
+                (c) => {
+                  const hasPlan = paymentTemplates?.some(
+                    (t) => String(t.unit_category_id ?? "") === c.id,
+                  );
+                  return (
+                    <button
+                      key={c.id || "default"}
+                      type="button"
+                      onClick={() => setPlanCategoryId(c.id)}
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        planCategoryId === c.id
+                          ? "border-brand-600 bg-brand-50 text-brand-700"
+                          : "border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-navy-700 dark:text-slate-400 dark:hover:bg-navy-800"
+                      }`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${hasPlan ? "bg-success-500" : "bg-slate-300 dark:bg-navy-600"}`}
+                        title={hasPlan ? "Plan set" : "No plan yet"}
+                      />
+                      {c.name}
+                    </button>
+                  );
+                },
+              )}
+            </div>
+            {planCategories.length === 0 && (
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Assign unit categories to this project's units to set a separate plan per category.
+              </p>
+            )}
+            {planCategoryId && !paymentTemplate && (
+              <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:bg-navy-800/60 dark:text-slate-400">
+                <span>
+                  {planCategoryName} has no plan of its own yet —{" "}
+                  {defaultTemplate ? "bookings use the Default plan." : "no Default plan either."}
+                </span>
+                {defaultTemplate && (
+                  <Button type="button" size="sm" variant="secondary" onClick={copyDefaultPlan}>
+                    Copy Default Plan
+                  </Button>
+                )}
+              </div>
+            )}
             {templateError && (
               <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">{templateError}</p>
             )}
@@ -534,13 +640,32 @@ export default function ProjectDetailPage() {
               {templateTotalPercent !== 100 && (
                 <span className="font-semibold text-danger-700">Must add up to 100%</span>
               )}
-              <Button
-                size="sm"
-                disabled={saveTemplate.isPending || templateTotalPercent !== 100}
-                onClick={() => saveTemplate.mutate()}
-              >
-                Save Payment Plan
-              </Button>
+              <div className="flex items-center gap-2">
+                {paymentTemplate && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={deleteTemplate.isPending}
+                    onClick={async () => {
+                      const ok = await confirm(`Remove the ${planCategoryName} payment plan?`, {
+                        danger: true,
+                        confirmLabel: "Remove",
+                      });
+                      if (ok) deleteTemplate.mutate();
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Remove
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  disabled={saveTemplate.isPending || templateTotalPercent !== 100}
+                  onClick={() => saveTemplate.mutate()}
+                >
+                  Save {planCategoryName} Plan
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

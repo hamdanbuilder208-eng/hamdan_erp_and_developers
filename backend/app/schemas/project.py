@@ -110,5 +110,6 @@ class PaymentTemplateOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     project_id: int
+    unit_category_id: int | None = None
     booking_percent: float
     lines: list[PaymentTemplateLineOut]

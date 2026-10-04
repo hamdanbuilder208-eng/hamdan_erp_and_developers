@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Enum, ForeignKey, Numeric, String, Text
+from sqlalchemy import Enum, ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base, TimestampMixin
@@ -44,8 +44,8 @@ class Project(Base, TimestampMixin):
     units: Mapped[list["Unit"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
-    payment_template: Mapped["ProjectPaymentTemplate | None"] = relationship(
-        back_populates="project", cascade="all, delete-orphan", uselist=False
+    payment_templates: Mapped[list["ProjectPaymentTemplate"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
     )
 
 
@@ -69,15 +69,24 @@ class ProjectPaymentTemplate(Base, TimestampMixin):
     over 24 monthly installments, 25% over 4 half-yearly installments (a
     2-year project's worth at 2/year). Booking a unit can pull this in to
     prefill its down payment + installment plans instead of typing it out
-    fresh every time — see BookingsPage's 'Use Standard Schedule'."""
+    fresh every time — see BookingsPage's 'Use Standard Schedule'.
+
+    A project can have one plan per unit category (e.g. 1 Bed Lounge and
+    2 Bed Lounge on different schedules) plus a default plan
+    (unit_category_id NULL) used for any category without its own."""
 
     __tablename__ = "project_payment_templates"
+    __table_args__ = (
+        UniqueConstraint("project_id", "unit_category_id", name="uq_payment_template_project_category"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), unique=True, nullable=False)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    unit_category_id: Mapped[int | None] = mapped_column(ForeignKey("unit_categories.id"))
     booking_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
 
-    project: Mapped["Project"] = relationship(back_populates="payment_template")
+    project: Mapped["Project"] = relationship(back_populates="payment_templates")
+    unit_category: Mapped["UnitCategory | None"] = relationship()
     lines: Mapped[list["ProjectPaymentTemplateLine"]] = relationship(
         back_populates="template",
         cascade="all, delete-orphan",
