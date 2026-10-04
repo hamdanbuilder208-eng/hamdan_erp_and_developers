@@ -9,7 +9,7 @@ from app.crud import partner as partner_crud
 from app.models.account import Account, AccountNature
 from app.models.allottee import Allottee
 from app.models.booking import Booking, BookingStatus
-from app.models.expense import WagePayment
+from app.models.expense import OfficeExpense, WagePayment
 from app.models.inventory import (
     GRN,
     GRNLine,
@@ -19,8 +19,9 @@ from app.models.inventory import (
     StockLedger,
     StockMovementType,
 )
+from app.models.land_property import LandProperty, LandPropertyPaymentDirection, LandPropertyStatus
 from app.models.project import Project
-from app.models.rental import RentAgreement, RentAgreementStatus
+from app.models.rental import RentAgreement, RentAgreementStatus, RentReceipt
 from app.models.voucher import Voucher, VoucherLine
 from app.schemas.report import (
     AgingReport,
@@ -33,6 +34,7 @@ from app.schemas.report import (
     EmployeeSummaryRow,
     GeneralLedgerLine,
     GeneralLedgerReport,
+    LandPropertyReportRow,
     MaterialSummaryRow,
     PartnerSummaryRow,
     ProfitLossLine,
@@ -46,29 +48,57 @@ from app.schemas.report import (
 )
 
 
-def _account_balance(db: Session, account: Account, project_id: int | None = None) -> float:
-    """Opening + posted. For a project, only that project's vouchers count —
-    opening balances are company-wide and every voucher balances on its own,
-    so a project's figures still balance without them."""
-    query = db.query(VoucherLine).filter(VoucherLine.account_id == account.id)
+SCOPE_OFFICE = "office"  # entries with no project and no land property
+SCOPE_LAND = "land"  # entries tagged to a Land & Plots property
+SCOPE_LABELS = {SCOPE_OFFICE: "Office / General", SCOPE_LAND: "Land & Plots"}
+
+
+def _is_scoped(project_id: int | None, scope: str | None) -> bool:
+    """A project or office/land view only counts its own vouchers — opening
+    balances are company-wide, so they're left out (every voucher balances
+    on its own, so the figures still balance)."""
+    return project_id is not None or scope in SCOPE_LABELS
+
+
+def _filter_vouchers(query, project_id: int | None, scope: str | None):
+    """`query` must already be joined to Voucher."""
     if project_id is not None:
-        query = query.join(Voucher, VoucherLine.voucher_id == Voucher.id).filter(Voucher.project_id == project_id)
+        return query.filter(Voucher.project_id == project_id)
+    if scope == SCOPE_OFFICE:
+        return query.filter(Voucher.project_id.is_(None), Voucher.land_property_id.is_(None))
+    if scope == SCOPE_LAND:
+        return query.filter(Voucher.land_property_id.is_not(None))
+    return query
+
+
+def _account_balance(
+    db: Session, account: Account, project_id: int | None = None, scope: str | None = None
+) -> float:
+    """Opening + posted. For a project / office / land view, only its own
+    vouchers count (see _is_scoped)."""
+    query = db.query(VoucherLine).filter(VoucherLine.account_id == account.id)
+    if _is_scoped(project_id, scope):
+        query = _filter_vouchers(
+            query.join(Voucher, VoucherLine.voucher_id == Voucher.id), project_id, scope
+        )
     lines = query.all()
     posted_debit = sum(float(l.debit) for l in lines)
     posted_credit = sum(float(l.credit) for l in lines)
-    if project_id is not None:
+    if _is_scoped(project_id, scope):
         return posted_debit - posted_credit
     opening = float(account.opening_debit) - float(account.opening_credit)
     return opening + posted_debit - posted_credit
 
 
-def get_trial_balance(db: Session, project_id: int | None = None) -> TrialBalanceReport:
+def get_trial_balance(
+    db: Session, project_id: int | None = None, scope: str | None = None
+) -> TrialBalanceReport:
     accounts = db.query(Account).filter(Account.is_control == False).order_by(Account.code).all()  # noqa: E712
     rows: list[TrialBalanceRow] = []
     total_debit = 0.0
     total_credit = 0.0
     for acc in accounts:
-        balance = _account_balance(db, acc, project_id)
+        balance = _account_balance(db, acc, project_id, scope)
         if abs(balance) < 0.005:
             continue
         debit = balance if balance > 0 else 0
@@ -98,14 +128,14 @@ def _voucher_lines_query(
     project_id: int | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    scope: str | None = None,
 ):
     query = (
         db.query(VoucherLine)
         .join(Voucher, VoucherLine.voucher_id == Voucher.id)
         .options(joinedload(VoucherLine.account))
     )
-    if project_id is not None:
-        query = query.filter(Voucher.project_id == project_id)
+    query = _filter_vouchers(query, project_id, scope)
     if date_from is not None:
         query = query.filter(Voucher.voucher_date >= date_from)
     if date_to is not None:
@@ -118,8 +148,9 @@ def get_profit_loss(
     project_id: int | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    scope: str | None = None,
 ) -> ProfitLossReport:
-    lines = _voucher_lines_query(db, project_id, date_from, date_to)
+    lines = _voucher_lines_query(db, project_id, date_from, date_to, scope)
 
     revenue_by_account: dict[int, float] = {}
     expense_by_account: dict[int, float] = {}
@@ -152,7 +183,7 @@ def get_profit_loss(
     total_revenue = round(sum(l.amount for l in revenue_lines), 2)
     total_expense = round(sum(l.amount for l in expense_lines), 2)
 
-    project_name = None
+    project_name = SCOPE_LABELS.get(scope) if project_id is None else None
     if project_id is not None:
         project = db.query(Project).filter(Project.id == project_id).first()
         project_name = project.project_name if project else None
@@ -170,7 +201,9 @@ def get_profit_loss(
     )
 
 
-def get_balance_sheet(db: Session, project_id: int | None = None) -> BalanceSheetReport:
+def get_balance_sheet(
+    db: Session, project_id: int | None = None, scope: str | None = None
+) -> BalanceSheetReport:
     accounts = db.query(Account).filter(Account.is_control == False).order_by(Account.code).all()  # noqa: E712
 
     assets: list[BalanceSheetLine] = []
@@ -178,7 +211,7 @@ def get_balance_sheet(db: Session, project_id: int | None = None) -> BalanceShee
     capital: list[BalanceSheetLine] = []
 
     for acc in accounts:
-        balance = _account_balance(db, acc, project_id)
+        balance = _account_balance(db, acc, project_id, scope)
         if abs(balance) < 0.005:
             continue
         line = BalanceSheetLine(account_id=acc.id, code=acc.code, name=acc.name, amount=round(balance, 2))
@@ -193,7 +226,7 @@ def get_balance_sheet(db: Session, project_id: int | None = None) -> BalanceShee
     total_liabilities = round(sum(l.amount for l in liabilities), 2)
     total_capital_before_profit = round(sum(l.amount for l in capital), 2)
 
-    pl = get_profit_loss(db, project_id=project_id)
+    pl = get_profit_loss(db, project_id=project_id, scope=scope)
     retained_earnings = pl.net_profit
     total_capital = round(total_capital_before_profit + retained_earnings, 2)
 
@@ -216,14 +249,17 @@ def get_general_ledger(
     date_from: date | None = None,
     date_to: date | None = None,
     project_id: int | None = None,
+    scope: str | None = None,
 ) -> GeneralLedgerReport | None:
     account = db.query(Account).filter(Account.id == account_id).first()
     if not account:
         return None
 
-    # Opening balances are company-wide, so a project's ledger starts at zero.
+    # Opening balances are company-wide, so a project / office / land ledger starts at zero.
     opening_balance = (
-        0.0 if project_id is not None else float(account.opening_debit) - float(account.opening_credit)
+        0.0
+        if _is_scoped(project_id, scope)
+        else float(account.opening_debit) - float(account.opening_credit)
     )
 
     query = (
@@ -232,8 +268,7 @@ def get_general_ledger(
         .options(joinedload(VoucherLine.voucher))
         .filter(VoucherLine.account_id == account_id)
     )
-    if project_id is not None:
-        query = query.filter(Voucher.project_id == project_id)
+    query = _filter_vouchers(query, project_id, scope)
 
     running = opening_balance
     if date_from is not None:
@@ -619,6 +654,70 @@ def get_rental_income_report(db: Session, project_id: int | None = None) -> list
         for v in buckets.values()
     ]
     rows.sort(key=lambda r: -r.total_received)
+    return rows
+
+
+# Land & Plots
+
+
+def get_land_property_report(db: Session) -> list[LandPropertyReportRow]:
+    """Per property: what was paid to the seller, received from a buyer,
+    spent on it (office expenses tagged to it) and earned in rent."""
+    properties = (
+        db.query(LandProperty)
+        .options(joinedload(LandProperty.payments))
+        .order_by(LandProperty.id.desc())
+        .all()
+    )
+    expenses_by_property: dict[int, float] = {}
+    for expense in db.query(OfficeExpense).filter(OfficeExpense.land_property_id.is_not(None)).all():
+        expenses_by_property[expense.land_property_id] = (
+            expenses_by_property.get(expense.land_property_id, 0.0) + float(expense.amount)
+        )
+    rent_by_property: dict[int, float] = {}
+    rent_receipts = (
+        db.query(RentReceipt)
+        .join(RentAgreement, RentReceipt.agreement_id == RentAgreement.id)
+        .filter(RentAgreement.land_property_id.is_not(None))
+        .options(joinedload(RentReceipt.agreement))
+        .all()
+    )
+    for receipt in rent_receipts:
+        pid = receipt.agreement.land_property_id
+        rent_by_property[pid] = rent_by_property.get(pid, 0.0) + float(receipt.amount)
+
+    rows: list[LandPropertyReportRow] = []
+    for p in properties:
+        paid_to_seller = sum(
+            float(x.amount) for x in p.payments if x.direction == LandPropertyPaymentDirection.TO_SELLER
+        )
+        received_from_buyer = sum(
+            float(x.amount) for x in p.payments if x.direction == LandPropertyPaymentDirection.FROM_BUYER
+        )
+        purchase_price = float(p.purchase_rate or 0)
+        sale_price = float(p.sale_rate or 0) if p.status == LandPropertyStatus.SOLD else 0.0
+        expenses = expenses_by_property.get(p.id, 0.0)
+        rent = rent_by_property.get(p.id, 0.0)
+        rows.append(
+            LandPropertyReportRow(
+                property_id=p.id,
+                property_ref_no=p.property_ref_no,
+                property_type=p.property_type.value,
+                area_location=p.area_location,
+                size_label=f"{float(p.size_number or 0):g} {p.size_unit.value}",
+                status=p.status.value,
+                owner_vendor=p.owner_vendor,
+                purchase_price=round(purchase_price, 2),
+                paid_to_seller=round(paid_to_seller, 2),
+                owed_to_seller=round(max(purchase_price - paid_to_seller, 0), 2),
+                sale_price=round(sale_price, 2),
+                received_from_buyer=round(received_from_buyer, 2),
+                receivable_from_buyer=round(max(sale_price - received_from_buyer, 0), 2),
+                expenses=round(expenses, 2),
+                rent_received=round(rent, 2),
+                net_cash=round(received_from_buyer + rent - paid_to_seller - expenses, 2),
+            )
+        )
     return rows
 
 

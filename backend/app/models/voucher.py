@@ -23,6 +23,9 @@ class Voucher(Base, TimestampMixin):
     voucher_date: Mapped[date] = mapped_column(Date, nullable=False)
 
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"))
+    # Set when the entry belongs to a Land & Plots property (its expenses,
+    # its rent) — lets reports show Land & Plots apart from office spending.
+    land_property_id: Mapped[int | None] = mapped_column(ForeignKey("land_properties.id"))
     narration: Mapped[str | None] = mapped_column(Text)
 
     lines: Mapped[list["VoucherLine"]] = relationship(

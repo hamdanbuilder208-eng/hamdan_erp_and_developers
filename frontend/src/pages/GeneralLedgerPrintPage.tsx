@@ -2,22 +2,24 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "react-router-dom";
 import { Printer } from "lucide-react";
 import { api } from "../lib/api";
+import { REPORT_SCOPES, isReportScope, reportFilterFromSearch, reportFilterParams } from "../lib/reportFilter";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
 import type { CompanySettings, GeneralLedgerReport, Project } from "../types";
 
 export default function GeneralLedgerPrintPage() {
   const { accountId } = useParams();
-  // ?project_id=… from the Reports page's project filter.
+  // ?project_id=… / ?scope=office|land from the Reports page's filter.
   const [searchParams] = useSearchParams();
-  const projectId = searchParams.get("project_id");
+  const projectId = reportFilterFromSearch(searchParams);
+  const isScope = isReportScope(projectId);
 
   const { data } = useQuery({
     queryKey: ["reports", "general-ledger", accountId, projectId],
     queryFn: async () =>
       (
         await api.get<GeneralLedgerReport>(`/reports/general-ledger/${accountId}`, {
-          params: projectId ? { project_id: Number(projectId) } : undefined,
+          params: reportFilterParams(projectId),
         })
       ).data,
   });
@@ -25,9 +27,11 @@ export default function GeneralLedgerPrintPage() {
   const { data: projects } = useQuery({
     queryKey: ["projects"],
     queryFn: async () => (await api.get<Project[]>("/projects/")).data,
-    enabled: !!projectId,
+    enabled: !!projectId && !isScope,
   });
-  const projectName = projects?.find((p) => p.id === Number(projectId))?.project_name;
+  const projectName = isScope
+    ? REPORT_SCOPES[projectId]
+    : projects?.find((p) => p.id === Number(projectId))?.project_name;
 
   const { data: companySettings } = useQuery({
     queryKey: ["admin-settings"],
@@ -60,7 +64,12 @@ export default function GeneralLedgerPrintPage() {
             <p className="mt-1 text-sm text-slate-500">
               {data.account_code} · {data.account_name}
             </p>
-            {projectId && <p className="text-xs text-slate-500">Project: {projectName ?? "…"}</p>}
+            {projectId && (
+              <p className="text-xs text-slate-500">
+                {isScope ? "" : "Project: "}
+                {projectName ?? "…"}
+              </p>
+            )}
           </div>
         </div>
 

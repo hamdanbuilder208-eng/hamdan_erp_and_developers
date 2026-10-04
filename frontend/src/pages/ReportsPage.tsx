@@ -2,6 +2,8 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Printer } from "lucide-react";
 import { api } from "../lib/api";
+import { REPORT_SCOPES, isReportScope, reportFilterParams, withReportFilter } from "../lib/reportFilter";
+import { REPORT_SCOPES, isReportScope, reportFilterParams, withReportFilter } from "../lib/reportFilter";
 import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
 import { Select } from "../components/ui/Input";
@@ -13,6 +15,7 @@ import type {
   CustomerWiseReport,
   EmployeeSummaryRow,
   GeneralLedgerReport,
+  LandPropertyReportRow,
   Material,
   MaterialSummaryRow,
   PartnerSummaryRow,
@@ -36,7 +39,8 @@ type ReportTab =
   | "customer-wise"
   | "brokers-partners"
   | "rental-income"
-  | "material-employee";
+  | "material-employee"
+  | "land-plots";
 
 const tabs: { key: ReportTab; label: string }[] = [
   { key: "trial-balance", label: "Trial Balance" },
@@ -50,7 +54,12 @@ const tabs: { key: ReportTab; label: string }[] = [
   { key: "brokers-partners", label: "Broker / Partner" },
   { key: "rental-income", label: "Rental Income" },
   { key: "material-employee", label: "Material / Employee" },
+  { key: "land-plots", label: "Land & Plots" },
 ];
+
+// Accounting reports work for any filter; the rest are about projects
+// (bookings, stock, brokers, ...) so they're hidden for Office / Land.
+const SCOPE_TABS: ReportTab[] = ["trial-balance", "profit-loss", "balance-sheet", "general-ledger", "land-plots"];
 
 function BalanceBadge({ isBalanced }: { isBalanced: boolean }) {
   return (
@@ -88,10 +97,17 @@ export default function ReportsPage() {
 
   // One project filter for every report ("" = whole company). Employees
   // aren't linked to projects, so that report always shows everyone.
-  const projectParams = projectId ? { project_id: Number(projectId) } : undefined;
-  const selectedProjectName = projects?.find((p) => p.id === Number(projectId))?.project_name;
+  const projectParams = reportFilterParams(projectId);
+  const isScope = isReportScope(projectId);
+  const selectedProjectName = isScope
+    ? REPORT_SCOPES[projectId]
+    : projects?.find((p) => p.id === Number(projectId))?.project_name;
   const scopeLabel = selectedProjectName ? `— ${selectedProjectName}` : "(Company-wide)";
-  const printUrl = (path: string) => `${path}${projectId ? `${path.includes("?") ? "&" : "?"}project_id=${projectId}` : ""}`;
+  const printUrl = (path: string) => withReportFilter(path, projectId);
+  const visibleTabs = isScope ? tabs.filter((t) => SCOPE_TABS.includes(t.key)) : tabs;
+  React.useEffect(() => {
+    if (isScope && !SCOPE_TABS.includes(tab)) setTab("trial-balance");
+  }, [isScope, tab]);
 
   const { data: trialBalance } = useQuery({
     queryKey: ["reports", "trial-balance", projectId],
@@ -190,6 +206,12 @@ export default function ReportsPage() {
     enabled: tab === "material-employee",
   });
 
+  const { data: landReport } = useQuery({
+    queryKey: ["reports", "land-properties"],
+    queryFn: async () => (await api.get<LandPropertyReportRow[]>("/reports/land-properties")).data,
+    enabled: tab === "land-plots",
+  });
+
   const { data: employeesReport } = useQuery({
     queryKey: ["reports", "employees"],
     queryFn: async () => (await api.get<EmployeeSummaryRow[]>("/reports/employees")).data,
@@ -218,23 +240,32 @@ export default function ReportsPage() {
             className="w-64"
           >
             <option value="">All Projects (Company-wide)</option>
-            {projects?.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.project_name}
-              </option>
-            ))}
+            <optgroup label="Not a project">
+              <option value="office">{REPORT_SCOPES.office} (no project)</option>
+              <option value="land">{REPORT_SCOPES.land}</option>
+            </optgroup>
+            <optgroup label="Projects">
+              {projects?.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.project_name}
+                </option>
+              ))}
+            </optgroup>
           </Select>
         </div>
       </div>
       {projectId && (
         <p className="rounded-lg bg-brand-50 px-4 py-2 text-xs text-brand-800">
-          Showing only <strong>{selectedProjectName}</strong>. Company-wide opening balances are left out of
-          the project view.{tab === "material-employee" && " Employee wages aren't linked to projects, so the employee list is company-wide."}
+          Showing only <strong>{selectedProjectName}</strong>
+          {projectId === "office" &&
+            " — office expenses, petty cash, wages and anything not tied to a project or a land property"}
+          {projectId === "land" && " — expenses and rent recorded against Land & Plots properties"}. Company-wide
+          opening balances are left out of this view.{tab === "material-employee" && " Employee wages aren't linked to projects, so the employee list is company-wide."}
         </p>
       )}
 
       <div className="flex flex-wrap gap-1 border-b border-slate-200 dark:border-navy-700">
-        {tabs.map((t) => (
+        {visibleTabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
@@ -983,6 +1014,104 @@ export default function ReportsPage() {
                 </tr>
               ))}
             </tbody>
+          </table>
+        </Card>
+      )}
+
+      {tab === "land-plots" && (
+        <Card className="overflow-x-auto">
+          <div className="border-b border-slate-100 dark:border-navy-800 px-5 py-4">
+            <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">Land &amp; Plots</h3>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              Per property: paid to the seller, received from the buyer, expenses recorded against it and
+              rent earned. Land &amp; Plots aren't part of any project, so the project filter doesn't apply here.
+            </p>
+          </div>
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <tr>
+                <th className="px-4 py-3 font-medium">Property</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 text-right font-medium">Purchase</th>
+                <th className="px-4 py-3 text-right font-medium">Paid to Seller</th>
+                <th className="px-4 py-3 text-right font-medium">Owed to Seller</th>
+                <th className="px-4 py-3 text-right font-medium">Sale</th>
+                <th className="px-4 py-3 text-right font-medium">Received</th>
+                <th className="px-4 py-3 text-right font-medium">Receivable</th>
+                <th className="px-4 py-3 text-right font-medium">Expenses</th>
+                <th className="px-4 py-3 text-right font-medium">Rent</th>
+                <th className="px-4 py-3 text-right font-medium">Net Cash</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
+              {landReport?.length === 0 && (
+                <tr>
+                  <td colSpan={11} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                    No land / plot properties yet.
+                  </td>
+                </tr>
+              )}
+              {landReport?.map((r) => (
+                <tr key={r.property_id}>
+                  <td className="px-4 py-2.5">
+                    <p className="font-medium text-navy-900 dark:text-slate-100">
+                      {r.property_ref_no} · {r.property_type}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {r.area_location} · {r.size_label}
+                    </p>
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400">{r.status}</td>
+                  {[
+                    r.purchase_price,
+                    r.paid_to_seller,
+                    r.owed_to_seller,
+                    r.sale_price,
+                    r.received_from_buyer,
+                    r.receivable_from_buyer,
+                    r.expenses,
+                    r.rent_received,
+                  ].map((v, i) => (
+                    <td key={i} className="px-4 py-2.5 text-right tabular-nums text-navy-900 dark:text-slate-100">
+                      {v ? v.toLocaleString() : "—"}
+                    </td>
+                  ))}
+                  <td
+                    className={`px-4 py-2.5 text-right font-semibold tabular-nums ${
+                      r.net_cash < 0 ? "text-danger-600" : "text-success-700"
+                    }`}
+                  >
+                    {r.net_cash.toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            {landReport && landReport.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-slate-200 font-semibold text-navy-950 dark:border-navy-700 dark:text-white">
+                  <td colSpan={2} className="px-4 py-2.5 text-right">
+                    Total
+                  </td>
+                  {(
+                    [
+                      "purchase_price",
+                      "paid_to_seller",
+                      "owed_to_seller",
+                      "sale_price",
+                      "received_from_buyer",
+                      "receivable_from_buyer",
+                      "expenses",
+                      "rent_received",
+                      "net_cash",
+                    ] as const
+                  ).map((k) => (
+                    <td key={k} className="px-4 py-2.5 text-right tabular-nums">
+                      {landReport.reduce((s, r) => s + r[k], 0).toLocaleString()}
+                    </td>
+                  ))}
+                </tr>
+              </tfoot>
+            )}
           </table>
         </Card>
       )}

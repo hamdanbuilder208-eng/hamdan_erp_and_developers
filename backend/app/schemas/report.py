@@ -201,6 +201,29 @@ class RentalIncomeRow(BaseModel):
     outstanding: float
 
 
+# Land & Plots
+
+
+class LandPropertyReportRow(BaseModel):
+    property_id: int
+    property_ref_no: str
+    property_type: str
+    area_location: str
+    size_label: str
+    status: str
+    owner_vendor: str | None
+    purchase_price: float
+    paid_to_seller: float
+    owed_to_seller: float
+    sale_price: float
+    received_from_buyer: float
+    receivable_from_buyer: float
+    expenses: float
+    rent_received: float
+    # Money actually in minus money actually out so far.
+    net_cash: float
+
+
 # Material / Employee
 
 

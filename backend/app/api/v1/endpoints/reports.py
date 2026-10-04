@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from app.schemas.report import (
     CustomerWiseReport,
     EmployeeSummaryRow,
     GeneralLedgerReport,
+    LandPropertyReportRow,
     MaterialSummaryRow,
     PartnerSummaryRow,
     ProfitLossReport,
@@ -23,12 +25,16 @@ from app.schemas.report import (
     TrialBalanceReport,
 )
 
+# Instead of a project: "office" = entries with no project or land property,
+# "land" = entries for Land & Plots properties.
+Scope = Literal["office", "land"]
+
 router = APIRouter()
 
 
 @router.get("/trial-balance", response_model=TrialBalanceReport)
-def trial_balance(project_id: int | None = None, db: Session = Depends(get_db)):
-    return report_crud.get_trial_balance(db, project_id=project_id)
+def trial_balance(project_id: int | None = None, scope: Scope | None = None, db: Session = Depends(get_db)):
+    return report_crud.get_trial_balance(db, project_id=project_id, scope=scope)
 
 
 @router.get("/profit-loss", response_model=ProfitLossReport)
@@ -36,14 +42,17 @@ def profit_loss(
     project_id: int | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    scope: Scope | None = None,
     db: Session = Depends(get_db),
 ):
-    return report_crud.get_profit_loss(db, project_id=project_id, date_from=date_from, date_to=date_to)
+    return report_crud.get_profit_loss(
+        db, project_id=project_id, date_from=date_from, date_to=date_to, scope=scope
+    )
 
 
 @router.get("/balance-sheet", response_model=BalanceSheetReport)
-def balance_sheet(project_id: int | None = None, db: Session = Depends(get_db)):
-    return report_crud.get_balance_sheet(db, project_id=project_id)
+def balance_sheet(project_id: int | None = None, scope: Scope | None = None, db: Session = Depends(get_db)):
+    return report_crud.get_balance_sheet(db, project_id=project_id, scope=scope)
 
 
 @router.get("/general-ledger/{account_id}", response_model=GeneralLedgerReport)
@@ -52,10 +61,11 @@ def general_ledger(
     date_from: date | None = None,
     date_to: date | None = None,
     project_id: int | None = None,
+    scope: Scope | None = None,
     db: Session = Depends(get_db),
 ):
     report = report_crud.get_general_ledger(
-        db, account_id, date_from=date_from, date_to=date_to, project_id=project_id
+        db, account_id, date_from=date_from, date_to=date_to, project_id=project_id, scope=scope
     )
     if not report:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -132,3 +142,8 @@ def employees_report(db: Session = Depends(get_db)):
 @router.get("/rental-income", response_model=list[RentalIncomeRow])
 def rental_income_report(project_id: int | None = None, db: Session = Depends(get_db)):
     return report_crud.get_rental_income_report(db, project_id=project_id)
+
+
+@router.get("/land-properties", response_model=list[LandPropertyReportRow])
+def land_properties_report(db: Session = Depends(get_db)):
+    return report_crud.get_land_property_report(db)

@@ -103,6 +103,7 @@ def create_receipt(db: Session, receipt_in: RentReceiptCreate) -> RentReceipt:
         voucher_no=_next_voucher_no(db),
         voucher_type=VoucherType.RECEIPT,
         voucher_date=receipt_in.receipt_date,
+        land_property_id=agreement.land_property_id,
         narration=f"Rent receipt {db_receipt.receipt_no} — {agreement.agreement_no}",
     )
     db.add(voucher)

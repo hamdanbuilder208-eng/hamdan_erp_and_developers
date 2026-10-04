@@ -83,3 +83,48 @@ def test_rent_from_project_unit_is_kept_off_project_profit(
         ),
     )
     assert partner_crud.compute_project_profit(db, project.id) == (0, 0)
+
+
+def test_reports_split_office_land_and_project(
+    db: Session, project, land_property, expense_head, cash_account
+):
+    from app.crud import report as report_crud
+
+    for kwargs, amount in (({}, 1_000), ({"land_property_id": land_property.id}, 25_000), ({"project_id": project.id}, 7_000)):
+        expense_crud.create_office_expense(
+            db,
+            OfficeExpenseCreate(
+                expense_date=TODAY, expense_head_id=expense_head.id, paid_from_id=cash_account.id,
+                amount=amount, **kwargs,
+            ),
+        )
+
+    office = report_crud.get_profit_loss(db, scope="office")
+    land = report_crud.get_profit_loss(db, scope="land")
+    proj = report_crud.get_profit_loss(db, project_id=project.id)
+    assert (office.total_expense, office.project_name) == (1_000, "Office / General")
+    assert (land.total_expense, land.project_name) == (25_000, "Land & Plots")
+    assert proj.total_expense == 7_000
+    assert report_crud.get_trial_balance(db, scope="land").is_balanced
+
+
+def test_land_property_report_totals(db: Session, land_property, expense_head, cash_account):
+    from app.crud import report as report_crud
+    from app.schemas.land_property import LandPropertyPaymentCreate
+
+    land_property.purchase_rate = 1_000_000
+    db.commit()
+    land_crud.create_payment(
+        db, land_property,
+        LandPropertyPaymentCreate(direction="To Seller", amount=400_000, payment_date=TODAY),
+    )
+    expense_crud.create_office_expense(
+        db,
+        OfficeExpenseCreate(
+            expense_date=TODAY, expense_head_id=expense_head.id, land_property_id=land_property.id,
+            paid_from_id=cash_account.id, amount=25_000,
+        ),
+    )
+    row = next(r for r in report_crud.get_land_property_report(db) if r.property_id == land_property.id)
+    assert (row.paid_to_seller, row.owed_to_seller, row.expenses) == (400_000, 600_000, 25_000)
+    assert row.net_cash == -425_000

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "react-router-dom";
 import { Printer } from "lucide-react";
 import { api } from "../lib/api";
+import { REPORT_SCOPES, isReportScope, reportFilterFromSearch, reportFilterParams } from "../lib/reportFilter";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
 import type {
@@ -58,19 +59,22 @@ function PrintShell({
   );
 }
 
-// ?project_id=… from the Reports page's project filter — scopes a print to one project.
+// ?project_id=… / ?scope=office|land from the Reports page's filter.
 function useProjectScope() {
   const [searchParams] = useSearchParams();
-  const projectId = searchParams.get("project_id");
+  const projectId = reportFilterFromSearch(searchParams);
+  const isScope = isReportScope(projectId);
   const { data: projects } = useQuery({
     queryKey: ["projects"],
     queryFn: async () => (await api.get<Project[]>("/projects/")).data,
-    enabled: !!projectId,
+    enabled: !!projectId && !isScope,
   });
-  const name = projects?.find((p) => p.id === Number(projectId))?.project_name;
+  const name = isScope
+    ? REPORT_SCOPES[projectId]
+    : projects?.find((p) => p.id === Number(projectId))?.project_name;
   return {
     projectId,
-    params: projectId ? { project_id: Number(projectId) } : undefined,
+    params: reportFilterParams(projectId),
     suffix: projectId ? ` — ${name ?? "Project"}` : "",
   };
 }
@@ -126,14 +130,14 @@ function TrialBalancePrint() {
 
 function ProfitLossPrint() {
   const [searchParams] = useSearchParams();
-  const projectId = searchParams.get("project_id");
+  const projectId = reportFilterFromSearch(searchParams);
 
   const { data } = useQuery({
     queryKey: ["reports", "profit-loss", projectId],
     queryFn: async () =>
       (
         await api.get<ProfitLossReport>("/reports/profit-loss", {
-          params: projectId ? { project_id: Number(projectId) } : undefined,
+          params: reportFilterParams(projectId),
         })
       ).data,
   });

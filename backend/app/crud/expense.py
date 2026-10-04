@@ -78,6 +78,7 @@ def create_office_expense(db: Session, expense_in: OfficeExpenseCreate) -> Offic
         voucher_type=VoucherType.PAYMENT,
         voucher_date=expense_in.expense_date,
         project_id=expense_in.project_id,
+        land_property_id=expense_in.land_property_id,
         narration=f"Office expense {db_expense.expense_no}",
     )
     db.add(voucher)

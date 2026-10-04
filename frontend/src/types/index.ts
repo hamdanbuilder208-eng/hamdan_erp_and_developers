@@ -74,6 +74,25 @@ export interface PaymentTemplate {
   lines: PaymentTemplateLine[];
 }
 
+export interface LandPropertyReportRow {
+  property_id: number;
+  property_ref_no: string;
+  property_type: string;
+  area_location: string;
+  size_label: string;
+  status: string;
+  owner_vendor: string | null;
+  purchase_price: number;
+  paid_to_seller: number;
+  owed_to_seller: number;
+  sale_price: number;
+  received_from_buyer: number;
+  receivable_from_buyer: number;
+  expenses: number;
+  rent_received: number;
+  net_cash: number;
+}
+
 export interface UnitCategory {
   id: number;
   name: string;
