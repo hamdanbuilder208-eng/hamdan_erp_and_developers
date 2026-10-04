@@ -630,12 +630,21 @@ export default function ContractorsPage() {
               <Label htmlFor="ct_phone">Phone Number</Label>
               <Input
                 id="ct_phone"
-                inputMode="tel"
+                inputMode="numeric"
+                placeholder="03XXXXXXXXX"
+                maxLength={11}
+                pattern="\d{11}"
+                title="Phone number must be exactly 11 digits"
                 value={contractorForm.phone}
                 onChange={(e) =>
-                  setContractorForm({ ...contractorForm, phone: e.target.value.replace(/[^0-9+\-() ]/g, "") })
+                  setContractorForm({ ...contractorForm, phone: e.target.value.replace(/\D/g, "").slice(0, 11) })
                 }
               />
+              {contractorForm.phone && contractorForm.phone.length !== 11 && (
+                <p className="mt-1 text-xs text-danger-500">
+                  {contractorForm.phone.length}/11 digits — phone number must be 11 digits.
+                </p>
+              )}
             </div>
             <div>
               <Label htmlFor="ct_bank">Bank Name</Label>

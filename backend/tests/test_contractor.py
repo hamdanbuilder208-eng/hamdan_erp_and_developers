@@ -100,3 +100,12 @@ def test_contractor_summary_totals(db: Session, agreement, contractor, cash_acco
         1, 10_000_000, 1_000_000, 800_000,
     )
     assert row.total_due == 75_000  # 875,000 net − 800,000
+
+
+def test_contractor_phone_must_be_11_digits():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="11 digits"):
+        ContractorCreate(name="X", cnic="42101-1234567-1", trade="Paint", phone="0230616515050505")
+    assert ContractorCreate(name="X", cnic="42101-1234567-1", trade="Paint", phone="03001234567").phone == "03001234567"
+    assert ContractorCreate(name="X", cnic="42101-1234567-1", trade="Paint", phone="").phone is None

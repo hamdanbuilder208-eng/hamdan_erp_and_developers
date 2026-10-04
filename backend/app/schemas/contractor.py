@@ -21,6 +21,16 @@ class ContractorBase(BaseModel):
     account_iban: str | None = None
     is_active: bool = True
 
+    @field_validator("phone")
+    @classmethod
+    def _v_phone(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        digits = v.strip()
+        if not (digits.isdigit() and len(digits) == 11):
+            raise ValueError("Phone number must be exactly 11 digits (e.g. 03001234567)")
+        return digits
+
     @field_validator("cnic")
     @classmethod
     def _v_cnic(cls, v: str) -> str:
