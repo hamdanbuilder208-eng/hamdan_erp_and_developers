@@ -160,3 +160,52 @@ def test_site_material_needs_a_project_or_warehouse():
         PettyCashExpenseCreate(
             expense_date=TODAY, float_id=1, description="Cement", material_id=1, quantity=10, rate=1_200
         )
+
+
+def test_expense_more_than_float_balance_is_blocked(db: Session, float_, office_expense_account):
+    from app.core.petty_cash_guard import InsufficientPettyCash
+
+    with pytest.raises(InsufficientPettyCash, match="Not enough petty cash"):
+        petty_cash_crud.create_expense(
+            db,
+            PettyCashExpenseCreate(
+                expense_date=TODAY, float_id=float_.id, description="Cement", amount=6_000
+            ),
+        )
+    db.rollback()
+    assert account_crud.account_balance(db, float_.account_id) == 5_000
+    assert petty_cash_crud.list_expenses(db) == []
+
+    # Spending exactly what's there is fine.
+    petty_cash_crud.create_expense(
+        db,
+        PettyCashExpenseCreate(expense_date=TODAY, float_id=float_.id, description="Cement", amount=5_000),
+    )
+    assert account_crud.account_balance(db, float_.account_id) == 0
+
+
+def test_any_payment_from_float_account_is_blocked_when_short(db: Session, float_, office_expense_account):
+    from app.core.petty_cash_guard import InsufficientPettyCash
+    from app.models.voucher import VoucherLine, VoucherType
+
+    voucher = Voucher(voucher_no="JV-T1", voucher_type=VoucherType.PAYMENT, voucher_date=TODAY)
+    db.add(voucher)
+    db.flush()
+    db.add(VoucherLine(voucher_id=voucher.id, account_id=office_expense_account.id, debit=9_000, credit=0))
+    db.add(VoucherLine(voucher_id=voucher.id, account_id=float_.account_id, debit=0, credit=9_000))
+    with pytest.raises(InsufficientPettyCash):
+        db.commit()
+    db.rollback()
+
+
+def test_spent_topup_cannot_be_deleted(db: Session, float_, cash_account, office_expense_account):
+    topup = petty_cash_crud.create_topup(
+        db,
+        PettyCashTopupCreate(topup_date=TODAY, float_id=float_.id, amount=2_000, paid_from_id=cash_account.id),
+    )
+    petty_cash_crud.create_expense(
+        db,
+        PettyCashExpenseCreate(expense_date=TODAY, float_id=float_.id, description="Tea", amount=6_000),
+    )
+    with pytest.raises(ValueError, match="already been spent"):
+        petty_cash_crud.delete_topup(db, topup)

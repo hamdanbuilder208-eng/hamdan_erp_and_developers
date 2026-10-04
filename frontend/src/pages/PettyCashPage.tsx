@@ -190,6 +190,12 @@ export default function PettyCashPage() {
       ? Number(expenseForm.quantity) * Number(expenseForm.rate)
       : null;
 
+  const expenseAmount = expenseForm.isMaterial ? materialExpensePreview ?? 0 : Number(expenseForm.amount) || 0;
+  const expenseShortfall =
+    selectedFloat && expenseAmount > selectedFloat.account.balance
+      ? expenseAmount - selectedFloat.account.balance
+      : 0;
+
   const createExpense = useMutation({
     mutationFn: async () =>
       (
@@ -298,8 +304,15 @@ export default function PettyCashPage() {
                       {f.float_code}
                     </td>
                     <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{f.holder_name}</td>
-                    <td className="px-5 py-3 text-right font-medium text-navy-900 dark:text-slate-100">
+                    <td
+                      className={`px-5 py-3 text-right font-medium ${
+                        f.account.balance < 0 ? "text-danger-600" : "text-navy-900 dark:text-slate-100"
+                      }`}
+                    >
                       PKR {f.account.balance.toLocaleString()}
+                      {f.account.balance < 0 && (
+                        <span className="block text-xs font-normal">Overdrawn — top up to clear</span>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center justify-end gap-1">
@@ -692,6 +705,12 @@ export default function PettyCashPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (expenseShortfall > 0) {
+              toast.error(
+                `Not enough petty cash with ${selectedFloat?.holder_name} — short by PKR ${expenseShortfall.toLocaleString()}. Top up the float first.`,
+              );
+              return;
+            }
             createExpense.mutate();
           }}
           className="space-y-4"
@@ -870,6 +889,15 @@ export default function PettyCashPage() {
             </div>
           )}
 
+          {expenseShortfall > 0 && (
+            <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs font-medium text-danger-700">
+              Not enough petty cash: {selectedFloat?.holder_name} has PKR{" "}
+              {selectedFloat?.account.balance.toLocaleString()}, this expense is PKR{" "}
+              {expenseAmount.toLocaleString()} (short by PKR {expenseShortfall.toLocaleString()}). Top up the
+              float first.
+            </p>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
             <Button
               type="button"
@@ -881,7 +909,7 @@ export default function PettyCashPage() {
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={createExpense.isPending}>
+            <Button type="submit" disabled={createExpense.isPending || expenseShortfall > 0}>
               <Wallet className="h-4 w-4" />
               Record Expense
             </Button>

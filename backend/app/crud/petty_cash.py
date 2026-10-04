@@ -131,6 +131,10 @@ def update_float(db: Session, db_float: PettyCashFloat, float_in: PettyCashFloat
     if float_in.balance is not None and account:
         current_balance = account_balance(db, account.id)
         delta = float_in.balance - current_balance
+        # An already-overdrawn float can still be renamed with its balance
+        # left as is — it just can't be set to a (new) negative figure.
+        if float_in.balance < 0 and abs(delta) > 0.005:
+            raise ValueError("A petty cash float's balance can't be set below zero.")
         account.opening_debit = float(account.opening_debit) + delta
 
     db.commit()
@@ -227,6 +231,13 @@ def get_topup(db: Session, topup_id: int) -> PettyCashTopup | None:
 
 
 def delete_topup(db: Session, db_topup: PettyCashTopup) -> None:
+    db_float = db_topup.float
+    remaining = account_balance(db, db_float.account_id) - float(db_topup.amount)
+    if remaining < -0.005:
+        raise ValueError(
+            f"This top-up has already been spent — removing it would leave {db_float.holder_name}'s "
+            f"float at PKR {remaining:,.2f}. Delete the expenses paid from it first."
+        )
     voucher_id = db_topup.voucher_id
     db.delete(db_topup)
     db.flush()

@@ -105,3 +105,6 @@ __all__ = [
     "RentReceiptAllocation",
     "SequenceCounter",
 ]
+
+# Registers the session hook that blocks payments overdrawing a petty cash float.
+import app.core.petty_cash_guard  # noqa: E402,F401

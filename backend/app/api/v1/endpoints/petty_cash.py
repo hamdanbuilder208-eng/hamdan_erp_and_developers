@@ -38,7 +38,10 @@ def update_float(float_id: int, float_in: PettyCashFloatUpdate, db: Session = De
     db_float = petty_cash_crud.get_float(db, float_id)
     if not db_float:
         raise HTTPException(status_code=404, detail="Float not found")
-    return petty_cash_crud.update_float(db, db_float, float_in)
+    try:
+        return petty_cash_crud.update_float(db, db_float, float_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.delete("/floats/{float_id}", status_code=status.HTTP_204_NO_CONTENT)

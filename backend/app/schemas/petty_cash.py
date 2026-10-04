@@ -22,7 +22,7 @@ class PettyCashFloatUpdate(BaseModel):
     holder_name: str | None = None
     # Sets the float's current balance directly (e.g. to correct a mistake) by
     # adjusting the underlying account's opening balance by the difference —
-    # it does not touch any top-up/expense history. Can go negative (overdrawn).
+    # it does not touch any top-up/expense history. Can't be set below zero.
     balance: float | None = None
 
 
