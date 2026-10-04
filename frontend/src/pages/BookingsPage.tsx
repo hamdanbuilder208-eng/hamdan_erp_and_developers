@@ -26,6 +26,9 @@ import type {
 } from "../types";
 
 const statuses: BookingStatus[] = ["Booked", "Confirmed", "Possession Given", "Cancelled"];
+
+// A cancelled unit's old booking was cancelled, so it can be sold again.
+const isBookable = (u: Unit) => u.status === "Available" || u.status === "Cancelled";
 const frequencies: ScheduleFrequency[] = ["Monthly", "Quarterly", "Half-Yearly", "Yearly"];
 const extraChargesReasons: ExtraChargesReason[] = [
   "East Facing",
@@ -121,7 +124,7 @@ export default function BookingsPage() {
       ).data,
     enabled: !!form.project_id,
   });
-  const availableUnitCount = units?.filter((u) => u.status === "Available").length ?? 0;
+  const availableUnitCount = units?.filter(isBookable).length ?? 0;
 
   // The selected unit's category plan, falling back to the project's default.
   const templateCategoryId = units?.find((u) => u.id === Number(form.unit_id))?.unit_category_id ?? null;
@@ -576,9 +579,13 @@ export default function BookingsPage() {
               >
                 <option value="">Select unit</option>
                 {units?.map((u) => (
-                  <option key={u.id} value={u.id} disabled={u.status !== "Available"}>
+                  <option key={u.id} value={u.id} disabled={!isBookable(u)}>
                     {u.unit_number} · PKR {Number(u.total_price).toLocaleString()}
-                    {u.status !== "Available" ? ` — ${u.status}` : ""}
+                    {u.status === "Cancelled"
+                      ? " — Cancelled (available to re-book)"
+                      : u.status !== "Available"
+                        ? ` — ${u.status}`
+                        : ""}
                   </option>
                 ))}
               </Select>
