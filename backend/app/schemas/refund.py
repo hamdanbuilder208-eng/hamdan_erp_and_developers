@@ -1,6 +1,6 @@
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.refund import RefundStatus, RefundType
 from app.schemas.account import AccountOut
@@ -41,6 +41,8 @@ class RefundCreate(RefundBase):
     def validate_vendor(self):
         if self.refund_type == RefundType.VENDOR and not self.vendor_id:
             raise ValueError("Select the vendor this refund is from")
+        if self.deduction_percent is not None and not 0 <= self.deduction_percent <= 100:
+            raise ValueError("Deduction must be between 0% and 100%")
         return self
 
 
@@ -64,8 +66,8 @@ class RefundVendorOption(BaseModel):
 
 
 class RefundDeductionUpdate(BaseModel):
-    deduction_percent: float | None = None
-    deduction_amount: float = 0
+    deduction_percent: float | None = Field(default=None, ge=0, le=100)
+    deduction_amount: float = Field(default=0, ge=0)
 
 
 class RefundPaymentCreate(PaymentModeFields):

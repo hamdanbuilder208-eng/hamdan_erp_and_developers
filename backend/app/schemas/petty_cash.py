@@ -89,6 +89,22 @@ class PettyCashExpenseCreate(PettyCashExpenseBase):
         return self
 
 
+class PettyCashOtherSpendOut(BaseModel):
+    """Money paid out of a float from another screen (a GRN, office expense,
+    wages, contractor payment, ...) — listed with the float's expenses so its
+    holder's spending is all in one place. Managed from where it was made."""
+
+    voucher_id: int
+    voucher_no: str
+    date: date
+    float_id: int
+    holder_name: str
+    source: str  # e.g. "GRN GRN-00023"
+    description: str
+    project_name: str | None = None
+    amount: float
+
+
 class PettyCashExpenseOut(PettyCashExpenseBase):
     model_config = ConfigDict(from_attributes=True)
     id: int

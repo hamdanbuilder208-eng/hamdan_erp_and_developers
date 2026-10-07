@@ -17,6 +17,7 @@ import type {
   Account,
   Material,
   PettyCashExpense,
+  PettyCashOtherSpend,
   PettyCashFloat,
   PettyCashTopup,
   Project,
@@ -26,6 +27,18 @@ import type {
 type PettyCashTab = "floats" | "topups" | "expenses";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+
+// Which screen a float spend made elsewhere is edited / deleted from.
+const managedIn = (source: string) => {
+  if (source.startsWith("GRN")) return "Material & Inventory";
+  if (/^(Office expense|Wages|Owner expense)/.test(source)) return "Expense Management";
+  if (source.startsWith("Contractor")) return "Contractors";
+  if (source.startsWith("Commission")) return "Broker Commissions";
+  if (source.startsWith("Partner")) return "Investor / Partners";
+  if (source.startsWith("Refund")) return "Refunds";
+  if (source.startsWith("Top-up")) return "Top-ups";
+  return "Vouchers";
+};
 
 export default function PettyCashPage() {
   const queryClient = useQueryClient();
@@ -43,6 +56,13 @@ export default function PettyCashPage() {
   const { data: expenses, isLoading: expensesLoading } = useQuery({
     queryKey: ["petty-cash-expenses"],
     queryFn: async () => (await api.get<PettyCashExpense[]>("/petty-cash/expenses")).data,
+    enabled: tab === "expenses",
+  });
+  // Payments made out of a float from other screens (e.g. a GRN paid from
+  // Salim's petty cash) — shown alongside, managed where they were made.
+  const { data: otherSpends } = useQuery({
+    queryKey: ["petty-cash-expenses", "other"],
+    queryFn: async () => (await api.get<PettyCashOtherSpend[]>("/petty-cash/other-spends")).data,
     enabled: tab === "expenses",
   });
   const { data: accounts } = useQuery({
@@ -459,7 +479,7 @@ export default function PettyCashPage() {
                     </td>
                   </tr>
                 )}
-                {!expensesLoading && expenses?.length === 0 && (
+                {!expensesLoading && expenses?.length === 0 && !otherSpends?.length && (
                   <tr>
                     <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
                       No expenses recorded yet.
@@ -508,6 +528,31 @@ export default function PettyCashPage() {
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
+                    </td>
+                  </tr>
+                ))}
+                {otherSpends && otherSpends.length > 0 && (
+                  <tr className="bg-slate-50 dark:bg-navy-800/60">
+                    <td colSpan={7} className="px-5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Paid from petty cash on other screens (GRN, expenses, wages, …)
+                    </td>
+                  </tr>
+                )}
+                {otherSpends?.map((s) => (
+                  <tr key={`${s.voucher_id}-${s.float_id}`} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
+                    <td className="px-5 py-3">
+                      <p className="font-mono text-xs text-slate-500 dark:text-slate-400">{s.voucher_no}</p>
+                      <p className="text-xs font-medium text-brand-700">{s.source}</p>
+                    </td>
+                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{s.date}</td>
+                    <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{s.holder_name}</td>
+                    <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{s.description || "—"}</td>
+                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{s.project_name ?? "—"}</td>
+                    <td className="px-5 py-3 text-right font-medium text-navy-900 dark:text-slate-100">
+                      PKR {s.amount.toLocaleString()}
+                    </td>
+                    <td className="px-5 py-3 text-right text-xs text-slate-400" title="Edit or delete it where it was made">
+                      {managedIn(s.source)}
                     </td>
                   </tr>
                 ))}

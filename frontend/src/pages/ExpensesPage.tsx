@@ -298,6 +298,11 @@ export default function ExpensesPage() {
     amount: number;
   };
 
+  // Paid out of someone's petty cash float ("Petty Cash - salim") → "· by salim",
+  // the same as the float's own office expenses below.
+  const pettyHolder = (accountName: string) =>
+    accountName.startsWith("Petty Cash - ") ? ` · by ${accountName.slice("Petty Cash - ".length)}` : "";
+
   const unifiedRows: UnifiedRow[] = [
     ...(officeExpenses ?? []).map((e) => ({
       key: `office-${e.id}`,
@@ -311,7 +316,8 @@ export default function ExpensesPage() {
           ? ` · ${e.project.project_name}`
           : e.land_property
             ? ` · Land/Plot ${e.land_property.property_ref_no} (${e.land_property.area_location})`
-            : ""),
+            : "") +
+        pettyHolder(e.paid_from.name),
       amount: Number(e.amount),
     })),
     ...(pettyOfficeExpenses ?? []).map((e) => ({
@@ -329,7 +335,7 @@ export default function ExpensesPage() {
       id: w.id,
       expense_no: w.payment_no,
       date: w.payment_date,
-      description: `Salary / Wages — ${w.employee.name}`,
+      description: `Salary / Wages — ${w.employee.name}${pettyHolder(w.paid_from.name)}`,
       amount: Number(w.net_paid),
     })),
     ...(ownerExpenses ?? []).map((e) => ({

@@ -209,3 +209,33 @@ def test_spent_topup_cannot_be_deleted(db: Session, float_, cash_account, office
     )
     with pytest.raises(ValueError, match="already been spent"):
         petty_cash_crud.delete_topup(db, topup)
+
+
+def test_grn_paid_from_float_shows_in_its_spends(db: Session, float_, office_expense_account):
+    from app.models.account import Account, AccountNature
+    from app.models.inventory import GRN, Vendor
+    from app.models.voucher import Voucher, VoucherLine, VoucherType
+
+    stock = Account(code="1040", name="Material Stock", nature=AccountNature.ASSET)
+    vendor = Vendor(vendor_code="VND-PC", name="Cement Co")
+    db.add_all([stock, vendor])
+    db.flush()
+    # A GRN paid from the float: Dr stock, Cr float (what create_grn posts).
+    v = Voucher(voucher_no="JV-PC1", voucher_type=VoucherType.PAYMENT, voucher_date=TODAY, narration="GRN GRN-00023 — Cement")
+    db.add(v)
+    db.flush()
+    db.add_all([
+        VoucherLine(voucher_id=v.id, account_id=stock.id, debit=3_000, credit=0),
+        VoucherLine(voucher_id=v.id, account_id=float_.account_id, debit=0, credit=3_000),
+    ])
+    db.add(GRN(grn_no="GRN-00023", grn_date=TODAY, vendor_id=vendor.id, payment_account_id=float_.account_id,
+               total_amount=3_000, voucher_id=v.id))
+    # The float's own expense is listed separately, not here.
+    petty_cash_crud.create_expense(
+        db, PettyCashExpenseCreate(expense_date=TODAY, float_id=float_.id, description="Tea", amount=500)
+    )
+    db.commit()
+
+    spends = petty_cash_crud.list_other_spends(db, float_id=float_.id)
+    assert [(s["source"], s["amount"], s["holder_name"]) for s in spends] == [("GRN GRN-00023", 3_000, "Site Supervisor")]
+    assert account_crud.account_balance(db, float_.account_id) == 1_500  # 5,000 − 3,000 − 500

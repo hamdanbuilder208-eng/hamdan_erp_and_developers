@@ -45,6 +45,33 @@ const isVendor = (r: Refund | null | undefined) => r?.refund_type === "Vendor";
 const statusLabel = (r: Refund) =>
   isVendor(r) ? r.status.replace("Paid", "Received") : r.status;
 
+// What the deduction means for each kind of refund.
+const deductionLabel = (type: RefundType) =>
+  type === "Customer"
+    ? "Deduction % (cancellation charges)"
+    : type === "Vendor"
+      ? "Deduction % (kept by vendor, e.g. return charges)"
+      : "Deduction %";
+
+const deductionPercentOk = (value: string) => {
+  const n = Number(value);
+  return value === "" || (n >= 0 && n <= 100);
+};
+
+/** "= PKR 2,000 deducted" under a deduction % box, or an error past 100%. */
+function DeductionHint({ percent, gross }: { percent: string; gross: number }) {
+  if (!percent) return null;
+  if (!deductionPercentOk(percent)) {
+    return <p className="mt-1 text-xs text-danger-600">Deduction must be between 0% and 100%.</p>;
+  }
+  const amount = Math.round(((gross * Number(percent)) / 100) * 100) / 100;
+  return gross > 0 ? (
+    <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+      = PKR {amount.toLocaleString()} deducted · PKR {(gross - amount).toLocaleString()} net
+    </p>
+  ) : null;
+}
+
 const emptyForm = {
   refund_type: "Customer" as RefundType,
   booking_id: "",
@@ -567,14 +594,17 @@ export default function RefundsPage() {
               )}
             </div>
             <div>
-              <Label htmlFor="rf_deduction">Deduction % (optional)</Label>
+              <Label htmlFor="rf_deduction">{deductionLabel(form.refund_type)} (optional)</Label>
               <Input
                 id="rf_deduction"
                 type="number"
+                min="0"
+                max="100"
                 step="0.01"
                 value={form.deduction_percent}
                 onChange={(e) => setForm({ ...form, deduction_percent: e.target.value })}
               />
+              <DeductionHint percent={form.deduction_percent} gross={grossAmount} />
             </div>
           </div>
 
@@ -626,6 +656,7 @@ export default function RefundsPage() {
               disabled={
                 createRefund.isPending ||
                 netAmount <= 0 ||
+                !deductionPercentOk(form.deduction_percent) ||
                 (isCustomer && (!selectedBooking || grossAmount > customerPaid)) ||
                 (isVendorForm && (!selectedVendor || (!!selectedGrn && grossAmount > grnLeft)))
               }
@@ -671,26 +702,34 @@ export default function RefundsPage() {
             </div>
 
             {paymentsRefund.status === "Pending" && (
-              <div className="flex items-end gap-2">
-                <div className="flex-1">
-                  <Label htmlFor="deduction_percent">Deduction % (cancellation charges)</Label>
-                  <Input
-                    id="deduction_percent"
-                    type="number"
-                    step="0.01"
-                    value={deductionForm.deduction_percent}
-                    onChange={(e) => setDeductionForm({ deduction_percent: e.target.value })}
-                  />
+              <div>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Label htmlFor="deduction_percent">{deductionLabel(paymentsRefund.refund_type)}</Label>
+                    <Input
+                      id="deduction_percent"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={deductionForm.deduction_percent}
+                      onChange={(e) => setDeductionForm({ deduction_percent: e.target.value })}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={updateDeduction.isPending || !deductionPercentOk(deductionForm.deduction_percent)}
+                    onClick={() => updateDeduction.mutate()}
+                  >
+                    Update
+                  </Button>
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  disabled={updateDeduction.isPending}
-                  onClick={() => updateDeduction.mutate()}
-                >
-                  Update
-                </Button>
+                <DeductionHint
+                  percent={deductionForm.deduction_percent}
+                  gross={Number(paymentsRefund.gross_amount)}
+                />
               </div>
             )}
 

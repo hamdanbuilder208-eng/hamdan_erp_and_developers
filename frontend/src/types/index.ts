@@ -1240,3 +1240,16 @@ export interface ContractorPaymentDetail extends ContractorPayment {
     contractor: Contractor;
   };
 }
+
+/** Money paid out of a petty cash float from another screen (GRN, office expense, wages, ...). */
+export interface PettyCashOtherSpend {
+  voucher_id: number;
+  voucher_no: string;
+  date: string;
+  float_id: number;
+  holder_name: string;
+  source: string;
+  description: string;
+  project_name: string | null;
+  amount: number;
+}

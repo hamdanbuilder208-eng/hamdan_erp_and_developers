@@ -7,6 +7,7 @@ from app.db.session import get_db
 from app.schemas.petty_cash import (
     PettyCashExpenseCreate,
     PettyCashExpenseOut,
+    PettyCashOtherSpendOut,
     PettyCashFloatCreate,
     PettyCashFloatOut,
     PettyCashFloatUpdate,
@@ -85,6 +86,11 @@ def delete_topup(topup_id: int, db: Session = Depends(get_db)):
 
 
 # Expenses
+
+
+@router.get("/other-spends", response_model=list[PettyCashOtherSpendOut])
+def list_other_spends(float_id: int | None = None, db: Session = Depends(get_db)):
+    return petty_cash_crud.list_other_spends(db, float_id=float_id)
 
 
 @router.get("/expenses", response_model=list[PettyCashExpenseOut])

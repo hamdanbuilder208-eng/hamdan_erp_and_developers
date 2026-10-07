@@ -282,6 +282,83 @@ def list_expenses(
     return expenses
 
 
+def list_other_spends(db: Session, float_id: int | None = None) -> list[dict]:
+    """Payments made out of a float from other screens (a GRN paid from
+    Salim's petty cash, an office expense, wages, ...). The float balance
+    already reflects them; this lists them with the float's own expenses."""
+    from app.models.commission_payout import CommissionPayout
+    from app.models.contractor import ContractorPayment
+    from app.models.expense import OfficeExpense, OwnerPersonalExpense, WagePayment
+    from app.models.inventory import GRN
+    from app.models.partner import PartnerDrawing
+    from app.models.project import Project
+    from app.models.refund import Refund, RefundPayment
+
+    floats_query = db.query(PettyCashFloat)
+    if float_id is not None:
+        floats_query = floats_query.filter(PettyCashFloat.id == float_id)
+    float_by_account = {f.account_id: f for f in floats_query.all()}
+    if not float_by_account:
+        return []
+
+    own_vouchers = {
+        v for (v,) in db.query(PettyCashExpense.voucher_id).filter(PettyCashExpense.voucher_id.is_not(None))
+    }
+    lines = (
+        db.query(VoucherLine)
+        .join(Voucher, VoucherLine.voucher_id == Voucher.id)
+        .options(joinedload(VoucherLine.voucher))
+        .filter(VoucherLine.account_id.in_(float_by_account), VoucherLine.credit > 0)
+        .order_by(Voucher.voucher_date.desc(), Voucher.id.desc())
+        .all()
+    )
+    lines = [l for l in lines if l.voucher_id not in own_vouchers]
+    if not lines:
+        return []
+    voucher_ids = {l.voucher_id for l in lines}
+
+    # Where each voucher came from, e.g. "GRN GRN-00023".
+    source: dict[int, str] = {}
+    for model, number, label in (
+        (GRN, GRN.grn_no, "GRN"),
+        (OfficeExpense, OfficeExpense.expense_no, "Office expense"),
+        (WagePayment, WagePayment.payment_no, "Wages"),
+        (OwnerPersonalExpense, OwnerPersonalExpense.expense_no, "Owner expense"),
+        (ContractorPayment, ContractorPayment.payment_no, "Contractor payment"),
+        (CommissionPayout, CommissionPayout.payout_no, "Commission"),
+        (PartnerDrawing, PartnerDrawing.drawing_no, "Partner drawing"),
+        (PettyCashTopup, PettyCashTopup.topup_no, "Top-up to another float"),
+    ):
+        for vid, no in db.query(model.voucher_id, number).filter(model.voucher_id.in_(voucher_ids)):
+            source[vid] = f"{label} {no}"
+    for vid, no in (
+        db.query(RefundPayment.voucher_id, Refund.refund_no)
+        .join(Refund, RefundPayment.refund_id == Refund.id)
+        .filter(RefundPayment.voucher_id.in_(voucher_ids))
+    ):
+        source[vid] = f"Refund {no}"
+
+    project_ids = {l.voucher.project_id for l in lines if l.voucher.project_id}
+    project_names = dict(
+        db.query(Project.id, Project.project_name).filter(Project.id.in_(project_ids)).all()
+    ) if project_ids else {}
+
+    return [
+        {
+            "voucher_id": l.voucher_id,
+            "voucher_no": l.voucher.voucher_no,
+            "date": l.voucher.voucher_date,
+            "float_id": float_by_account[l.account_id].id,
+            "holder_name": float_by_account[l.account_id].holder_name,
+            "source": source.get(l.voucher_id, f"Voucher {l.voucher.voucher_no}"),
+            "description": l.voucher.narration or l.narration or "",
+            "project_name": project_names.get(l.voucher.project_id),
+            "amount": float(l.credit),
+        }
+        for l in lines
+    ]
+
+
 def get_expense(db: Session, expense_id: int) -> PettyCashExpense | None:
     db_expense = _load_expense_query(db).filter(PettyCashExpense.id == expense_id).first()
     if db_expense:
