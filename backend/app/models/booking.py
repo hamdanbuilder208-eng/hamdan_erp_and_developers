@@ -61,6 +61,9 @@ class Booking(Base, TimestampMixin):
     booking_agent_id: Mapped[int | None] = mapped_column(ForeignKey("booking_agents.id"))
     agent_commission_percent: Mapped[float | None] = mapped_column(Numeric(5, 2))
     revenue_voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
+    # Reverses the still-unpaid part of the sale when a booking with payments
+    # is cancelled (the paid part is reversed by the refund instead).
+    cancellation_voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
 
     down_payment_amount: Mapped[float] = mapped_column(Numeric(18, 2), default=0)
 

@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.payment_details import apply_payment_mode
 from app.core.sequences import next_sequence_number
-from app.crud.booking import update_booking_status
+from app.crud.booking import UNIT_SALES_ACCOUNT_CODE, update_booking_status
+from app.models.account import Account
 from app.models.booking import Booking, BookingStatus
 from app.models.refund import Refund, RefundPayment, RefundStatus, RefundType
 from app.models.voucher import Voucher, VoucherLine, VoucherType
@@ -168,6 +169,17 @@ def add_payment(db: Session, db_refund: Refund, payment_in: RefundPaymentCreate)
     remaining = float(db_refund.net_amount) - _paid_so_far(db, db_refund.id)
     if payment_in.amount > remaining + 0.01:
         raise ValueError(f"Only PKR {remaining:,.2f} remains on this refund")
+
+    # Money handed back on a cancelled booking undoes that much of the sale, so
+    # it always comes off Unit Sales — then sale, receipts and refund net out
+    # and nothing is left in the Trial Balance. Any deduction kept stays as sales.
+    if db_refund.refund_type == RefundType.CUSTOMER and db_refund.booking_id:
+        sales_account = db.query(Account).filter(Account.code == UNIT_SALES_ACCOUNT_CODE).first()
+        if not sales_account:
+            raise ValueError(f"Unit Sales account (code {UNIT_SALES_ACCOUNT_CODE}) not found in chart of accounts")
+        payment_in.account_id = sales_account.id
+    elif payment_in.account_id is None:
+        raise ValueError("Select the account this refund is booked against.")
 
     db_payment = RefundPayment(
         refund_id=db_refund.id,

@@ -43,7 +43,8 @@ class RefundDeductionUpdate(BaseModel):
 class RefundPaymentCreate(PaymentModeFields):
     payment_date: date
     amount: float
-    account_id: int
+    # Not needed for a booking's customer refund — that always reverses Unit Sales.
+    account_id: int | None = None
     cash_account_id: int
     narration: str | None = None
 

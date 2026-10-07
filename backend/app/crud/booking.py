@@ -403,6 +403,74 @@ def create_transfer(
     return db_transfer
 
 
+def booking_receivable_balance(db: Session, db_booking: Booking) -> float:
+    """What the customer still owes on this booking per the books: receivable
+    raised by the sale and its extra charges, less what receipts cleared."""
+    receivable_account = db.query(Account).filter(Account.code == RECEIVABLE_ACCOUNT_CODE).first()
+    if not receivable_account:
+        return 0.0
+    voucher_ids = [db_booking.revenue_voucher_id] + [c.voucher_id for c in db_booking.extra_charges]
+    voucher_ids += [
+        vid for (vid,) in db.query(Receipt.voucher_id).filter(Receipt.booking_id == db_booking.id).all()
+    ]
+    voucher_ids = [v for v in voucher_ids if v]
+    if not voucher_ids:
+        return 0.0
+    lines = (
+        db.query(VoucherLine)
+        .filter(VoucherLine.voucher_id.in_(voucher_ids), VoucherLine.account_id == receivable_account.id)
+        .all()
+    )
+    return round(sum(float(l.debit) - float(l.credit) for l in lines), 2)
+
+
+def _reverse_unpaid_sale(db: Session, db_booking: Booking, on_date: date) -> None:
+    """A cancelled booking whose customer had already paid something keeps its
+    sale voucher (the paid part is undone by the refund). The part never paid
+    is reversed here — otherwise it would sit in Unit Sales and Receivables
+    for good."""
+    if db_booking.cancellation_voucher_id:
+        return
+    unpaid = booking_receivable_balance(db, db_booking)
+    receivable_account = db.query(Account).filter(Account.code == RECEIVABLE_ACCOUNT_CODE).first()
+    revenue_account = db.query(Account).filter(Account.code == UNIT_SALES_ACCOUNT_CODE).first()
+    if unpaid <= 0.005 or not (receivable_account and revenue_account):
+        return
+    voucher = Voucher(
+        voucher_no=_next_journal_voucher_no(db),
+        voucher_type=VoucherType.JOURNAL,
+        voucher_date=on_date,
+        project_id=db_booking.project_id,
+        narration=f"Sale reversed — booking {db_booking.booking_ref_no} cancelled (unpaid balance)",
+    )
+    db.add(voucher)
+    db.flush()
+    db.add(
+        VoucherLine(
+            voucher_id=voucher.id, account_id=revenue_account.id, debit=unpaid, credit=0,
+            narration=f"Cancelled booking {db_booking.booking_ref_no}",
+        )
+    )
+    db.add(
+        VoucherLine(
+            voucher_id=voucher.id, account_id=receivable_account.id, debit=0, credit=unpaid,
+            narration=f"Cancelled booking {db_booking.booking_ref_no}",
+        )
+    )
+    db_booking.cancellation_voucher_id = voucher.id
+
+
+def _delete_voucher_ref(db: Session, db_booking: Booking, field: str) -> None:
+    voucher_id = getattr(db_booking, field)
+    if not voucher_id:
+        return
+    setattr(db_booking, field, None)
+    db.flush()
+    voucher = db.query(Voucher).filter(Voucher.id == voucher_id).first()
+    if voucher:
+        db.delete(voucher)
+
+
 def update_booking_status(
     db: Session, db_booking: Booking, new_status: BookingStatus, status_date: date
 ) -> Booking:
@@ -439,6 +507,7 @@ def update_booking_status(
                 from app.crud.refund import create_pending_refund
 
                 create_pending_refund(db, db_booking, total_paid, status_date)
+            _reverse_unpaid_sale(db, db_booking, status_date)
     elif new_status == BookingStatus.POSSESSION_GIVEN:
         if unit:
             unit.status = UnitStatus.SOLD
@@ -447,6 +516,8 @@ def update_booking_status(
             # The unit may have been re-booked to someone else since.
             _ensure_no_active_booking(db, unit)
             unit.status = UnitStatus.BOOKED
+        # The sale stands again — drop the cancellation's reversal.
+        _delete_voucher_ref(db, db_booking, "cancellation_voucher_id")
 
     db_booking.status = new_status
     db_booking.status_date = status_date
@@ -488,6 +559,9 @@ def delete_booking(db: Session, db_booking: Booking) -> None:
     if db_booking.revenue_voucher_id:
         voucher_ids.append(db_booking.revenue_voucher_id)
         db_booking.revenue_voucher_id = None
+    if db_booking.cancellation_voucher_id:
+        voucher_ids.append(db_booking.cancellation_voucher_id)
+        db_booking.cancellation_voucher_id = None
     for charge in db_booking.extra_charges:
         if charge.voucher_id:
             voucher_ids.append(charge.voucher_id)

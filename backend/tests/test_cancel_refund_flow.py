@@ -128,3 +128,33 @@ def test_auto_refund_can_be_paid_out_in_installments(
         )
         RefundOut.model_validate(refund)
     assert refund.status == RefundStatus.PAID
+
+
+def test_cancel_and_refund_leaves_nothing_in_the_books(
+    db: Session, project, unit, allottee, accounting_accounts, cash_account
+):
+    from app.crud import report as report_crud
+    from app.models.account import Account, AccountNature
+    from app.schemas.refund import RefundPaymentCreate
+
+    sales_return = Account(code="4090", name="Sales Return", nature=AccountNature.REVENUE)
+    db.add(sales_return)
+    db.commit()
+
+    booking = _paid_booking(db, project, unit, allottee, cash_account)  # 300,000 paid
+    booking_crud.update_booking_status(db, booking, BookingStatus.CANCELLED, TODAY)
+    refund = refund_crud.list_refunds(db)[0]
+    refund_crud.add_payment(
+        db, refund,
+        RefundPaymentCreate(payment_date=TODAY, amount=300_000, account_id=sales_return.id, cash_account_id=cash_account.id),
+    )
+
+    tb = report_crud.get_trial_balance(db)
+    assert tb.is_balanced
+    assert tb.rows == []  # sale, receipt and refund all net out to zero
+
+    # Re-activating the booking brings the full sale back.
+    booking_crud.update_booking_status(db, booking, BookingStatus.BOOKED, TODAY)
+    db.refresh(booking)
+    assert booking.cancellation_voucher_id is None
+    assert booking_crud.booking_receivable_balance(db, booking) > 0

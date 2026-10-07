@@ -186,6 +186,7 @@ export default function RefundsPage() {
   const [paymentModalOpen, setPaymentModalOpen] = React.useState(false);
   const [paymentForm, setPaymentForm] = React.useState(emptyPaymentForm);
   const [paymentError, setPaymentError] = React.useState<string | null>(null);
+  const isBookingRefund = paymentsRefund?.refund_type === "Customer" && !!paymentsRefund.booking_id;
 
   const addPayment = useMutation({
     mutationFn: async () =>
@@ -193,7 +194,8 @@ export default function RefundsPage() {
         await api.post<Refund>(`/refunds/${paymentsRefund!.id}/payments`, {
           payment_date: paymentForm.payment_date || todayIso(),
           amount: Number(paymentForm.amount) || 0,
-          account_id: Number(paymentForm.account_id),
+          // A booking's refund is always booked against Unit Sales by the server.
+          account_id: isBookingRefund ? null : Number(paymentForm.account_id),
           cash_account_id: Number(paymentForm.cash_account_id),
           narration: paymentForm.narration || null,
           ...paymentModePayload(paymentForm),
@@ -682,19 +684,25 @@ export default function RefundsPage() {
               <Label htmlFor="payment_account">
                 {paymentsRefund?.refund_type === "Vendor" ? "Vendor / Payable Account" : "Revenue / Expense Account"}
               </Label>
-              <Select
-                id="payment_account"
-                required
-                value={paymentForm.account_id}
-                onChange={(e) => setPaymentForm({ ...paymentForm, account_id: e.target.value })}
-              >
-                <option value="">Select account</option>
-                {glAccounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </Select>
+              {isBookingRefund ? (
+                <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:bg-navy-800 dark:text-slate-400">
+                  Unit Sales — a cancelled booking's refund reverses the sale, so it clears from the Trial Balance.
+                </p>
+              ) : (
+                <Select
+                  id="payment_account"
+                  required
+                  value={paymentForm.account_id}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, account_id: e.target.value })}
+                >
+                  <option value="">Select account</option>
+                  {glAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
             </div>
             <div>
               <Label htmlFor="payment_cash">
