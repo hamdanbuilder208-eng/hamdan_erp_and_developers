@@ -62,7 +62,7 @@ def test_expense_cannot_target_both_project_and_land():
         )
 
 
-def test_rent_from_project_unit_is_kept_off_project_profit(
+def test_rent_from_project_unit_counts_as_project_income(
     db: Session, project, unit, tenant, cash_account, rental_income_account
 ):
     from app.crud import rent_receipt as rent_receipt_crud
@@ -82,7 +82,8 @@ def test_rent_from_project_unit_is_kept_off_project_profit(
             receipt_date=TODAY, agreement_id=agreement.id, credit_account_id=cash_account.id, amount=30_000
         ),
     )
-    assert partner_crud.compute_project_profit(db, project.id) == (0, 0)
+    # Rent on a project's unit/shop is that project's income.
+    assert partner_crud.compute_project_profit(db, project.id) == (30_000, 0)
 
 
 def test_reports_split_office_land_and_project(

@@ -147,6 +147,7 @@ def add_extra_charge(db: Session, db_booking: Booking, charge_in: ExtraChargeCre
     if db_booking.status == BookingStatus.CANCELLED:
         raise ValueError("Cannot add a charge to a cancelled booking")
     _add_extra_charge(db, db_booking, charge_in)
+    sync_unit_sold(db, db_booking)  # a new charge means it's no longer fully paid
     db.commit()
     return get_booking(db, db_booking.id)
 
@@ -174,6 +175,8 @@ def delete_extra_charge(db: Session, db_charge: BookingExtraCharge) -> None:
         voucher = db.query(Voucher).filter(Voucher.id == voucher_id).first()
         if voucher:
             db.delete(voucher)
+    if booking:
+        sync_unit_sold(db, booking)  # removing an unpaid charge may complete it
     db.commit()
 
 
@@ -401,6 +404,29 @@ def create_transfer(
     db.commit()
     db.refresh(db_transfer)
     return db_transfer
+
+
+def sync_unit_sold(db: Session, db_booking: Booking) -> None:
+    """A unit whose booking is paid in full is Sold — whether paid in one go at
+    booking or over installments. If it stops being fully paid (receipt
+    deleted, cheque bounced, extra charge added) it goes back to Booked.
+    Cancelled bookings and possession-given ones (always Sold) are left alone."""
+    if db_booking.status in (BookingStatus.CANCELLED, BookingStatus.POSSESSION_GIVEN):
+        return
+    unit = db.query(Unit).filter(Unit.id == db_booking.unit_id).first()
+    if not unit:
+        return
+    db.flush()
+    lines = db.query(PaymentScheduleLine).filter(PaymentScheduleLine.booking_id == db_booking.id).all()
+    # The booking's full price (after discount, plus extra charges) — not just
+    # what's scheduled so far, since installments can be added later.
+    due = max(float(db_booking.total_price), sum(float(l.amount) for l in lines))
+    paid = sum(float(l.paid_amount) for l in lines)
+    fully_paid = due > 0 and paid >= due - 0.01
+    if fully_paid and unit.status == UnitStatus.BOOKED:
+        unit.status = UnitStatus.SOLD
+    elif not fully_paid and unit.status == UnitStatus.SOLD:
+        unit.status = UnitStatus.BOOKED
 
 
 def booking_receivable_balance(db: Session, db_booking: Booking) -> float:

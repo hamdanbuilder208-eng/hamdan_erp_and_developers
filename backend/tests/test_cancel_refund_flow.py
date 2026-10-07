@@ -158,3 +158,53 @@ def test_cancel_and_refund_leaves_nothing_in_the_books(
     db.refresh(booking)
     assert booking.cancellation_voucher_id is None
     assert booking_crud.booking_receivable_balance(db, booking) > 0
+
+
+def test_unit_becomes_sold_when_fully_paid_and_back_if_not(
+    db: Session, project, unit, allottee, accounting_accounts, cash_account
+):
+    from app.crud import receipt as receipt_crud
+    from app.models.unit import UnitStatus
+    from app.schemas.receipt import ReceiptCreate
+
+    booking = booking_crud.create_booking(
+        db,
+        BookingCreate(
+            booking_date=TODAY, project_id=project.id, unit_id=unit.id, allottee_id=allottee.id,
+            status_date=TODAY, down_payment_amount=float(unit.total_price), one_shot=True,
+        ),
+    )
+    db.refresh(unit)
+    assert unit.status == UnitStatus.BOOKED
+
+    half = float(unit.total_price) / 2
+    r1 = receipt_crud.create_receipt(db, ReceiptCreate(receipt_date=TODAY, booking_id=booking.id, credit_account_id=cash_account.id, amount=half))
+    db.refresh(unit)
+    assert unit.status == UnitStatus.BOOKED  # half paid
+
+    receipt_crud.create_receipt(db, ReceiptCreate(receipt_date=TODAY, booking_id=booking.id, credit_account_id=cash_account.id, amount=half))
+    db.refresh(unit)
+    assert unit.status == UnitStatus.SOLD  # paid in full
+
+    receipt_crud.delete_receipt(db, receipt_crud.get_receipt(db, r1.id))
+    db.refresh(unit)
+    assert unit.status == UnitStatus.BOOKED  # no longer fully paid
+
+
+def test_down_payment_only_booking_is_not_sold_when_down_payment_paid(
+    db: Session, project, unit, allottee, accounting_accounts, cash_account
+):
+    from app.crud import receipt as receipt_crud
+    from app.models.unit import UnitStatus
+    from app.schemas.receipt import ReceiptCreate
+
+    booking = booking_crud.create_booking(
+        db,
+        BookingCreate(
+            booking_date=TODAY, project_id=project.id, unit_id=unit.id, allottee_id=allottee.id,
+            status_date=TODAY, down_payment_amount=100_000,  # rest to be scheduled later
+        ),
+    )
+    receipt_crud.create_receipt(db, ReceiptCreate(receipt_date=TODAY, booking_id=booking.id, credit_account_id=cash_account.id, amount=100_000))
+    db.refresh(unit)
+    assert unit.status == UnitStatus.BOOKED

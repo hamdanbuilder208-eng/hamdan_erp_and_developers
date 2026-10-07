@@ -20,6 +20,7 @@ import type {
   OfficeExpense,
   OwnerPersonalExpense,
   PettyCashExpense,
+  PettyCashOtherSpend,
   Project,
   WagePayment,
   WageType,
@@ -31,17 +32,21 @@ const errorMessage = (err: unknown, fallback: string) => {
   return typeof detail === "string" ? detail : fallback;
 };
 
-type ExpenseKind = "office" | "petty" | "wages" | "owner";
+// "pettyOther": paid from a petty cash float on another screen (e.g. a GRN) —
+// shown here, but edited/deleted where it was made.
+type ExpenseKind = "office" | "petty" | "pettyOther" | "wages" | "owner";
 
 const kindLabel: Record<ExpenseKind, string> = {
   office: "Office",
   petty: "Office · Petty Cash",
+  pettyOther: "Petty Cash",
   wages: "Wages",
   owner: "Office · Owner",
 };
 const kindBadgeClass: Record<ExpenseKind, string> = {
   office: "bg-info-50 text-info-700",
   petty: "bg-info-50 text-info-700",
+  pettyOther: "bg-rented-50 text-rented-700",
   wages: "bg-warning-50 text-warning-700",
   owner: "bg-onhold-50 text-onhold-700",
 };
@@ -238,12 +243,16 @@ export default function ExpensesPage() {
     queryFn: async () => (await api.get<OwnerPersonalExpense[]>("/expenses/owner-personal")).data,
   });
 
-  // Petty cash the float-holder spent on office work (no project) is an office
-  // expense too — list it here. Project spends stay with their project.
-  const { data: pettyOfficeExpenses, isLoading: pettyLoading } = useQuery({
-    queryKey: ["petty-cash-expenses", "office"],
-    queryFn: async () =>
-      (await api.get<PettyCashExpense[]>("/petty-cash/expenses", { params: { office_only: true } })).data,
+  // Everything spent out of petty cash floats is listed here too — office,
+  // project and material spends (labelled so they're told apart), plus
+  // payments made from a float on other screens (e.g. a GRN).
+  const { data: pettyExpenses, isLoading: pettyLoading } = useQuery({
+    queryKey: ["petty-cash-expenses", "all"],
+    queryFn: async () => (await api.get<PettyCashExpense[]>("/petty-cash/expenses")).data,
+  });
+  const { data: pettyOtherSpends } = useQuery({
+    queryKey: ["petty-cash-expenses", "other"],
+    queryFn: async () => (await api.get<PettyCashOtherSpend[]>("/petty-cash/other-spends")).data,
   });
   const deletePettyExpense = useMutation({
     mutationFn: async (id: number) => api.delete(`/petty-cash/expenses/${id}`),
@@ -294,6 +303,8 @@ export default function ExpensesPage() {
     id: number;
     expense_no: string;
     date: string;
+    /** Overrides the type badge, e.g. "Project · Petty Cash". */
+    label?: string;
     description: string;
     amount: number;
   };
@@ -320,15 +331,34 @@ export default function ExpensesPage() {
         pettyHolder(e.paid_from.name),
       amount: Number(e.amount),
     })),
-    ...(pettyOfficeExpenses ?? []).map((e) => ({
+    ...(pettyExpenses ?? []).map((e) => ({
       key: `petty-${e.id}`,
       kind: "petty" as const,
       id: e.id,
       expense_no: e.expense_no,
       date: e.expense_date,
-      description: `${e.description} · by ${e.float.holder_name}`,
+      label: e.project ? "Project · Petty Cash" : e.material ? "Material · Petty Cash" : undefined,
+      description:
+        `${e.description}` +
+        (e.material ? ` (${e.quantity} ${e.material.unit_of_measure} ${e.material.name})` : "") +
+        (e.project ? ` · ${e.project.project_name}` : "") +
+        ` · by ${e.float.holder_name}`,
       amount: Number(e.amount),
     })),
+    // Paid from a float on another screen (GRN, contractor, …). Office
+    // expenses / wages / owner expenses paid that way are already listed above.
+    ...(pettyOtherSpends ?? [])
+      .filter((s) => !/^(Office expense|Wages|Owner expense)/.test(s.source))
+      .map((s) => ({
+        key: `petty-other-${s.voucher_id}-${s.float_id}`,
+        kind: "pettyOther" as const,
+        id: s.voucher_id,
+        expense_no: s.source,
+        date: s.date,
+        label: `${s.source.startsWith("GRN") ? "Material" : s.source.split(" ")[0]} · Petty Cash`,
+        description: `${s.description}${s.project_name ? ` · ${s.project_name}` : ""} · by ${s.holder_name}`,
+        amount: s.amount,
+      })),
     ...(wagePayments ?? []).map((w) => ({
       key: `wages-${w.id}`,
       kind: "wages" as const,
@@ -373,7 +403,8 @@ export default function ExpensesPage() {
         <div>
           <h2 className="text-lg font-semibold text-navy-950 dark:text-white">Expense Management</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Office expenses, staff wages, and the owner's personal expenses — all in one place.
+            Office expenses, staff wages, the owner's personal expenses and everything spent from petty cash —
+            all in one place.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -428,8 +459,12 @@ export default function ExpensesPage() {
                 <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{row.expense_no}</td>
                 <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{row.date}</td>
                 <td className="px-5 py-3">
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${kindBadgeClass[row.kind]}`}>
-                    {kindLabel[row.kind]}
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                      row.label && row.kind === "petty" ? kindBadgeClass.pettyOther : kindBadgeClass[row.kind]
+                    }`}
+                  >
+                    {row.label ?? kindLabel[row.kind]}
                   </span>
                 </td>
                 <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{row.description}</td>
@@ -437,6 +472,11 @@ export default function ExpensesPage() {
                   PKR {row.amount.toLocaleString()}
                 </td>
                 <td className="px-5 py-3">
+                  {row.kind === "pettyOther" ? (
+                    <p className="text-right text-xs text-slate-400" title="Edit or delete it where it was made">
+                      {row.expense_no.startsWith("GRN") ? "Material & Inventory" : "See its own screen"}
+                    </p>
+                  ) : (
                   <div className="flex items-center justify-end gap-1">
                     <button
                       onClick={() => window.open(printUrl(row), "_blank")}
@@ -451,6 +491,7 @@ export default function ExpensesPage() {
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
+                  )}
                 </td>
               </tr>
             ))}

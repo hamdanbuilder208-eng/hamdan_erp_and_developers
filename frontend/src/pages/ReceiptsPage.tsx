@@ -179,6 +179,7 @@ export default function ReceiptsPage() {
       ).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["units"] }); // paid in full → Sold
       setNewPlanForm(emptyNewPlanForm());
       setNewPlanOpen(false);
       toast.success("Installment plan created for the remaining balance.");
@@ -248,6 +249,7 @@ export default function ReceiptsPage() {
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["units"] }); // paid in full → Sold
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       setModalOpen(false);
       resetForm();
@@ -279,6 +281,7 @@ export default function ReceiptsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["units"] }); // paid in full → Sold
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["pending-cheques"] });
       setModalOpen(false);
@@ -293,6 +296,7 @@ export default function ReceiptsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["units"] }); // paid in full → Sold
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
     },
     onError: (err: unknown) => {
@@ -306,6 +310,7 @@ export default function ReceiptsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["units"] }); // paid in full → Sold
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["pending-cheques"] });
     },

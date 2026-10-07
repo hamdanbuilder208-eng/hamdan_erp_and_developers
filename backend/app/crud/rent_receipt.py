@@ -103,6 +103,9 @@ def create_receipt(db: Session, receipt_in: RentReceiptCreate) -> RentReceipt:
         voucher_no=_next_voucher_no(db),
         voucher_type=VoucherType.RECEIPT,
         voucher_date=receipt_in.receipt_date,
+        # Rent on a project's unit/shop is that project's income (its P&L and
+        # partners' profit); rent on a Land & Plots property goes to that property.
+        project_id=agreement.unit.project_id if agreement.unit else None,
         land_property_id=agreement.land_property_id,
         narration=f"Rent receipt {db_receipt.receipt_no} — {agreement.agreement_no}",
     )

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.payment_details import CHEQUE_FIELDS, TRANSFER_FIELDS, apply_payment_details
 from app.core.sequences import next_sequence_number
+from app.crud.booking import sync_unit_sold
 from app.models.account import Account
 from app.models.booking import Booking, PaymentScheduleLine
 from app.models.receipt import ChequeStatus, Receipt, ReceiptAllocation
@@ -166,6 +167,7 @@ def create_receipt(db: Session, receipt_in: ReceiptCreate) -> Receipt:
     db.flush()
 
     _apply_receipt_ledger(db, booking, db_receipt, receipt_in.schedule_line_id)
+    sync_unit_sold(db, booking)
 
     db.commit()
     return get_receipt(db, db_receipt.id)
@@ -178,6 +180,7 @@ def update_receipt(db: Session, db_receipt: Receipt, receipt_in: ReceiptUpdate) 
     the edited fields, then re-books it exactly like a fresh receipt would be."""
     data = receipt_in.model_dump(exclude_unset=True)
 
+    old_booking_id = db_receipt.booking_id
     new_booking_id = data.get("booking_id", db_receipt.booking_id)
     booking = db.query(Booking).filter(Booking.id == new_booking_id).first()
     if not booking:
@@ -223,6 +226,11 @@ def update_receipt(db: Session, db_receipt: Receipt, receipt_in: ReceiptUpdate) 
 
     if should_apply:
         _apply_receipt_ledger(db, booking, db_receipt)
+    sync_unit_sold(db, booking)
+    if old_booking_id != booking.id:
+        old_booking = db.query(Booking).filter(Booking.id == old_booking_id).first()
+        if old_booking:
+            sync_unit_sold(db, old_booking)
 
     db.commit()
     return get_receipt(db, db_receipt.id)
@@ -272,6 +280,9 @@ def mark_cheque_status(db: Session, db_receipt: Receipt, new_status: ChequeStatu
         _apply_receipt_ledger(db, booking, db_receipt)
 
     db_receipt.cheque_status = new_status
+    booking = db.query(Booking).filter(Booking.id == db_receipt.booking_id).first()
+    if booking:
+        sync_unit_sold(db, booking)
     db.commit()
     return get_receipt(db, db_receipt.id)
 
@@ -282,6 +293,7 @@ def delete_receipt(db: Session, db_receipt: Receipt) -> None:
     # The receipt row must be gone before its voucher is deleted — receipts.voucher_id
     # is a live FK, so deleting the voucher first trips a FK constraint violation.
     voucher_id = db_receipt.voucher_id
+    booking_id = db_receipt.booking_id
     db.delete(db_receipt)
     db.flush()
 
@@ -290,4 +302,7 @@ def delete_receipt(db: Session, db_receipt: Receipt) -> None:
         if voucher:
             db.delete(voucher)
 
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if booking:
+        sync_unit_sold(db, booking)
     db.commit()
