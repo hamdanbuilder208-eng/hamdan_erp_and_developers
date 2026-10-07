@@ -5,7 +5,13 @@ from app.core.errors import delete_with_fk_guard
 from app.crud import refund as refund_crud
 from app.db.session import get_db
 from app.models.refund import RefundType
-from app.schemas.refund import RefundCreate, RefundDeductionUpdate, RefundOut, RefundPaymentCreate
+from app.schemas.refund import (
+    RefundCreate,
+    RefundDeductionUpdate,
+    RefundOut,
+    RefundPaymentCreate,
+    RefundVendorOption,
+)
 
 router = APIRouter()
 
@@ -17,6 +23,13 @@ def list_refunds(
     db: Session = Depends(get_db),
 ):
     return refund_crud.list_refunds(db, refund_type=refund_type, booking_id=booking_id)
+
+
+@router.get("/vendor-options", response_model=list[RefundVendorOption])
+def vendor_options(db: Session = Depends(get_db)):
+    """Vendors and their GRNs, for picking who a vendor refund is from —
+    served here so Refunds users don't need Inventory access."""
+    return refund_crud.vendor_options(db)
 
 
 @router.post("/", response_model=RefundOut, status_code=status.HTTP_201_CREATED)

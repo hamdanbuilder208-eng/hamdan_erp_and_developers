@@ -15,7 +15,7 @@ import {
 import { SendMessageModal } from "../components/communication/SendMessageModal";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
-import type { Account, Booking, Refund, RefundStatus, RefundType } from "../types";
+import type { Account, Booking, Refund, RefundStatus, RefundType, RefundVendorOption } from "../types";
 
 // A Customer refund cancels the booking and can't exceed what the customer
 // has paid so far. (Cancelling a paid booking from Bookings/Units also opens
@@ -40,9 +40,16 @@ const statusTone: Record<RefundStatus, "success" | "warning" | "neutral"> = {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+// A vendor refund is money the vendor pays *us* back, so it's "received", not "paid".
+const isVendor = (r: Refund | null | undefined) => r?.refund_type === "Vendor";
+const statusLabel = (r: Refund) =>
+  isVendor(r) ? r.status.replace("Paid", "Received") : r.status;
+
 const emptyForm = {
   refund_type: "Customer" as RefundType,
   booking_id: "",
+  vendor_id: "",
+  grn_id: "",
   party_name: "",
   gross_amount: "",
   deduction_percent: "",
@@ -90,12 +97,19 @@ export default function RefundsPage() {
   const selectedBooking = refundableBookings.find((b) => b.id === Number(form.booking_id));
   const customerPaid = selectedBooking ? paidOnBooking(selectedBooking) : 0;
   const isCustomer = form.refund_type === "Customer";
+  const isVendorForm = form.refund_type === "Vendor";
+
+  // Vendor refunds: pick the vendor (and optionally the GRN the money is back on).
+  const { data: vendorOptions } = useQuery({
+    queryKey: ["refund-vendor-options"],
+    queryFn: async () => (await api.get<RefundVendorOption[]>("/refunds/vendor-options")).data,
+    enabled: modalOpen && isVendorForm,
+  });
+  const selectedVendor = vendorOptions?.find((v) => v.id === Number(form.vendor_id));
+  const selectedGrn = selectedVendor?.grns.find((g) => g.id === Number(form.grn_id));
+  const grnLeft = selectedGrn ? Math.round((selectedGrn.total_amount - selectedGrn.refunded) * 100) / 100 : 0;
 
   const cashAccounts = accounts?.filter((a) => a.nature === "Asset" && !a.is_control) ?? [];
-  const glAccounts =
-    accounts?.filter(
-      (a) => (a.nature === "Revenue" || a.nature === "Liability" || a.nature === "Expense") && !a.is_control,
-    ) ?? [];
 
   const grossAmount = Number(form.gross_amount) || 0;
   const deductionPercent = Number(form.deduction_percent) || 0;
@@ -114,7 +128,13 @@ export default function RefundsPage() {
           refund_date: todayIso(),
           refund_type: form.refund_type,
           booking_id: isCustomer ? Number(form.booking_id) : null,
-          party_name: isCustomer ? selectedBooking?.allottee.name ?? null : form.party_name,
+          vendor_id: isVendorForm ? Number(form.vendor_id) : null,
+          grn_id: isVendorForm && form.grn_id ? Number(form.grn_id) : null,
+          party_name: isCustomer
+            ? selectedBooking?.allottee.name ?? null
+            : isVendorForm
+              ? selectedVendor?.name ?? null
+              : form.party_name,
           gross_amount: grossAmount,
           deduction_percent: form.deduction_percent ? deductionPercent : null,
           deduction_amount: deductionAmount,
@@ -153,6 +173,17 @@ export default function RefundsPage() {
   const [paymentsRefundId, setPaymentsRefundId] = React.useState<number | null>(null);
   const paymentsRefund = refunds?.find((r) => r.id === paymentsRefundId) ?? null;
 
+  // Vendors can also refund what was bought into an asset (e.g. material stock).
+  const glAccounts =
+    accounts?.filter(
+      (a) =>
+        !a.is_control &&
+        (a.nature === "Revenue" ||
+          a.nature === "Liability" ||
+          a.nature === "Expense" ||
+          (isVendor(paymentsRefund) && a.nature === "Asset")),
+    ) ?? [];
+
   const [deductionForm, setDeductionForm] = React.useState(emptyDeductionForm);
   React.useEffect(() => {
     if (paymentsRefund) {
@@ -187,6 +218,13 @@ export default function RefundsPage() {
   const [paymentForm, setPaymentForm] = React.useState(emptyPaymentForm);
   const [paymentError, setPaymentError] = React.useState<string | null>(null);
   const isBookingRefund = paymentsRefund?.refund_type === "Customer" && !!paymentsRefund.booking_id;
+  const isGrnRefund = isVendor(paymentsRefund) && !!paymentsRefund?.grn_id;
+  // The server books these two itself; everything else needs an account picked.
+  const autoAccountNote = isBookingRefund
+    ? "Unit Sales — a cancelled booking's refund reverses the sale, so it clears from the Trial Balance."
+    : isGrnRefund
+      ? "Material / Inventory Stock — money back on a GRN comes off the stock it bought."
+      : null;
 
   const addPayment = useMutation({
     mutationFn: async () =>
@@ -195,7 +233,7 @@ export default function RefundsPage() {
           payment_date: paymentForm.payment_date || todayIso(),
           amount: Number(paymentForm.amount) || 0,
           // A booking's refund is always booked against Unit Sales by the server.
-          account_id: isBookingRefund ? null : Number(paymentForm.account_id),
+          account_id: autoAccountNote ? null : Number(paymentForm.account_id),
           cash_account_id: Number(paymentForm.cash_account_id),
           narration: paymentForm.narration || null,
           ...paymentModePayload(paymentForm),
@@ -289,8 +327,9 @@ export default function RefundsPage() {
                     ) : (
                       <Clock className="h-3 w-3" />
                     )}
-                    {r.status}
+                    {statusLabel(r)}
                   </Badge>
+                  {r.grn && <p className="mt-1 text-xs text-slate-400">Against {r.grn.grn_no}</p>}
                 </td>
                 <td className="px-5 py-3 text-right font-medium text-navy-900 dark:text-slate-100">
                   PKR {Number(r.net_amount).toLocaleString()}
@@ -300,7 +339,7 @@ export default function RefundsPage() {
                     {r.status === "Paid" ? (
                       <button
                         onClick={() => setPaymentsRefundId(r.id)}
-                        title="View payments"
+                        title={isVendor(r) ? "View amounts received" : "View payments"}
                         className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-navy-800"
                       >
                         <Wallet className="h-3.5 w-3.5" />
@@ -308,7 +347,7 @@ export default function RefundsPage() {
                     ) : (
                       <Button size="sm" onClick={() => setPaymentsRefundId(r.id)}>
                         <Wallet className="h-3.5 w-3.5" />
-                        Pay
+                        {isVendor(r) ? "Receive" : "Pay"}
                       </Button>
                     )}
                     {r.status === "Paid" && r.refund_type === "Customer" && r.booking?.allottee.mobile && (
@@ -438,15 +477,71 @@ export default function RefundsPage() {
                 </div>
               )}
             </>
+          ) : isVendorForm ? (
+            <>
+              <div>
+                <Label htmlFor="rf_vendor">Vendor</Label>
+                <Select
+                  id="rf_vendor"
+                  required
+                  value={form.vendor_id}
+                  onChange={(e) => setForm({ ...form, vendor_id: e.target.value, grn_id: "", gross_amount: "" })}
+                >
+                  <option value="">Select vendor</option>
+                  {vendorOptions?.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name} ({v.vendor_code})
+                    </option>
+                  ))}
+                </Select>
+                {vendorOptions && vendorOptions.length === 0 && (
+                  <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                    No vendors yet — add them under Material &amp; Inventory.
+                  </p>
+                )}
+              </div>
+              {selectedVendor && (
+                <div>
+                  <Label htmlFor="rf_grn">Against GRN (optional — e.g. material returned)</Label>
+                  <Select
+                    id="rf_grn"
+                    value={form.grn_id}
+                    onChange={(e) => {
+                      const g = selectedVendor.grns.find((x) => x.id === Number(e.target.value));
+                      const left = g ? Math.round((g.total_amount - g.refunded) * 100) / 100 : 0;
+                      setForm({
+                        ...form,
+                        grn_id: e.target.value,
+                        gross_amount: g ? String(left) : form.gross_amount,
+                        narration: g ? `Return against ${g.grn_no}` : form.narration,
+                      });
+                    }}
+                  >
+                    <option value="">Not against a GRN</option>
+                    {selectedVendor.grns.map((g) => (
+                      <option key={g.id} value={g.id} disabled={g.total_amount - g.refunded <= 0}>
+                        {g.grn_no} · {g.grn_date} · PKR {Number(g.total_amount).toLocaleString()}
+                        {g.refunded > 0 ? ` (PKR ${g.refunded.toLocaleString()} already refunded)` : ""}
+                      </option>
+                    ))}
+                  </Select>
+                  {selectedGrn && grossAmount > grnLeft && (
+                    <p className="mt-1 text-xs text-danger-600">
+                      At most PKR {grnLeft.toLocaleString()} can be refunded on {selectedGrn.grn_no}.
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
           ) : (
             <div>
-              <Label htmlFor="rf_party">{form.refund_type === "Vendor" ? "Vendor Name" : "Employee Name"}</Label>
+              <Label htmlFor="rf_party">Employee Name</Label>
               <Input
                 id="rf_party"
                 required
                 value={form.party_name}
                 onChange={(e) => setForm({ ...form, party_name: e.target.value })}
-                placeholder={form.refund_type === "Vendor" ? "e.g. ABC Cement Suppliers" : "e.g. Asif — Site Supervisor"}
+                placeholder="e.g. Asif — Site Supervisor"
               />
             </div>
           )}
@@ -531,7 +626,8 @@ export default function RefundsPage() {
               disabled={
                 createRefund.isPending ||
                 netAmount <= 0 ||
-                (isCustomer && (!selectedBooking || grossAmount > customerPaid))
+                (isCustomer && (!selectedBooking || grossAmount > customerPaid)) ||
+                (isVendorForm && (!selectedVendor || (!!selectedGrn && grossAmount > grnLeft)))
               }
             >
               Save Refund
@@ -544,7 +640,11 @@ export default function RefundsPage() {
       <Modal
         open={!!paymentsRefund}
         onClose={() => setPaymentsRefundId(null)}
-        title={paymentsRefund ? `Payments — ${paymentsRefund.refund_no}` : ""}
+        title={
+          paymentsRefund
+            ? `${isVendor(paymentsRefund) ? "Amounts Received" : "Payments"} — ${paymentsRefund.refund_no}`
+            : ""
+        }
         description={
           paymentsRefund
             ? paymentsRefund.party_name ?? paymentsRefund.booking?.allottee.name ?? undefined
@@ -561,7 +661,7 @@ export default function RefundsPage() {
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Paid</p>
+                <p className="text-xs text-slate-400">{isVendor(paymentsRefund) ? "Received" : "Paid"}</p>
                 <p className="font-medium text-success-700">PKR {paidSoFar.toLocaleString()}</p>
               </div>
               <div>
@@ -604,14 +704,14 @@ export default function RefundsPage() {
                 }}
               >
                 <Plus className="h-3.5 w-3.5" />
-                Record Payment
+                {isVendor(paymentsRefund) ? "Record Amount Received" : "Record Payment"}
               </Button>
             )}
 
             {paymentsRefund.payments.length > 0 && (
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  Payment History
+                  {isVendor(paymentsRefund) ? "Received History" : "Payment History"}
                 </p>
                 <div className="space-y-1.5">
                   {paymentsRefund.payments.map((p) => (
@@ -647,7 +747,7 @@ export default function RefundsPage() {
           setPaymentModalOpen(false);
           setPaymentError(null);
         }}
-        title="Record Refund Payment"
+        title={isVendor(paymentsRefund) ? "Record Amount Received from Vendor" : "Record Refund Payment"}
       >
         <form
           onSubmit={(e) => {
@@ -684,9 +784,9 @@ export default function RefundsPage() {
               <Label htmlFor="payment_account">
                 {paymentsRefund?.refund_type === "Vendor" ? "Vendor / Payable Account" : "Revenue / Expense Account"}
               </Label>
-              {isBookingRefund ? (
+              {autoAccountNote ? (
                 <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:bg-navy-800 dark:text-slate-400">
-                  Unit Sales — a cancelled booking's refund reverses the sale, so it clears from the Trial Balance.
+                  {autoAccountNote}
                 </p>
               ) : (
                 <Select

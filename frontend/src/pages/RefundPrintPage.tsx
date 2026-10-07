@@ -82,6 +82,7 @@ export default function RefundPrintPage() {
               {refund.refund_type === "Customer" ? "Allottee / Booking" : refund.refund_type === "Vendor" ? "Vendor" : "Employee"}
             </p>
             <p className="mt-0.5 font-medium text-navy-900">{partyLabel}</p>
+            {refund.grn && <p className="text-xs text-slate-500">Against {refund.grn.grn_no}</p>}
           </div>
           <div>
             <p className="text-xs text-slate-500">Narration</p>
@@ -143,7 +144,9 @@ export default function RefundPrintPage() {
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Paid To-Date</span>
+              <span className="text-slate-500">
+                {refund.refund_type === "Vendor" ? "Received To-Date" : "Paid To-Date"}
+              </span>
               <span className="font-semibold text-success-700">PKR {paidSoFar.toLocaleString()}</span>
             </div>
             {outstanding > 0 && (

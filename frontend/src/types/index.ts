@@ -168,6 +168,8 @@ export interface Refund {
   refund_type: RefundType;
   status: RefundStatus;
   booking_id: number | null;
+  vendor_id: number | null;
+  grn_id: number | null;
   party_name: string | null;
   gross_amount: number;
   deduction_percent: number | null;
@@ -175,7 +177,16 @@ export interface Refund {
   net_amount: number;
   narration: string | null;
   booking: Booking | null;
+  grn: { id: number; grn_no: string; grn_date: string; total_amount: number } | null;
   payments: RefundPayment[];
+}
+
+/** A vendor and its GRNs, for picking who a vendor refund is from. */
+export interface RefundVendorOption {
+  id: number;
+  vendor_code: string;
+  name: string;
+  grns: { id: number; grn_no: string; grn_date: string; total_amount: number; refunded: number }[];
 }
 
 export interface OfficeExpense extends PaymentModeRecord {

@@ -12,6 +12,8 @@ class RefundBase(BaseModel):
     refund_date: date
     refund_type: RefundType
     booking_id: int | None = None
+    vendor_id: int | None = None
+    grn_id: int | None = None
     party_name: str | None = None
     gross_amount: float
     deduction_percent: float | None = None
@@ -22,8 +24,11 @@ class RefundBase(BaseModel):
     def validate_type_fields(self):
         if self.refund_type == RefundType.CUSTOMER and not self.booking_id:
             raise ValueError("Customer refunds must reference a booking")
-        if self.refund_type in (RefundType.VENDOR, RefundType.EMPLOYEE) and not self.party_name:
-            raise ValueError(f"{self.refund_type.value} refunds must have a party name")
+        if self.refund_type == RefundType.EMPLOYEE and not self.party_name:
+            raise ValueError("Employee refunds must have a party name")
+        # (older vendor refunds have only a name; new ones pick the vendor)
+        if self.refund_type == RefundType.VENDOR and not (self.party_name or self.vendor_id):
+            raise ValueError("Vendor refunds must name the vendor")
         if self.gross_amount <= 0:
             raise ValueError("Amount must be greater than zero")
         if self.deduction_amount > self.gross_amount:
@@ -32,7 +37,30 @@ class RefundBase(BaseModel):
 
 
 class RefundCreate(RefundBase):
-    pass
+    @model_validator(mode="after")
+    def validate_vendor(self):
+        if self.refund_type == RefundType.VENDOR and not self.vendor_id:
+            raise ValueError("Select the vendor this refund is from")
+        return self
+
+
+class RefundGrnOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    grn_no: str
+    grn_date: date
+    total_amount: float
+
+
+class RefundGrnOption(RefundGrnOut):
+    refunded: float = 0  # already refunded against this GRN
+
+
+class RefundVendorOption(BaseModel):
+    id: int
+    vendor_code: str
+    name: str
+    grns: list[RefundGrnOption] = []
 
 
 class RefundDeductionUpdate(BaseModel):
@@ -74,4 +102,5 @@ class RefundOut(RefundBase):
     status: RefundStatus
     net_amount: float
     booking: BookingOut | None = None
+    grn: RefundGrnOut | None = None
     payments: list[RefundPaymentOut] = []

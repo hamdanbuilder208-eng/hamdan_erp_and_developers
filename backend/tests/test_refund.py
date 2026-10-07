@@ -58,8 +58,8 @@ def test_customer_refund_requires_booking_id():
         )
 
 
-def test_vendor_refund_requires_party_name():
-    with pytest.raises(ValidationError, match="must have a party name"):
+def test_vendor_refund_requires_a_vendor():
+    with pytest.raises(ValidationError, match="must name the vendor"):
         RefundCreate(
             refund_date=TODAY,
             refund_type="Vendor",
@@ -67,6 +67,16 @@ def test_vendor_refund_requires_party_name():
             cash_account_id=2,
             gross_amount=1000,
         )
+
+
+@pytest.fixture()
+def vendor(db: Session):
+    from app.models.inventory import Vendor
+
+    obj = Vendor(vendor_code="VND-T1", name="ABC Traders")
+    db.add(obj)
+    db.commit()
+    return obj
 
 
 def test_refund_rejects_deduction_over_gross_amount():
@@ -124,21 +134,53 @@ def test_customer_refund_rejects_already_cancelled_booking(
 
 
 def test_vendor_refund_does_not_require_or_touch_a_booking(
-    db: Session, expense_account, cash_account
+    db: Session, expense_account, cash_account, vendor
 ):
     result = refund_crud.create_refund(
         db,
         RefundCreate(
             refund_date=TODAY,
             refund_type="Vendor",
-            party_name="ABC Traders",
-            account_id=expense_account.id,
-            cash_account_id=cash_account.id,
+            vendor_id=vendor.id,
             gross_amount=20_000,
         ),
     )
     assert result.booking is None
     assert result.net_amount == 20_000
+    assert result.party_name == "ABC Traders"  # filled from the vendor
+
+
+def test_vendor_refund_against_grn_is_capped_and_credits_stock(db: Session, cash_account, vendor):
+    from app.models.account import Account, AccountNature
+    from app.models.inventory import GRN
+    from app.models.voucher import VoucherLine
+    from app.schemas.refund import RefundPaymentCreate
+
+    stock = Account(code="1040", name="Material / Inventory Stock", nature=AccountNature.ASSET)
+    db.add(stock)
+    db.flush()
+    grn = GRN(grn_no="GRN-T1", grn_date=TODAY, vendor_id=vendor.id, payment_account_id=cash_account.id, total_amount=50_000)
+    db.add(grn)
+    db.commit()
+
+    with pytest.raises(ValueError, match="at most PKR 50,000"):
+        refund_crud.create_refund(
+            db, RefundCreate(refund_date=TODAY, refund_type="Vendor", vendor_id=vendor.id, grn_id=grn.id, gross_amount=60_000)
+        )
+    refund = refund_crud.create_refund(
+        db, RefundCreate(refund_date=TODAY, refund_type="Vendor", vendor_id=vendor.id, grn_id=grn.id, gross_amount=30_000)
+    )
+    assert refund.grn.grn_no == "GRN-T1"
+
+    # No account picked: money back on a GRN comes off material stock.
+    refund = refund_crud.add_payment(
+        db, refund, RefundPaymentCreate(payment_date=TODAY, amount=30_000, cash_account_id=cash_account.id)
+    )
+    lines = db.query(VoucherLine).filter(VoucherLine.voucher_id == refund.payments[0].voucher_id).all()
+    assert {(l.account_id, float(l.debit), float(l.credit)) for l in lines} == {
+        (cash_account.id, 30_000, 0),
+        (stock.id, 0, 30_000),
+    }
 
 
 def _customer_refund(db: Session, booking, gross: float, deduction: float = 0):
@@ -203,3 +245,16 @@ def test_customer_refund_does_not_duplicate_auto_refund_on_cancel(db: Session, p
     refunds = refund_crud.list_refunds(db, booking_id=paid_booking.id)
     assert len(refunds) == 1
     assert refunds[0].net_amount == 270_000
+
+
+def test_vendor_options_list_grns_with_amount_refunded(db: Session, cash_account, vendor):
+    from app.models.inventory import GRN
+
+    grn = GRN(grn_no="GRN-T2", grn_date=TODAY, vendor_id=vendor.id, payment_account_id=cash_account.id, total_amount=40_000)
+    db.add(grn)
+    db.commit()
+    refund_crud.create_refund(
+        db, RefundCreate(refund_date=TODAY, refund_type="Vendor", vendor_id=vendor.id, grn_id=grn.id, gross_amount=15_000)
+    )
+    option = next(v for v in refund_crud.vendor_options(db) if v["id"] == vendor.id)
+    assert [(g["grn_no"], g["total_amount"], g["refunded"]) for g in option["grns"]] == [("GRN-T2", 40_000, 15_000)]

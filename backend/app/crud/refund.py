@@ -8,9 +8,13 @@ from app.core.sequences import next_sequence_number
 from app.crud.booking import UNIT_SALES_ACCOUNT_CODE, update_booking_status
 from app.models.account import Account
 from app.models.booking import Booking, BookingStatus
+from app.models.inventory import GRN, Vendor
 from app.models.refund import Refund, RefundPayment, RefundStatus, RefundType
 from app.models.voucher import Voucher, VoucherLine, VoucherType
 from app.schemas.refund import RefundCreate, RefundDeductionUpdate, RefundPaymentCreate
+
+
+MATERIAL_STOCK_ACCOUNT_CODE = "1040"  # what a GRN debits when material is bought
 
 
 def _next_refund_no(db: Session) -> str:
@@ -24,6 +28,7 @@ def _next_voucher_no(db: Session) -> str:
 def _load_query(db: Session):
     return db.query(Refund).options(
         joinedload(Refund.booking),
+        joinedload(Refund.grn),
         joinedload(Refund.payments).joinedload(RefundPayment.account),
         joinedload(Refund.payments).joinedload(RefundPayment.cash_account),
     )
@@ -38,6 +43,30 @@ def list_refunds(
     if booking_id is not None:
         query = query.filter(Refund.booking_id == booking_id)
     return query.order_by(Refund.id.desc()).all()
+
+
+def vendor_options(db: Session) -> list[dict]:
+    refunded = dict(
+        db.query(Refund.grn_id, func.sum(Refund.gross_amount))
+        .filter(Refund.grn_id.is_not(None))
+        .group_by(Refund.grn_id)
+        .all()
+    )
+    grns_by_vendor: dict[int, list[dict]] = {}
+    for grn in db.query(GRN).order_by(GRN.grn_date.desc(), GRN.id.desc()).all():
+        grns_by_vendor.setdefault(grn.vendor_id, []).append(
+            {
+                "id": grn.id,
+                "grn_no": grn.grn_no,
+                "grn_date": grn.grn_date,
+                "total_amount": float(grn.total_amount),
+                "refunded": float(refunded.get(grn.id, 0)),
+            }
+        )
+    return [
+        {"id": v.id, "vendor_code": v.vendor_code, "name": v.name, "grns": grns_by_vendor.get(v.id, [])}
+        for v in db.query(Vendor).filter(Vendor.is_active == True).order_by(Vendor.name).all()  # noqa: E712
+    ]
 
 
 def get_refund(db: Session, refund_id: int) -> Refund | None:
@@ -89,12 +118,38 @@ def create_refund(db: Session, refund_in: RefundCreate) -> Refund:
                 "this customer has paid so far"
             )
 
+    party_name = refund_in.party_name
+    vendor_id = grn_id = None
+    if refund_in.refund_type == RefundType.VENDOR:
+        vendor = db.query(Vendor).filter(Vendor.id == refund_in.vendor_id).first()
+        if not vendor:
+            raise ValueError("Vendor not found")
+        vendor_id, party_name = vendor.id, vendor.name
+        if refund_in.grn_id:
+            grn = db.query(GRN).filter(GRN.id == refund_in.grn_id).first()
+            if not grn or grn.vendor_id != vendor.id:
+                raise ValueError("That GRN isn't from this vendor")
+            already = (
+                db.query(func.coalesce(func.sum(Refund.gross_amount), 0))
+                .filter(Refund.grn_id == grn.id)
+                .scalar()
+            )
+            left = float(grn.total_amount) - float(already)
+            if refund_in.gross_amount > left + 0.01:
+                raise ValueError(
+                    f"{grn.grn_no} is for PKR {float(grn.total_amount):,.2f} and PKR {float(already):,.2f} "
+                    f"has already been refunded on it — at most PKR {max(left, 0):,.2f} can be refunded."
+                )
+            grn_id = grn.id
+
     db_refund = Refund(
         refund_no=_next_refund_no(db),
         refund_date=refund_in.refund_date,
         refund_type=refund_in.refund_type,
         booking_id=refund_in.booking_id,
-        party_name=refund_in.party_name,
+        vendor_id=vendor_id,
+        grn_id=grn_id,
+        party_name=party_name,
         gross_amount=refund_in.gross_amount,
         deduction_percent=refund_in.deduction_percent,
         deduction_amount=refund_in.deduction_amount,
@@ -178,7 +233,12 @@ def add_payment(db: Session, db_refund: Refund, payment_in: RefundPaymentCreate)
         if not sales_account:
             raise ValueError(f"Unit Sales account (code {UNIT_SALES_ACCOUNT_CODE}) not found in chart of accounts")
         payment_in.account_id = sales_account.id
-    elif payment_in.account_id is None:
+    elif payment_in.account_id is None and db_refund.grn_id:
+        # Money back on a GRN (material returned) comes off the stock it bought.
+        stock_account = db.query(Account).filter(Account.code == MATERIAL_STOCK_ACCOUNT_CODE).first()
+        if stock_account:
+            payment_in.account_id = stock_account.id
+    if payment_in.account_id is None:
         raise ValueError("Select the account this refund is booked against.")
 
     db_payment = RefundPayment(

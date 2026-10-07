@@ -34,6 +34,10 @@ class Refund(Base, TimestampMixin):
     status: Mapped[RefundStatus] = mapped_column(Enum(RefundStatus), default=RefundStatus.PENDING)
 
     booking_id: Mapped[int | None] = mapped_column(ForeignKey("bookings.id"))
+    # Vendor refunds: money a supplier pays back, optionally against a GRN
+    # (e.g. material returned). party_name is filled from the vendor.
+    vendor_id: Mapped[int | None] = mapped_column(ForeignKey("vendors.id"))
+    grn_id: Mapped[int | None] = mapped_column(ForeignKey("grns.id"))
     party_name: Mapped[str | None] = mapped_column(String(150))
 
     gross_amount: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
@@ -44,6 +48,7 @@ class Refund(Base, TimestampMixin):
     narration: Mapped[str | None] = mapped_column(Text)
 
     booking: Mapped["Booking | None"] = relationship()
+    grn: Mapped["GRN | None"] = relationship()
     payments: Mapped[list["RefundPayment"]] = relationship(
         back_populates="refund", cascade="all, delete-orphan", order_by="RefundPayment.payment_date"
     )
