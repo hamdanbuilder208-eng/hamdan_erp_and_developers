@@ -66,7 +66,7 @@ export default function AllotteePrintPage() {
             </p>
           </div>
           <div className="text-right">
-            <p className="text-xl font-bold uppercase tracking-wide text-navy-950">Allottee Form</p>
+            <p className="text-xl font-bold uppercase tracking-wide text-navy-950">Application Form</p>
             <p className="mt-1 font-mono text-sm text-slate-500">{allottee.allottee_code}</p>
           </div>
         </div>

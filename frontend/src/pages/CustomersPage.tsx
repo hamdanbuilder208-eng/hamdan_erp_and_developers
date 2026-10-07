@@ -307,7 +307,7 @@ export default function CustomersPage() {
                     </button>
                     <button
                       onClick={() => window.open(`/allottees/${a.id}/print`, "_blank")}
-                      title="Print allottee form"
+                      title="Print application form"
                       className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
                     >
                       <Printer className="h-3.5 w-3.5" />
