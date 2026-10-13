@@ -38,15 +38,17 @@ const activeModules: {
   end?: boolean;
   moduleKey?: string | null;
   adminOnly?: boolean;
+  // Shown in place but greyed out with a lock; clicking it does nothing.
+  disabled?: boolean;
 }[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true, moduleKey: null },
   { to: "/land-plots", label: "Land / Plots", icon: MapPin, moduleKey: "land_properties" },
-  { to: "/projects", label: "Projects", icon: Building2, moduleKey: "projects" },
+  { to: "/projects", label: "Projects", icon: Building2, moduleKey: "projects", disabled: true },
   { to: "/units", label: "Units", icon: Grid3x3, moduleKey: "units" },
   { to: "/partners", label: "Investor / Partners", icon: Landmark, moduleKey: "partners" },
   { to: "/brokers", label: "Broker Commissions", icon: Handshake, moduleKey: "booking_agents" },
   { to: "/customers", label: "Customers & Allottees", icon: Users, moduleKey: "allottees" },
-  { to: "/bookings", label: "Unit Booking", icon: Layers, moduleKey: "bookings" },
+  { to: "/bookings", label: "Unit Booking", icon: Layers, moduleKey: "bookings", disabled: true },
   { to: "/receipts", label: "Receipts", icon: Receipt, moduleKey: "receipts" },
   { to: "/refunds", label: "Refunds", icon: Undo2, moduleKey: "refunds" },
   { to: "/vouchers", label: "Vouchers", icon: FileText, moduleKey: "vouchers" },
@@ -122,6 +124,20 @@ export function Sidebar({
         <ul className="space-y-0.5">
           {modules.map((item) => (
             <li key={item.label}>
+              {item.disabled ? (
+                <div
+                  title={collapsed ? item.label : undefined}
+                  aria-disabled="true"
+                  className={cn(
+                    "flex cursor-not-allowed items-center gap-3 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-slate-500",
+                    collapsed && "justify-center px-0",
+                  )}
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {!collapsed && item.label}
+                  {!collapsed && <Lock className="ml-auto h-3 w-3" />}
+                </div>
+              ) : (
               <NavLink
                 to={item.to}
                 end={item.end}
@@ -139,6 +155,7 @@ export function Sidebar({
                 <item.icon className="h-4 w-4 shrink-0" />
                 {!collapsed && item.label}
               </NavLink>
+              )}
             </li>
           ))}
         </ul>
