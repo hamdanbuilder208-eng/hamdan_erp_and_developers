@@ -22,3 +22,6 @@ backend/uploads/
 # OS / editor clutter
 .DS_Store
 Thumbs.db
+
+# Wipe-script JSON backups
+backend/backups/
