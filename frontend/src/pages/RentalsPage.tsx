@@ -141,6 +141,7 @@ export default function RentalsPage() {
     kind: "project" | "land";
     name: string;
     agreements: number;
+    agreementIds: number[];
     active: number;
     collected: number;
     outstanding: number;
@@ -159,6 +160,7 @@ export default function RentalsPage() {
             ? projectName(a.unit.project_id)
             : `${a.land_property?.property_type ?? "Property"} ${a.land_property?.property_ref_no ?? ""} — ${a.land_property?.area_location ?? ""}`,
           agreements: 0,
+          agreementIds: [],
           active: 0,
           collected: 0,
           outstanding: 0,
@@ -169,6 +171,7 @@ export default function RentalsPage() {
                 .reduce((s, e) => s + Number(e.amount), 0),
         } as SourceRow);
       row.agreements += 1;
+      row.agreementIds.push(a.id);
       if (a.status === "Active") row.active += 1;
       row.collected += rentCollected(a);
       row.outstanding += rentOutstanding(a);
@@ -293,14 +296,31 @@ export default function RentalsPage() {
     onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to renew agreement.")),
   });
 
+  // Deleting one or more agreements (one row, or every agreement of a source).
+  // The backend frees the unit/property and refuses while receipts exist.
   const deleteAgreement = useMutation({
-    mutationFn: async (id: number) => api.delete(`/rentals/agreements/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["rentals", "agreements"] });
+    mutationFn: async (ids: number[]) => {
+      for (const id of ids) await api.delete(`/rentals/agreements/${id}`);
+    },
+    onSuccess: (_, ids) => {
       setDetailAgreement(null);
+      toast.success(ids.length > 1 ? `${ids.length} agreements deleted.` : "Agreement deleted.");
     },
     onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to delete agreement.")),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["rentals", "agreements"] });
+      queryClient.invalidateQueries({ queryKey: ["units"] });
+      queryClient.invalidateQueries({ queryKey: ["land-properties"] });
+    },
   });
+  const confirmDeleteAgreements = async (list: RentAgreement[]) => {
+    const nos = list.map((a) => a.agreement_no).join(", ");
+    const ok = await confirm(
+      `Permanently delete rent agreement ${nos}? The ${list.length > 1 ? "units/properties go" : "unit/property goes"} back to Available. Any rent receipts must be deleted first.`,
+      { danger: true, confirmLabel: "Delete" },
+    );
+    if (ok) deleteAgreement.mutate(list.map((a) => a.id));
+  };
 
   const createReceipt = useMutation({
     mutationFn: async () =>
@@ -392,13 +412,14 @@ export default function RentalsPage() {
                 <th className="px-5 py-3 font-medium">Monthly Rent</th>
                 <th className="px-5 py-3 font-medium">Next Due</th>
                 <th className="px-5 py-3 font-medium">Status</th>
+                <th className="px-5 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
-              {agreementsLoading && <TableRowsSkeleton cols={6} />}
+              {agreementsLoading && <TableRowsSkeleton cols={7} />}
               {!agreementsLoading && agreements?.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
                     No rent agreements yet. Click "New Agreement" to rent out a shop or a property.
                   </td>
                 </tr>
@@ -426,6 +447,18 @@ export default function RentalsPage() {
                   <td className="px-5 py-3">
                     <RentAgreementStatusBadge status={a.status} />
                   </td>
+                  <td className="px-5 py-3 text-right">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        confirmDeleteAgreements([a]);
+                      }}
+                      title="Delete agreement"
+                      className="rounded-md p-1.5 text-slate-400 hover:bg-danger-50 hover:text-danger-500 dark:text-slate-500"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -450,12 +483,13 @@ export default function RentalsPage() {
                   <th className="px-5 py-3 text-right font-medium">Overdue</th>
                   <th className="px-5 py-3 text-right font-medium">Land Expenses</th>
                   <th className="px-5 py-3 text-right font-medium">Net</th>
+                  <th className="px-5 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
                 {incomeBySource.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                    <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
                       No rent agreements yet.
                     </td>
                   </tr>
@@ -489,6 +523,19 @@ export default function RentalsPage() {
                     </td>
                     <td className="px-5 py-3 text-right font-medium tabular-nums text-navy-900 dark:text-slate-100">
                       PKR {(r.collected - (r.expenses ?? 0)).toLocaleString()}
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <button
+                        onClick={() =>
+                          confirmDeleteAgreements(
+                            (agreements ?? []).filter((a) => r.agreementIds.includes(a.id)),
+                          )
+                        }
+                        title={`Delete this source's rent agreement${r.agreements > 1 ? "s" : ""}`}
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-danger-50 hover:text-danger-500 dark:text-slate-500"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -832,13 +879,7 @@ export default function RentalsPage() {
                   </>
                 )}
                 <button
-                  onClick={async () => {
-                    const ok = await confirm("Permanently delete this rent agreement?", {
-                      danger: true,
-                      confirmLabel: "Delete",
-                    });
-                    if (ok) deleteAgreement.mutate(detailAgreement.id);
-                  }}
+                  onClick={() => confirmDeleteAgreements([detailAgreement])}
                   title="Delete agreement"
                   className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-danger-50 hover:text-danger-500"
                 >
