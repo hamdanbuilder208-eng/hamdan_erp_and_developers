@@ -9,6 +9,7 @@ from app.models.account import Account, AccountNature
 from app.models.inventory import (
     GRN,
     GRNLine,
+    GRNPayment,
     Material,
     MaterialIssue,
     MaterialIssueLine,
@@ -29,6 +30,7 @@ from app.models.project import Project
 from app.models.voucher import Voucher, VoucherLine, VoucherType
 from app.schemas.inventory import (
     GRNCreate,
+    GRNPaymentCreate,
     MaterialCreate,
     MaterialIssueCreate,
     MaterialTransferCreate,
@@ -46,6 +48,7 @@ MATERIAL_STOCK_ACCOUNT_CODE = "1040"
 MATERIAL_CONSUMPTION_ACCOUNT_CODE = "5050"
 MATERIAL_WASTAGE_ACCOUNT_CODE = "5060"
 OWNER_CAPITAL_ACCOUNT_CODE = "3010"
+ACCOUNTS_PAYABLE_CODE = "2010"
 
 
 def _get_or_create_wastage_account(db: Session) -> Account:
@@ -373,6 +376,7 @@ def _load_grn_query(db: Session):
         joinedload(GRN.project),
         joinedload(GRN.payment_account),
         joinedload(GRN.lines).joinedload(GRNLine.material),
+        joinedload(GRN.payments).joinedload(GRNPayment.payment_account),
     )
 
 
@@ -402,6 +406,14 @@ def create_grn(db: Session, grn_in: GRNCreate) -> GRN:
         amount = round(line.quantity * line.rate, 2)
         total_amount += amount
         line_data.append((line, amount))
+    total_amount = round(total_amount, 2)
+
+    paid_now = total_amount if grn_in.amount_paid is None else round(grn_in.amount_paid, 2)
+    if paid_now > total_amount:
+        raise ValueError(
+            f"Amount paid (PKR {paid_now:,.2f}) is more than the GRN total (PKR {total_amount:,.2f})"
+        )
+    owed = round(total_amount - paid_now, 2)
 
     db_grn = GRN(
         grn_no=next_persistent_sequence_number(db, GRN.grn_no, "GRN-", 5),
@@ -410,8 +422,10 @@ def create_grn(db: Session, grn_in: GRNCreate) -> GRN:
         warehouse_id=grn_in.warehouse_id,
         project_id=grn_in.project_id,
         po_id=grn_in.po_id,
-        payment_account_id=grn_in.payment_account_id,
+        payment_account_id=grn_in.payment_account_id if paid_now > 0 else None,
         total_amount=total_amount,
+        amount_paid_now=paid_now,
+        payment_due_date=grn_in.payment_due_date if owed > 0 else None,
         narration=grn_in.narration,
     )
     apply_payment_mode(db_grn, grn_in)
@@ -460,15 +474,27 @@ def create_grn(db: Session, grn_in: GRNCreate) -> GRN:
             narration=f"GRN {db_grn.grn_no}",
         )
     )
-    db.add(
-        VoucherLine(
-            voucher_id=voucher.id,
-            account_id=grn_in.payment_account_id,
-            debit=0,
-            credit=total_amount,
-            narration=f"GRN {db_grn.grn_no}",
+    # Whatever is paid now comes out of cash/bank; the rest is owed to the vendor.
+    if paid_now > 0:
+        db.add(
+            VoucherLine(
+                voucher_id=voucher.id,
+                account_id=grn_in.payment_account_id,
+                debit=0,
+                credit=paid_now,
+                narration=f"GRN {db_grn.grn_no}",
+            )
         )
-    )
+    if owed > 0:
+        db.add(
+            VoucherLine(
+                voucher_id=voucher.id,
+                account_id=_get_or_create_payable_account(db).id,
+                debit=0,
+                credit=owed,
+                narration=f"GRN {db_grn.grn_no} — owed to {vendor.name}",
+            )
+        )
 
     db_grn.voucher_id = voucher.id
 
@@ -481,7 +507,99 @@ def create_grn(db: Session, grn_in: GRNCreate) -> GRN:
     return get_grn(db, db_grn.id)
 
 
+def _get_or_create_payable_account(db: Session) -> Account:
+    """Accounts Payable — what's owed to vendors for material bought on credit."""
+    account = db.query(Account).filter(Account.code == ACCOUNTS_PAYABLE_CODE).first()
+    if account:
+        return account
+    liabilities = db.query(Account).filter(Account.code == "2000").first()
+    account = Account(
+        code=ACCOUNTS_PAYABLE_CODE,
+        name="Accounts Payable",
+        nature=AccountNature.LIABILITY,
+        parent_id=liabilities.id if liabilities else None,
+    )
+    db.add(account)
+    db.flush()
+    return account
+
+
+def create_grn_payment(db: Session, db_grn: GRN, payment_in: GRNPaymentCreate) -> GRN:
+    """Pays the vendor (all or part of) what's still owed on a GRN: debit
+    Accounts Payable, credit the cash/bank account it's paid from."""
+    amount = round(payment_in.amount, 2)
+    if amount > db_grn.balance + 0.005:
+        raise ValueError(
+            f"Only PKR {db_grn.balance:,.2f} is still owed on {db_grn.grn_no} — "
+            f"can't pay PKR {amount:,.2f}"
+        )
+
+    db_payment = GRNPayment(
+        payment_no=next_persistent_sequence_number(db, GRNPayment.payment_no, "VPY-", 5),
+        grn_id=db_grn.id,
+        payment_date=payment_in.payment_date,
+        amount=amount,
+        payment_account_id=payment_in.payment_account_id,
+        narration=payment_in.narration,
+    )
+    apply_payment_mode(db_payment, payment_in)
+    db.add(db_payment)
+    db.flush()
+
+    narration = f"Payment {db_payment.payment_no} to {db_grn.vendor.name} for {db_grn.grn_no}"
+    voucher = Voucher(
+        voucher_no=next_sequence_number(db, Voucher.voucher_no, "PV-", 5),
+        voucher_type=VoucherType.PAYMENT,
+        voucher_date=payment_in.payment_date,
+        project_id=db_grn.project_id,
+        narration=narration,
+    )
+    db.add(voucher)
+    db.flush()
+    db.add(
+        VoucherLine(
+            voucher_id=voucher.id,
+            account_id=_get_or_create_payable_account(db).id,
+            debit=amount,
+            credit=0,
+            narration=narration,
+        )
+    )
+    db.add(
+        VoucherLine(
+            voucher_id=voucher.id,
+            account_id=payment_in.payment_account_id,
+            debit=0,
+            credit=amount,
+            narration=narration,
+        )
+    )
+    db_payment.voucher_id = voucher.id
+    db.commit()
+    db.expire(db_grn)
+    return get_grn(db, db_grn.id)
+
+
+def get_grn_payment(db: Session, payment_id: int) -> GRNPayment | None:
+    return db.query(GRNPayment).filter(GRNPayment.id == payment_id).first()
+
+
+def delete_grn_payment(db: Session, db_payment: GRNPayment) -> None:
+    # Payment row first: grn_payments.voucher_id is a live FK.
+    voucher_id = db_payment.voucher_id
+    db.delete(db_payment)
+    db.flush()
+    if voucher_id:
+        voucher = db.query(Voucher).filter(Voucher.id == voucher_id).first()
+        if voucher:
+            db.delete(voucher)
+    db.commit()
+
+
 def delete_grn(db: Session, db_grn: GRN) -> None:
+    if db_grn.payments:
+        nos = ", ".join(p.payment_no for p in db_grn.payments)
+        raise ValueError(f"Delete the vendor payments made against {db_grn.grn_no} first: {nos}")
     for line in db_grn.lines:
         _assert_latest_movement(
             db,

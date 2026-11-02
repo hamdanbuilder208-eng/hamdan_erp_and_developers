@@ -187,8 +187,19 @@ function GRNPrint({ id }: { id: string }) {
     >
       <Row label="Vendor" value={data.vendor.name} />
       <Row label="Project" value={data.project?.project_name ?? "General (Company-wide)"} />
-      <Row label="Paid From" value={data.payment_account.name} />
-      <Row label="Mode of Payment" value={paymentModeLabel(data) || "Cash"} />
+      <Row label="Payment" value={`${data.payment_status} — PKR ${data.paid_amount.toLocaleString()} of ${data.total_amount.toLocaleString()}`} />
+      {data.balance > 0 && (
+        <Row
+          label="Owed to Vendor"
+          value={`PKR ${data.balance.toLocaleString()}${data.payment_due_date ? ` (due ${data.payment_due_date})` : ""}`}
+        />
+      )}
+      {data.payment_account && (
+        <>
+          <Row label="Paid From" value={data.payment_account.name} />
+          <Row label="Mode of Payment" value={paymentModeLabel(data) || "Cash"} />
+        </>
+      )}
       <Row label="Narration" value={data.narration || "—"} />
       <LinesTable lines={data.lines} showRate />
     </PrintShell>

@@ -1048,15 +1048,36 @@ export interface GRN extends PaymentModeRecord {
   warehouse_id: number | null;
   project_id: number | null;
   po_id: number | null;
-  payment_account_id: number;
+  /** Where the amount paid on receipt came from; null when bought fully on credit. */
+  payment_account_id: number | null;
   total_amount: number;
   voucher_id: number | null;
   narration: string | null;
   vendor: Vendor;
   warehouse: Warehouse | null;
   project: Project | null;
-  payment_account: Account;
+  payment_account: Account | null;
   lines: GRNLine[];
+  amount_paid_now: number;
+  /** Paid on receipt plus every later payment. */
+  paid_amount: number;
+  /** Still owed to the vendor. */
+  balance: number;
+  payment_status: "Paid" | "Partially Paid" | "Unpaid";
+  payment_due_date: string | null;
+  payments: GRNPayment[];
+}
+
+/** A later payment to the vendor against a GRN bought on credit. */
+export interface GRNPayment extends PaymentModeRecord {
+  id: number;
+  payment_no: string;
+  grn_id: number;
+  payment_date: string;
+  amount: number;
+  payment_account: Account;
+  voucher_id: number | null;
+  narration: string | null;
 }
 
 export interface MaterialIssueLine {

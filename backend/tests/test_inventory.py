@@ -69,7 +69,7 @@ def _grn(vendor, warehouse, payment_account, material, quantity, rate, **overrid
         grn_date=TODAY,
         vendor_id=vendor.id,
         warehouse_id=warehouse.id,
-        payment_account_id=payment_account.id,
+        payment_account_id=payment_account.id if payment_account else None,
         lines=[GRNLineCreate(material_id=material.id, quantity=quantity, rate=rate)],
     )
     data.update(overrides)
@@ -329,3 +329,94 @@ def test_issue_from_project_site_stock(
     inventory_crud.delete_material_issue(db, issue)
     last = db.query(StockLedger).order_by(StockLedger.id.desc()).first()
     assert last.balance_qty == 100
+
+
+# GRN on credit and later vendor payments
+
+
+@pytest.fixture()
+def payable_account(db: Session) -> Account:
+    obj = Account(code="2010", name="Accounts Payable", nature=AccountNature.LIABILITY)
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+def _voucher_lines(db, voucher_id):
+    voucher = db.get(Voucher, voucher_id)
+    return {(l.account_id, float(l.debit), float(l.credit)) for l in voucher.lines}
+
+
+def test_grn_paid_in_full_by_default(db, vendor, warehouse, material, material_stock_account, cash_account):
+    grn = inventory_crud.create_grn(db, _grn(vendor, warehouse, cash_account, material, 10, 100))
+    assert grn.payment_status == "Paid"
+    assert grn.balance == 0
+
+
+def test_grn_on_credit_owes_vendor(
+    db, vendor, warehouse, material, material_stock_account, cash_account, payable_account
+):
+    from datetime import timedelta
+
+    grn = inventory_crud.create_grn(
+        db,
+        _grn(vendor, warehouse, None, material, 10, 100, amount_paid=0, payment_due_date=TODAY + timedelta(days=30)),
+    )
+
+    assert grn.payment_status == "Unpaid"
+    assert grn.balance == 1_000
+    assert grn.payment_account_id is None
+    assert _voucher_lines(db, grn.voucher_id) == {
+        (material_stock_account.id, 1_000, 0),
+        (payable_account.id, 0, 1_000),
+    }
+
+
+def test_grn_partly_paid_then_settled(
+    db, vendor, warehouse, material, material_stock_account, cash_account, payable_account
+):
+    from app.schemas.inventory import GRNPaymentCreate
+
+    grn = inventory_crud.create_grn(db, _grn(vendor, warehouse, cash_account, material, 10, 100, amount_paid=300))
+    assert grn.payment_status == "Partially Paid"
+    assert _voucher_lines(db, grn.voucher_id) == {
+        (material_stock_account.id, 1_000, 0),
+        (cash_account.id, 0, 300),
+        (payable_account.id, 0, 700),
+    }
+
+    with pytest.raises(ValueError, match="Only PKR 700.00 is still owed"):
+        inventory_crud.create_grn_payment(
+            db, grn, GRNPaymentCreate(payment_date=TODAY, amount=800, payment_account_id=cash_account.id)
+        )
+
+    grn = inventory_crud.create_grn_payment(
+        db, grn, GRNPaymentCreate(payment_date=TODAY, amount=700, payment_account_id=cash_account.id)
+    )
+    assert grn.payment_status == "Paid"
+    assert grn.balance == 0
+    payment = grn.payments[0]
+    assert payment.payment_no.startswith("VPY-")
+    assert _voucher_lines(db, payment.voucher_id) == {
+        (payable_account.id, 700, 0),
+        (cash_account.id, 0, 700),
+    }
+
+    with pytest.raises(ValueError, match="Delete the vendor payments"):
+        inventory_crud.delete_grn(db, grn)
+
+    inventory_crud.delete_grn_payment(db, payment)
+    db.expire_all()
+    assert inventory_crud.get_grn(db, grn.id).balance == 700
+
+
+def test_grn_paid_amount_needs_an_account_and_cannot_exceed_total(
+    db, vendor, warehouse, material, material_stock_account, cash_account
+):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="cash / bank account"):
+        _grn(vendor, warehouse, None, material, 10, 100, amount_paid=500)
+    with pytest.raises(ValueError, match="more than the GRN total"):
+        inventory_crud.create_grn(db, _grn(vendor, warehouse, cash_account, material, 10, 100, amount_paid=1_500))

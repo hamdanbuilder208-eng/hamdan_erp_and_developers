@@ -7,6 +7,7 @@ from app.db.session import get_db
 from app.schemas.inventory import (
     GRNCreate,
     GRNOut,
+    GRNPaymentCreate,
     MaterialCreate,
     MaterialIssueCreate,
     MaterialIssueOut,
@@ -190,6 +191,26 @@ def get_grn(grn_id: int, db: Session = Depends(get_db)):
     if not db_grn:
         raise HTTPException(status_code=404, detail="GRN not found")
     return db_grn
+
+
+@router.post("/grn/{grn_id}/payments", response_model=GRNOut, status_code=status.HTTP_201_CREATED)
+def create_grn_payment(grn_id: int, payment_in: GRNPaymentCreate, db: Session = Depends(get_db)):
+    """Pay the vendor what's still owed (all or part) on a GRN bought on credit."""
+    db_grn = inventory_crud.get_grn(db, grn_id)
+    if not db_grn:
+        raise HTTPException(status_code=404, detail="GRN not found")
+    try:
+        return inventory_crud.create_grn_payment(db, db_grn, payment_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.delete("/grn-payments/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_grn_payment(payment_id: int, db: Session = Depends(get_db)):
+    db_payment = inventory_crud.get_grn_payment(db, payment_id)
+    if not db_payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    delete_with_fk_guard(db, lambda: inventory_crud.delete_grn_payment(db, db_payment), "payment")
 
 
 @router.delete("/grn/{grn_id}", status_code=status.HTTP_204_NO_CONTENT)

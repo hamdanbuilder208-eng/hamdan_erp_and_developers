@@ -68,6 +68,20 @@ interface QtyRateLine {
 
 const emptyLine = (): QtyRateLine => ({ material_id: "", quantity: "", rate: "" });
 
+type GrnPaymentChoice = GRN["payment_status"];
+
+function GrnPaymentBadge({ g }: { g: GRN }) {
+  const tone =
+    g.payment_status === "Paid"
+      ? "bg-success-50 text-success-700"
+      : g.payment_status === "Partially Paid"
+        ? "bg-warning-50 text-warning-700"
+        : "bg-danger-50 text-danger-700";
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tone}`}>{g.payment_status}</span>
+  );
+}
+
 export default function MaterialInventoryPage() {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
@@ -250,6 +264,10 @@ export default function MaterialInventoryPage() {
     payment_account_id: "",
     narration: "",
     po_id: "",
+    // Paid in full now, partly (amount_paid), or on credit; the rest is owed to the vendor.
+    payment_status: "Paid" as GrnPaymentChoice,
+    amount_paid: "",
+    payment_due_date: "",
     ...emptyPaymentMode(),
   });
   const [grnForm, setGrnForm] = React.useState(emptyGrnForm);
@@ -306,7 +324,17 @@ export default function MaterialInventoryPage() {
           warehouse_id: grnForm.warehouse_id ? Number(grnForm.warehouse_id) : null,
           project_id: grnForm.project_id ? Number(grnForm.project_id) : null,
           po_id: grnForm.po_id ? Number(grnForm.po_id) : null,
-          payment_account_id: Number(grnForm.payment_account_id),
+          payment_account_id:
+            grnForm.payment_status !== "Unpaid" && grnForm.payment_account_id
+              ? Number(grnForm.payment_account_id)
+              : null,
+          amount_paid:
+            grnForm.payment_status === "Paid"
+              ? null
+              : grnForm.payment_status === "Unpaid"
+                ? 0
+                : Number(grnForm.amount_paid) || 0,
+          payment_due_date: grnForm.payment_status !== "Paid" ? grnForm.payment_due_date || null : null,
           narration: grnForm.narration || null,
           ...paymentModePayload(grnForm),
           lines: grnLines
@@ -328,6 +356,57 @@ export default function MaterialInventoryPage() {
     },
     onError: (err: unknown) => setGrnError(errorMessage(err, "Failed to save GRN")),
   });
+
+  // ---- Paying the vendor later for a GRN bought on credit ----
+  const [payGrn, setPayGrn] = React.useState<GRN | null>(null);
+  const [payForm, setPayForm] = React.useState({
+    payment_date: todayIso(),
+    amount: "",
+    payment_account_id: "",
+    narration: "",
+    ...emptyPaymentMode(),
+  });
+  const openPayGrn = (g: GRN) => {
+    setPayForm({
+      payment_date: todayIso(),
+      amount: String(g.balance),
+      payment_account_id: "",
+      narration: "",
+      ...emptyPaymentMode(),
+    });
+    setPayGrn(g);
+  };
+  const invalidateGrnMoney = () => {
+    queryClient.invalidateQueries({ queryKey: ["grns"] });
+    queryClient.invalidateQueries({ queryKey: ["accounts"] });
+  };
+  const payGrnMutation = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post<GRN>(`/inventory/grn/${payGrn!.id}/payments`, {
+          payment_date: payForm.payment_date,
+          amount: Number(payForm.amount),
+          payment_account_id: Number(payForm.payment_account_id),
+          narration: payForm.narration || null,
+          ...paymentModePayload(payForm),
+        })
+      ).data,
+    onSuccess: (g) => {
+      invalidateGrnMoney();
+      toast.success(g.balance > 0 ? `Paid. PKR ${g.balance.toLocaleString()} still owed.` : "Paid in full.");
+      setPayGrn(null);
+    },
+    onError: (err: unknown) => toast.error(errorMessage(err, "Failed to record payment.")),
+  });
+  const deleteGrnPayment = useMutation({
+    mutationFn: async (id: number) => api.delete(`/inventory/grn-payments/${id}`),
+    onSuccess: invalidateGrnMoney,
+    onError: (err: unknown) => toast.error(errorMessage(err, "Failed to delete payment.")),
+  });
+
+  // What's still owed to each vendor across their GRNs.
+  const vendorPayable = (vendorId: number) =>
+    (grns ?? []).filter((g) => g.vendor_id === vendorId).reduce((s, g) => s + Number(g.balance), 0);
 
   const deleteGrn = useMutation({
     mutationFn: async (id: number) => api.delete(`/inventory/grn/${id}`),
@@ -749,13 +828,14 @@ export default function MaterialInventoryPage() {
                 <th className="px-5 py-3 font-medium">CNIC / NTN</th>
                 <th className="px-5 py-3 font-medium">Phone</th>
                 <th className="px-5 py-3 font-medium">Address</th>
+                <th className="px-5 py-3 text-right font-medium">Payable</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
               {vendors?.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
                     No vendors yet.
                   </td>
                 </tr>
@@ -771,6 +851,13 @@ export default function MaterialInventoryPage() {
                   </td>
                   <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{v.phone ?? "—"}</td>
                   <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{v.address ?? "—"}</td>
+                  <td
+                    className={`px-5 py-3 text-right tabular-nums ${
+                      vendorPayable(v.id) > 0 ? "font-medium text-danger-600" : "text-slate-400"
+                    }`}
+                  >
+                    {vendorPayable(v.id) > 0 ? `PKR ${vendorPayable(v.id).toLocaleString()}` : "—"}
+                  </td>
                   <td className="px-5 py-3 text-right">
                     <button
                       onClick={async () => {
@@ -1042,6 +1129,7 @@ export default function MaterialInventoryPage() {
                 <th className="px-5 py-3 font-medium">Vendor</th>
                 <th className="px-5 py-3 font-medium">Received Into</th>
                 <th className="px-5 py-3 font-medium">Status</th>
+                <th className="px-5 py-3 font-medium">Payment</th>
                 <th className="px-5 py-3 text-right font-medium">Amount</th>
                 <th className="px-5 py-3" />
               </tr>
@@ -1049,14 +1137,14 @@ export default function MaterialInventoryPage() {
             <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
               {grnLoading && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={8} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
                     Loading...
                   </td>
                 </tr>
               )}
               {!grnLoading && grns?.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={8} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
                     No GRNs yet.
                   </td>
                 </tr>
@@ -1080,11 +1168,44 @@ export default function MaterialInventoryPage() {
                       {g.voucher_id ? "Received" : "Pending"}
                     </Badge>
                   </td>
+                  <td className="px-5 py-3">
+                    <GrnPaymentBadge g={g} />
+                    {g.balance > 0 && (
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                        PKR {g.balance.toLocaleString()} owed
+                        {g.payment_due_date ? ` · due ${g.payment_due_date}` : ""}
+                      </p>
+                    )}
+                    {g.payments.map((p) => (
+                      <p key={p.id} className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-400">
+                        {p.payment_no} · {p.payment_date} · PKR {Number(p.amount).toLocaleString()} ·{" "}
+                        {p.mode_of_payment}
+                        <button
+                          onClick={async () => {
+                            const ok = await confirm(`Delete payment ${p.payment_no}? It will be owed again.`, {
+                              danger: true,
+                              confirmLabel: "Delete",
+                            });
+                            if (ok) deleteGrnPayment.mutate(p.id);
+                          }}
+                          title="Delete payment"
+                          className="text-slate-400 hover:text-danger-500"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </p>
+                    ))}
+                  </td>
                   <td className="px-5 py-3 text-right text-navy-900 dark:text-slate-100">
                     PKR {g.total_amount.toLocaleString()}
                   </td>
                   <td className="px-5 py-3">
                     <div className="flex items-center justify-end gap-1">
+                      {g.balance > 0 && (
+                        <Button size="sm" variant="secondary" onClick={() => openPayGrn(g)}>
+                          Pay
+                        </Button>
+                      )}
                       <button
                         onClick={() => window.open(`/inventory/grn/${g.id}/print`, "_blank")}
                         className="rounded-md p-1.5 text-slate-400 dark:text-slate-500 hover:bg-brand-50 hover:text-brand-600"
@@ -1983,33 +2104,90 @@ export default function MaterialInventoryPage() {
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="grn_payment_account">Paid From / Payable Account</Label>
-            <Select
-              id="grn_payment_account"
-              required
-              value={grnForm.payment_account_id}
-              onChange={(e) => setGrnForm({ ...grnForm, payment_account_id: e.target.value })}
-            >
-              <option value="">Select account</option>
-              {paymentAccounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.code} — {a.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <PaymentModeSection
-            idPrefix="grn"
-            value={grnForm}
-            onChange={(patch) => setGrnForm({ ...grnForm, ...patch })}
-          />
-
           <LineItemsEditor lines={grnLines} setLines={setGrnLines} materials={materials} showRate />
 
           <div className="flex justify-end text-sm font-semibold text-navy-900 dark:text-slate-100">
             Total: PKR {grnTotal.toLocaleString()}
+          </div>
+
+          {/* Payment: material received now, paid now / partly / later (vendor payable). */}
+          <div className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-navy-700">
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label htmlFor="grn_pay_status">Payment</Label>
+                <Select
+                  id="grn_pay_status"
+                  value={grnForm.payment_status}
+                  onChange={(e) => setGrnForm({ ...grnForm, payment_status: e.target.value as GrnPaymentChoice })}
+                >
+                  <option value="Paid">Fully Paid</option>
+                  <option value="Partially Paid">Partially Paid</option>
+                  <option value="Unpaid">Unpaid (credit)</option>
+                </Select>
+              </div>
+              {grnForm.payment_status === "Partially Paid" && (
+                <div>
+                  <Label htmlFor="grn_amount_paid">Paid Now (PKR)</Label>
+                  <Input
+                    id="grn_amount_paid"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    value={grnForm.amount_paid}
+                    onChange={(e) => setGrnForm({ ...grnForm, amount_paid: e.target.value })}
+                  />
+                </div>
+              )}
+              {grnForm.payment_status !== "Paid" && (
+                <div>
+                  <Label htmlFor="grn_due">Balance Due On</Label>
+                  <Input
+                    id="grn_due"
+                    type="date"
+                    value={grnForm.payment_due_date}
+                    onChange={(e) => setGrnForm({ ...grnForm, payment_due_date: e.target.value })}
+                  />
+                </div>
+              )}
+            </div>
+
+            {grnForm.payment_status !== "Unpaid" && (
+              <>
+                <div>
+                  <Label htmlFor="grn_payment_account">Paid From</Label>
+                  <Select
+                    id="grn_payment_account"
+                    required
+                    value={grnForm.payment_account_id}
+                    onChange={(e) => setGrnForm({ ...grnForm, payment_account_id: e.target.value })}
+                  >
+                    <option value="">Select account</option>
+                    {paymentAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.code} — {a.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <PaymentModeSection
+                  idPrefix="grn"
+                  value={grnForm}
+                  onChange={(patch) => setGrnForm({ ...grnForm, ...patch })}
+                />
+              </>
+            )}
+
+            {grnForm.payment_status !== "Paid" && (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                PKR{" "}
+                {Math.max(
+                  grnTotal - (grnForm.payment_status === "Unpaid" ? 0 : Number(grnForm.amount_paid) || 0),
+                  0,
+                ).toLocaleString()}{" "}
+                will be owed to the vendor (Accounts Payable). Pay it later with the "Pay" button on this GRN.
+              </p>
+            )}
           </div>
 
           <div>
@@ -2027,6 +2205,88 @@ export default function MaterialInventoryPage() {
             </Button>
             <Button type="submit" disabled={createGrn.isPending}>
               Save GRN
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={!!payGrn}
+        onClose={() => setPayGrn(null)}
+        title={`Pay Vendor — ${payGrn?.grn_no ?? ""}`}
+        description={
+          payGrn
+            ? `${payGrn.vendor.name} · GRN total PKR ${payGrn.total_amount.toLocaleString()}, paid PKR ${payGrn.paid_amount.toLocaleString()}, owed PKR ${payGrn.balance.toLocaleString()}${payGrn.payment_due_date ? ` (due ${payGrn.payment_due_date})` : ""}.`
+            : undefined
+        }
+      >
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            payGrnMutation.mutate();
+          }}
+        >
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="pay_amount">Amount (PKR)</Label>
+              <Input
+                id="pay_amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                max={payGrn?.balance}
+                required
+                value={payForm.amount}
+                onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="pay_date">Date</Label>
+              <Input
+                id="pay_date"
+                type="date"
+                required
+                value={payForm.payment_date}
+                onChange={(e) => setPayForm({ ...payForm, payment_date: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="pay_account">Paid From</Label>
+            <Select
+              id="pay_account"
+              required
+              value={payForm.payment_account_id}
+              onChange={(e) => setPayForm({ ...payForm, payment_account_id: e.target.value })}
+            >
+              <option value="">Select account</option>
+              {paymentAccounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.code} — {a.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <PaymentModeSection
+            idPrefix="grnpay"
+            value={payForm}
+            onChange={(patch) => setPayForm({ ...payForm, ...patch })}
+          />
+          <div>
+            <Label htmlFor="pay_narration">Narration (optional)</Label>
+            <Input
+              id="pay_narration"
+              value={payForm.narration}
+              onChange={(e) => setPayForm({ ...payForm, narration: e.target.value })}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setPayGrn(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={payGrnMutation.isPending}>
+              Record Payment
             </Button>
           </div>
         </form>

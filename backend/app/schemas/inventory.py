@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -175,12 +176,19 @@ class GRNBase(PaymentModeFields):
     warehouse_id: int | None = None
     project_id: int | None = None
     po_id: int | None = None
-    payment_account_id: int
+    # Cash/bank the amount paid on receipt came from (not needed when unpaid).
+    payment_account_id: int | None = None
+    # Date the rest is due to the vendor, when not paid in full on receipt.
+    payment_due_date: date | None = None
     narration: str | None = None
 
 
 class GRNCreate(GRNBase):
     lines: list[GRNLineCreate]
+    # Paid to the vendor now. None = the full amount (paid on receipt);
+    # 0 = bought on credit; anything in between = partly paid. The rest
+    # becomes a vendor payable, cleared later with GRN payments.
+    amount_paid: float | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_lines(self):
@@ -188,7 +196,28 @@ class GRNCreate(GRNBase):
             raise ValueError("A GRN needs at least one line item")
         if not self.warehouse_id and not self.project_id:
             raise ValueError("Choose a warehouse or a project to receive this material into")
+        if (self.amount_paid is None or self.amount_paid > 0) and not self.payment_account_id:
+            raise ValueError("Choose the cash / bank account the payment was made from")
         return self
+
+
+class GRNPaymentCreate(PaymentModeFields):
+    payment_date: date
+    amount: float = Field(gt=0)
+    payment_account_id: int
+    narration: str | None = None
+
+
+class GRNPaymentOut(PaymentModeFields):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    payment_no: str
+    grn_id: int
+    payment_date: date
+    amount: float
+    payment_account: AccountOut
+    voucher_id: int | None
+    narration: str | None
 
 
 class GRNOut(GRNBase):
@@ -200,8 +229,14 @@ class GRNOut(GRNBase):
     vendor: VendorOut
     warehouse: WarehouseOut | None = None
     project: ProjectOut | None = None
-    payment_account: AccountOut
+    payment_account: AccountOut | None = None
     lines: list[GRNLineOut]
+    amount_paid_now: float
+    # Paid on receipt plus every later payment; balance is still owed.
+    paid_amount: float
+    balance: float
+    payment_status: Literal["Paid", "Partially Paid", "Unpaid"]
+    payments: list[GRNPaymentOut] = []
 
 
 # Material Issue

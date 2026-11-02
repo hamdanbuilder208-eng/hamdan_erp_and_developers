@@ -106,18 +106,59 @@ class GRN(Base, PaymentModeMixin, TimestampMixin):
     warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouses.id"))
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"))
     po_id: Mapped[int | None] = mapped_column(ForeignKey("purchase_orders.id"))
-    payment_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    # Where the amount paid on receipt came from; None when bought fully on credit.
+    payment_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
     voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
 
     total_amount: Mapped[float] = mapped_column(Numeric(18, 2), default=0)
+    # Paid to the vendor on receipt; the rest is owed (Accounts Payable) and
+    # settled later through GRNPayment rows.
+    amount_paid_now: Mapped[float] = mapped_column(Numeric(18, 2), default=0)
+    payment_due_date: Mapped[date | None] = mapped_column(Date)
     narration: Mapped[str | None] = mapped_column(Text)
 
     vendor: Mapped["Vendor"] = relationship()
     warehouse: Mapped["Warehouse | None"] = relationship()
     project: Mapped["Project | None"] = relationship()
     purchase_order: Mapped["PurchaseOrder | None"] = relationship()
-    payment_account: Mapped["Account"] = relationship()
+    payment_account: Mapped["Account | None"] = relationship()
     lines: Mapped[list["GRNLine"]] = relationship(back_populates="grn", cascade="all, delete-orphan")
+    payments: Mapped[list["GRNPayment"]] = relationship(
+        back_populates="grn", order_by="GRNPayment.payment_date"
+    )
+
+    @property
+    def paid_amount(self) -> float:
+        return round(float(self.amount_paid_now or 0) + sum(float(p.amount) for p in self.payments), 2)
+
+    @property
+    def balance(self) -> float:
+        return round(float(self.total_amount) - self.paid_amount, 2)
+
+    @property
+    def payment_status(self) -> str:
+        if self.balance <= 0:
+            return "Paid"
+        return "Partially Paid" if self.paid_amount > 0 else "Unpaid"
+
+
+class GRNPayment(Base, PaymentModeMixin, TimestampMixin):
+    """A later payment to the vendor against a GRN bought fully or partly on
+    credit: debit Accounts Payable, credit the cash/bank account it came from."""
+
+    __tablename__ = "grn_payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    payment_no: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    grn_id: Mapped[int] = mapped_column(ForeignKey("grns.id"), nullable=False)
+    payment_date: Mapped[date] = mapped_column(Date, nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
+    payment_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
+    narration: Mapped[str | None] = mapped_column(Text)
+
+    grn: Mapped["GRN"] = relationship(back_populates="payments")
+    payment_account: Mapped["Account"] = relationship()
 
 
 class GRNLine(Base, TimestampMixin):
