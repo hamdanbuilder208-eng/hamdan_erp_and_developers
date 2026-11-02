@@ -273,7 +273,10 @@ def list_pending_cheques(db: Session, due_by: date | None = None) -> list[Receip
     given date (used for the dashboard reminder — overdue + due today)."""
     query = _load_query(db).filter(Receipt.cheque_status == ChequeStatus.PENDING)
     if due_by is not None:
-        query = query.filter(Receipt.cheque_clearing_date <= due_by)
+        # No cash date recorded: always remind, there's no telling when it's due.
+        query = query.filter(
+            or_(Receipt.cheque_clearing_date <= due_by, Receipt.cheque_clearing_date.is_(None))
+        )
     return query.order_by(Receipt.cheque_clearing_date.asc()).all()
 
 

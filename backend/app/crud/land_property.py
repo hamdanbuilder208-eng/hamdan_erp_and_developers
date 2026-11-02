@@ -1,5 +1,6 @@
 from datetime import date
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.payment_details import apply_payment_details
@@ -100,7 +101,13 @@ def list_pending_cheques(db: Session, due_by: date | None = None) -> list[LandPr
         .filter(LandPropertyPayment.cheque_status == ChequeStatus.PENDING)
     )
     if due_by is not None:
-        query = query.filter(LandPropertyPayment.cheque_clearing_date <= due_by)
+        # No cash date recorded: always remind, there's no telling when it's due.
+        query = query.filter(
+            or_(
+                LandPropertyPayment.cheque_clearing_date <= due_by,
+                LandPropertyPayment.cheque_clearing_date.is_(None),
+            )
+        )
     return query.order_by(LandPropertyPayment.cheque_clearing_date.asc()).all()
 
 

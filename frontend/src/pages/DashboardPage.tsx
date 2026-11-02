@@ -483,11 +483,13 @@ export default function DashboardPage() {
                       86400000,
                   )
                 : 0;
-              const statusLine = isToday
-                ? "This cheque was due to be cashed today — was it?"
-                : overdue
-                  ? `This cheque was due to be cashed ${daysOverdue} day${daysOverdue > 1 ? "s" : ""} ago — still pending!`
-                  : `Due to be cashed on ${r.clearingDate}`;
+              const statusLine = !r.clearingDate
+                ? "Cash date not set — has this cheque been cashed?"
+                : isToday
+                  ? "This cheque was due to be cashed today — was it?"
+                  : overdue
+                    ? `This cheque was due to be cashed ${daysOverdue} day${daysOverdue > 1 ? "s" : ""} ago — still pending!`
+                    : `Due to be cashed on ${r.clearingDate}`;
               return (
                 <div
                   key={r.key}

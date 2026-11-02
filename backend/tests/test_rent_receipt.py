@@ -115,15 +115,9 @@ def test_security_deposit_is_a_liability_not_rent(db: Session, agreement, cash_a
 
 
 def _cheque(agreement, cash_account, **overrides):
-    return _receipt_in(
-        agreement,
-        cash_account,
-        mode_of_payment="Cheque",
-        cheque_no="200000",
-        cheque_bank_name="UBL",
-        cheque_clearing_date=TODAY,
-        **overrides,
-    )
+    data = dict(mode_of_payment="Cheque", cheque_no="200000", cheque_bank_name="UBL", cheque_clearing_date=TODAY)
+    data.update(overrides)
+    return _receipt_in(agreement, cash_account, **data)
 
 
 def test_rent_cheque_starts_pending_and_shows_in_reminders(
@@ -196,3 +190,18 @@ def test_land_payment_cheque_status(db: Session, land_property):
     assert land_crud.list_pending_cheques(db) == []
     with pytest.raises(ValueError, match="already marked Bounced"):
         land_crud.mark_cheque_status(db, payment, ChequeStatus.BOUNCED)
+
+
+def test_pending_cheque_without_cash_date_is_always_reminded(
+    db: Session, agreement, cash_account, rental_income_account
+):
+    from datetime import timedelta
+
+    no_date = rent_receipt_crud.create_receipt(db, _cheque(agreement, cash_account, cheque_clearing_date=None))
+    later = rent_receipt_crud.create_receipt(
+        db, _cheque(agreement, cash_account, cheque_clearing_date=TODAY + timedelta(days=30))
+    )
+
+    due = [r.id for r in rent_receipt_crud.list_pending_cheques(db, due_by=TODAY)]
+    assert no_date.id in due
+    assert later.id not in due

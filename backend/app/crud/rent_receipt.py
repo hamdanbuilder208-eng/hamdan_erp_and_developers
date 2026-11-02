@@ -218,7 +218,10 @@ def list_pending_cheques(db: Session, due_by: date | None = None) -> list[RentRe
     """Rent / deposit cheques not yet confirmed — for the dashboard reminder."""
     query = _load_query(db).filter(RentReceipt.cheque_status == ChequeStatus.PENDING)
     if due_by is not None:
-        query = query.filter(RentReceipt.cheque_clearing_date <= due_by)
+        # No cash date recorded: always remind, there's no telling when it's due.
+        query = query.filter(
+            or_(RentReceipt.cheque_clearing_date <= due_by, RentReceipt.cheque_clearing_date.is_(None))
+        )
     return query.order_by(RentReceipt.cheque_clearing_date.asc()).all()
 
 
