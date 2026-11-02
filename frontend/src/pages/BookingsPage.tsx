@@ -1082,6 +1082,42 @@ export default function BookingsPage() {
               </div>
             )}
 
+            {transfers && transfers.length > 0 && (
+              <div className="border-t border-slate-100 dark:border-navy-800 pt-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                  Ownership History
+                </p>
+                {/* Original allottee, then each transfer in date order (API returns newest first). */}
+                <ol className="space-y-1.5 text-sm">
+                  {[
+                    {
+                      key: "original",
+                      party: transfers[transfers.length - 1].from_allottee,
+                      since: detailBooking.booking_date,
+                      via: "Original booking",
+                    },
+                    ...transfers
+                      .slice()
+                      .reverse()
+                      .map((t) => ({ key: t.transfer_no, party: t.to_allottee, since: t.transfer_date, via: t.transfer_no })),
+                  ].map((o, i, all) => (
+                    <li key={o.key} className="flex flex-wrap items-baseline justify-between gap-x-3">
+                      <span className="text-navy-900 dark:text-slate-100">
+                        <span className="mr-1.5 text-xs text-slate-400">{i + 1}.</span>
+                        {o.party.name}
+                        {o.party.mobile && (
+                          <span className="ml-1.5 text-xs text-slate-500 dark:text-slate-400">{o.party.mobile}</span>
+                        )}
+                      </span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        {o.since} → {all[i + 1]?.since ?? "current owner"} · {o.via}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
             <div className="border-t border-slate-100 dark:border-navy-800 pt-3">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
                 Booking Agent

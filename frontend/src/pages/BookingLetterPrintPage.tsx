@@ -4,7 +4,7 @@ import { Printer } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
-import type { Booking, BookingTransfer, CompanySettings } from "../types";
+import type { Allottee, Booking, BookingTransfer, CompanySettings } from "../types";
 import hamdanIcon from "../assets/hamdan-icon-transparent.png";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -99,7 +99,39 @@ function AllotmentLetter({ booking }: { booking: Booking }) {
   );
 }
 
-function TransferLetter({ booking, transfer }: { booking: Booking; transfer: BookingTransfer }) {
+// Name plus the contact details a transfer letter needs to identify each party.
+function PartyDetails({ label, party }: { label: string; party: Allottee }) {
+  const phones = [party.mobile, party.tel_res, party.office_phone].filter(Boolean).join(", ");
+  return (
+    <div>
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="font-medium text-navy-950">
+        {party.name}
+        <span className="ml-1 font-mono text-xs font-normal text-slate-400">({party.allottee_code})</span>
+      </p>
+      <div className="mt-1 space-y-0.5 text-xs text-slate-600">
+        {party.father_name && <p>S/O, D/O, W/O: {party.father_name}</p>}
+        {party.cnic && <p>CNIC: {party.cnic}</p>}
+        {phones && <p>Phone: {phones}</p>}
+        {party.email && <p>Email: {party.email}</p>}
+        {(party.current_address || party.cnic_address) && (
+          <p>Address: {party.current_address || party.cnic_address}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TransferLetter({ booking, transfers }: { booking: Booking; transfers: BookingTransfer[] }) {
+  // transfers arrive newest first; the letter is for the latest one, with the
+  // whole chain of owners (original allottee onwards) listed underneath.
+  const transfer = transfers[0];
+  const chronological = transfers.slice().reverse();
+  const owners = [
+    { party: chronological[0].from_allottee, since: booking.booking_date, via: "Original booking" },
+    ...chronological.map((t) => ({ party: t.to_allottee, since: t.transfer_date, via: t.transfer_no })),
+  ];
+
   return (
     <LetterShell title="Transfer Letter" refNo={transfer.transfer_no} date={transfer.transfer_date}>
       <p>To Whom It May Concern,</p>
@@ -114,20 +146,8 @@ function TransferLetter({ booking, transfer }: { booking: Booking; transfer: Boo
         <strong>{booking.booking_ref_no}</strong>, has been transferred as follows:
       </p>
       <div className="grid grid-cols-2 gap-4 rounded-lg border border-slate-200 p-4">
-        <div>
-          <p className="text-xs text-slate-500">Transferred From</p>
-          <p className="font-medium text-navy-950">{transfer.from_allottee.name}</p>
-          {transfer.from_allottee.cnic && (
-            <p className="text-xs text-slate-500">CNIC: {transfer.from_allottee.cnic}</p>
-          )}
-        </div>
-        <div>
-          <p className="text-xs text-slate-500">Transferred To</p>
-          <p className="font-medium text-navy-950">{transfer.to_allottee.name}</p>
-          {transfer.to_allottee.cnic && (
-            <p className="text-xs text-slate-500">CNIC: {transfer.to_allottee.cnic}</p>
-          )}
-        </div>
+        <PartyDetails label="Transferred From" party={transfer.from_allottee} />
+        <PartyDetails label="Transferred To" party={transfer.to_allottee} />
       </div>
       <p>
         Effective <strong>{transfer.transfer_date}</strong>, all rights, obligations and outstanding
@@ -135,6 +155,40 @@ function TransferLetter({ booking, transfer }: { booking: Booking; transfer: Boo
         bound by the original Booking/Allotment Agreement's terms and conditions.
       </p>
       {transfer.narration && <p className="text-slate-600">Remarks: {transfer.narration}</p>}
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Ownership History</p>
+        <table className="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-y border-slate-300 bg-slate-50">
+              <th className="px-2 py-1.5 font-semibold text-slate-600">#</th>
+              <th className="px-2 py-1.5 font-semibold text-slate-600">Owner</th>
+              <th className="px-2 py-1.5 font-semibold text-slate-600">CNIC</th>
+              <th className="px-2 py-1.5 font-semibold text-slate-600">Mobile</th>
+              <th className="px-2 py-1.5 font-semibold text-slate-600">Owner From</th>
+              <th className="px-2 py-1.5 font-semibold text-slate-600">Owner Until</th>
+              <th className="px-2 py-1.5 font-semibold text-slate-600">Via</th>
+            </tr>
+          </thead>
+          <tbody>
+            {owners.map((o, i) => {
+              const until = owners[i + 1]?.since;
+              return (
+                <tr key={i} className="border-b border-slate-100">
+                  <td className="px-2 py-1.5 text-slate-500">{i + 1}</td>
+                  <td className="px-2 py-1.5 font-medium text-navy-900">{o.party.name}</td>
+                  <td className="px-2 py-1.5 text-slate-600">{o.party.cnic || "—"}</td>
+                  <td className="px-2 py-1.5 text-slate-600">{o.party.mobile || "—"}</td>
+                  <td className="px-2 py-1.5 text-slate-600">{o.since}</td>
+                  <td className="px-2 py-1.5 text-slate-600">{until ?? "Current owner"}</td>
+                  <td className="px-2 py-1.5 font-mono text-slate-500">{o.via}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
       <p className="pt-4">Yours truly,</p>
     </LetterShell>
   );
@@ -217,11 +271,10 @@ export default function BookingLetterPrintPage() {
   if (type === "allotment") return <AllotmentLetter booking={booking} />;
 
   if (type === "transfer") {
-    const latest = transfers?.[0];
-    if (!latest) {
+    if (!transfers?.length) {
       return <div className="p-10 text-sm text-danger-600">This booking has never been transferred.</div>;
     }
-    return <TransferLetter booking={booking} transfer={latest} />;
+    return <TransferLetter booking={booking} transfers={transfers} />;
   }
 
   if (type === "possession") {
