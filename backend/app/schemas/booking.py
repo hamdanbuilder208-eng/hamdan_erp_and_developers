@@ -96,6 +96,8 @@ class BookingCreate(BookingBase):
     extra_charges: list[ExtraChargeCreate] = []
     # Customer pays the whole price upfront (cash) — no installment plans.
     one_shot: bool = False
+    # Due date of the down payment line; defaults to booking_date.
+    down_payment_date: date | None = None
 
 
 class BookingStatusUpdate(BaseModel):

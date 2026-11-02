@@ -90,3 +90,8 @@ class RentReceiptOut(RentReceiptBase):
     voucher_id: int | None
     credit_account: AccountOut
     agreement: RentAgreementOut
+
+
+class RentReceiptPrintOut(RentReceiptOut):
+    # schedule_line_id -> amount paid on it as of this receipt.
+    line_paid_as_of: dict[int, float] = {}

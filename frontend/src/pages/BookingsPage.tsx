@@ -75,7 +75,9 @@ const emptyForm = {
   unit_id: "",
   allottee_id: "",
   discount: "",
+  booking_date: "",
   down_payment_amount: "",
+  down_payment_date: "",
   extraCharges: [] as ExtraChargeForm[],
   installmentPlans: [] as InstallmentPlanForm[],
   one_shot: false,
@@ -93,7 +95,7 @@ export default function BookingsPage() {
   const [messageOpen, setMessageOpen] = React.useState(false);
   const [filterStatus, setFilterStatus] = React.useState("");
   const [filterProject, setFilterProject] = React.useState("");
-  const [form, setForm] = React.useState(emptyForm);
+  const [form, setForm] = React.useState(() => ({ ...emptyForm, booking_date: todayIso() }));
   const [formError, setFormError] = React.useState<string | null>(null);
 
   const { data: bookings, isLoading } = useQuery({
@@ -181,7 +183,7 @@ export default function BookingsPage() {
   const previewBalance = Math.round((previewRemaining - previewPlansTotal) * 100) / 100;
 
   const resetForm = () => {
-    setForm(emptyForm);
+    setForm({ ...emptyForm, booking_date: todayIso() });
     setFormError(null);
   };
 
@@ -237,8 +239,9 @@ export default function BookingsPage() {
         amount = Math.round((remaining - allocated) * 100) / 100;
       }
       allocated += amount;
-      const startDate = new Date();
-      startDate.setMonth(startDate.getMonth() + line.months_after_booking);
+      // Counted from the booking date (may be in the past when entering old bookings).
+      const startDate = new Date(`${form.booking_date}T00:00:00Z`);
+      startDate.setUTCMonth(startDate.getUTCMonth() + line.months_after_booking);
       return {
         label: line.label,
         frequency: line.frequency,
@@ -287,17 +290,18 @@ export default function BookingsPage() {
     mutationFn: async () =>
       (
         await api.post<Booking>("/bookings/", {
-          booking_date: todayIso(),
+          booking_date: form.booking_date,
           project_id: Number(form.project_id),
           unit_id: Number(form.unit_id),
           allottee_id: Number(form.allottee_id),
-          status_date: todayIso(),
+          status_date: form.booking_date,
           discount: form.discount ? Number(form.discount) : 0,
           down_payment_amount: form.down_payment_amount ? Number(form.down_payment_amount) : 0,
+          down_payment_date: form.down_payment_date || form.booking_date,
           extra_charges: form.extraCharges.map((c) => ({
             reason: c.reason,
             amount: Number(c.amount) || 0,
-            charge_date: todayIso(),
+            charge_date: form.booking_date,
             narration: c.narration || null,
           })),
           one_shot: form.one_shot,
@@ -598,21 +602,33 @@ export default function BookingsPage() {
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="b_allottee">Allottee</Label>
-            <Select
-              id="b_allottee"
-              required
-              value={form.allottee_id}
-              onChange={(e) => setForm({ ...form, allottee_id: e.target.value })}
-            >
-              <option value="">Select allottee</option>
-              {allottees?.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} ({a.allottee_code})
-                </option>
-              ))}
-            </Select>
+          <div className="grid grid-cols-[2fr_1fr] gap-4">
+            <div>
+              <Label htmlFor="b_allottee">Allottee</Label>
+              <Select
+                id="b_allottee"
+                required
+                value={form.allottee_id}
+                onChange={(e) => setForm({ ...form, allottee_id: e.target.value })}
+              >
+                <option value="">Select allottee</option>
+                {allottees?.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} ({a.allottee_code})
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="b_date">Booking Date</Label>
+              <Input
+                id="b_date"
+                type="date"
+                required
+                value={form.booking_date}
+                onChange={(e) => setForm({ ...form, booking_date: e.target.value })}
+              />
+            </div>
           </div>
 
           <div>
@@ -772,15 +788,27 @@ export default function BookingsPage() {
                 </Button>
               </div>
             </fieldset>
-            <div>
-              <Label htmlFor="b_down">{form.one_shot ? "Full Payment" : "Down Payment"}</Label>
-              <Input
-                id="b_down"
-                type="number"
-                disabled={form.one_shot}
-                value={form.down_payment_amount}
-                onChange={(e) => setForm({ ...form, down_payment_amount: e.target.value })}
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="b_down">{form.one_shot ? "Full Payment" : "Down Payment"}</Label>
+                <Input
+                  id="b_down"
+                  type="number"
+                  disabled={form.one_shot}
+                  value={form.down_payment_amount}
+                  onChange={(e) => setForm({ ...form, down_payment_amount: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="b_down_date">{form.one_shot ? "Full Payment Date" : "Down Payment Date"}</Label>
+                {/* Blank = same as the booking date. */}
+                <Input
+                  id="b_down_date"
+                  type="date"
+                  value={form.down_payment_date || form.booking_date}
+                  onChange={(e) => setForm({ ...form, down_payment_date: e.target.value })}
+                />
+              </div>
             </div>
 
             <div className="mt-3 space-y-3">

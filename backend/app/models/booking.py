@@ -89,7 +89,10 @@ class Booking(Base, TimestampMixin):
         back_populates="booking", cascade="all, delete-orphan", order_by="BookingExtraCharge.charge_date"
     )
     schedule_lines: Mapped[list["PaymentScheduleLine"]] = relationship(
-        back_populates="booking", cascade="all, delete-orphan", order_by="PaymentScheduleLine.due_date"
+        back_populates="booking",
+        cascade="all, delete-orphan",
+        # Same-date lines keep the order they were entered in.
+        order_by=lambda: (PaymentScheduleLine.due_date, PaymentScheduleLine.id),
     )
 
 
@@ -136,7 +139,8 @@ class BookingInstallmentPlan(Base, TimestampMixin):
 
     booking: Mapped["Booking"] = relationship(back_populates="installment_plans")
     schedule_lines: Mapped[list["PaymentScheduleLine"]] = relationship(
-        back_populates="installment_plan", order_by="PaymentScheduleLine.due_date"
+        back_populates="installment_plan",
+        order_by=lambda: (PaymentScheduleLine.due_date, PaymentScheduleLine.id),
     )
 
 

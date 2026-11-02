@@ -40,13 +40,16 @@ export default function RentReceiptPrintPage() {
   }
 
   const agreement = receipt.agreement;
-  const totalPaid = agreement.schedule_lines.reduce((s, l) => s + Number(l.paid_amount), 0);
+  // Figures as of this receipt, not today — later payments mustn't show on an older slip.
+  const paidOn = (lineId: number, paidToday: number) =>
+    receipt.line_paid_as_of ? (receipt.line_paid_as_of[lineId] ?? 0) : Number(paidToday);
+  const totalPaid = agreement.schedule_lines.reduce((s, l) => s + paidOn(l.id, l.paid_amount), 0);
   const totalDue = agreement.schedule_lines.reduce((s, l) => s + Number(l.amount), 0);
   const outstanding = totalDue - totalPaid;
   const nextDue = agreement.schedule_lines
     .slice()
     .sort((a, b) => a.month_no - b.month_no)
-    .find((l) => Number(l.paid_amount) < Number(l.amount));
+    .find((l) => paidOn(l.id, l.paid_amount) < Number(l.amount));
 
   const orderedHistory = (history ?? [])
     .slice()
@@ -166,7 +169,7 @@ export default function RentReceiptPrintPage() {
                 <p className="mt-1 font-semibold text-navy-950">Month {nextDue.month_no}</p>
                 <p className="text-slate-600">{nextDue.due_date}</p>
                 <p className="mt-2 text-lg font-bold text-navy-950">
-                  PKR {(Number(nextDue.amount) - Number(nextDue.paid_amount)).toLocaleString()}
+                  PKR {(Number(nextDue.amount) - paidOn(nextDue.id, nextDue.paid_amount)).toLocaleString()}
                 </p>
               </>
             ) : (

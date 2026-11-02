@@ -85,5 +85,11 @@ class ReceiptWithBookingOut(ReceiptOut):
     booking: BookingOut
 
 
+class ReceiptPrintOut(ReceiptWithBookingOut):
+    # schedule_line_id -> amount paid on it as of this receipt (see
+    # receipt_crud.line_paid_as_of); booking.schedule_lines is as of today.
+    line_paid_as_of: dict[int, float] = {}
+
+
 class ChequeStatusUpdate(BaseModel):
     status: ChequeStatus

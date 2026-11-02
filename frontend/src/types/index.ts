@@ -759,6 +759,8 @@ export interface Receipt {
     amount: number;
     schedule_line: { id: number; installment_no: number; label: string; due_date: string };
   }[];
+  /** Detail endpoint only: schedule_line_id → amount paid on it as of this receipt. */
+  line_paid_as_of?: Record<number, number>;
 }
 
 export interface Allottee {
@@ -861,6 +863,8 @@ export interface RentReceipt extends PaymentDetailFields {
   voucher_id: number | null;
   credit_account: Account;
   agreement: RentAgreement;
+  /** Detail endpoint only: schedule_line_id → amount paid on it as of this receipt. */
+  line_paid_as_of?: Record<number, number>;
 }
 
 export type LandPropertyPaymentDirection = "To Seller" | "From Buyer";

@@ -41,16 +41,33 @@ export default function ReceiptPrintPage() {
   }
 
   const booking = receipt.booking;
-  const totalPaid = booking.schedule_lines.reduce((s, l) => s + Number(l.paid_amount), 0);
+  // Figures as of this receipt, not today — later payments mustn't show on an older slip.
+  const paidOn = (lineId: number, paidToday: number) =>
+    receipt.line_paid_as_of ? (receipt.line_paid_as_of[lineId] ?? 0) : Number(paidToday);
+  const totalPaid = booking.schedule_lines.reduce((s, l) => s + paidOn(l.id, l.paid_amount), 0);
   const outstanding = Number(booking.total_price) - totalPaid;
   const nextDue = booking.schedule_lines
     .slice()
     .sort((a, b) => a.due_date.localeCompare(b.due_date))
-    .find((l) => Number(l.paid_amount) < Number(l.amount));
+    .find((l) => paidOn(l.id, l.paid_amount) < Number(l.amount));
 
+  // One row per installment name + month: same-named lines due the same month
+  // (e.g. several plans all labelled "Monthly Installments") read as one payment.
   const paidLines = receipt.allocations
     .slice()
-    .sort((a, b) => a.schedule_line.due_date.localeCompare(b.schedule_line.due_date));
+    .sort(
+      (a, b) =>
+        a.schedule_line.due_date.localeCompare(b.schedule_line.due_date) ||
+        a.schedule_line.id - b.schedule_line.id,
+    )
+    .reduce<{ key: string; label: string; due_date: string; amount: number }[]>((rows, a) => {
+      const key = `${a.schedule_line.label}|${monthLabel(a.schedule_line.due_date)}`;
+      const row = rows.find((r) => r.key === key);
+      if (row) row.amount += Number(a.amount);
+      else
+        rows.push({ key, label: a.schedule_line.label, due_date: a.schedule_line.due_date, amount: Number(a.amount) });
+      return rows;
+    }, []);
 
   const facilities = [booking.unit.facility_1, booking.unit.facility_2, booking.unit.facility_3, booking.unit.facility_4]
     .filter(Boolean)
@@ -151,10 +168,10 @@ export default function ReceiptPrintPage() {
           </thead>
           <tbody>
             {(paidLines.length > 0 ? paidLines : [null]).map((a, i) => (
-              <tr key={a?.schedule_line.id ?? i} className="border-b border-slate-100">
-                <td className="px-3 py-2 text-navy-900">{a ? a.schedule_line.label : "Payment"}</td>
+              <tr key={a?.key ?? i} className="border-b border-slate-100">
+                <td className="px-3 py-2 text-navy-900">{a ? a.label : "Payment"}</td>
                 <td className="px-3 py-2 text-navy-900">
-                  {monthLabel(a ? a.schedule_line.due_date : receipt.receipt_date)}
+                  {monthLabel(a ? a.due_date : receipt.receipt_date)}
                 </td>
                 <td className="px-3 py-2 text-slate-500">
                   {receipt.mode_of_payment}
@@ -203,7 +220,7 @@ export default function ReceiptPrintPage() {
                 <p className="mt-1 font-semibold text-navy-950">{nextDue.label}</p>
                 <p className="text-slate-600">{nextDue.due_date}</p>
                 <p className="mt-2 text-lg font-bold text-navy-950">
-                  PKR {(Number(nextDue.amount) - Number(nextDue.paid_amount)).toLocaleString()}
+                  PKR {(Number(nextDue.amount) - paidOn(nextDue.id, nextDue.paid_amount)).toLocaleString()}
                 </p>
               </>
             ) : (

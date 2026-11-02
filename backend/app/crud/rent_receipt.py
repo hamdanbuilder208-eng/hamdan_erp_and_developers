@@ -1,3 +1,4 @@
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.payment_details import apply_payment_details
@@ -37,6 +38,27 @@ def list_receipts(db: Session, agreement_id: int | None = None) -> list[RentRece
 
 def get_receipt(db: Session, receipt_id: int) -> RentReceipt | None:
     return _load_query(db).filter(RentReceipt.id == receipt_id).first()
+
+
+def line_paid_as_of(db: Session, db_receipt: RentReceipt) -> dict[int, float]:
+    """Same as receipt.line_paid_as_of, for an agreement's rent receipts."""
+    rows = (
+        db.query(RentReceiptAllocation.schedule_line_id, func.sum(RentReceiptAllocation.amount))
+        .join(RentReceipt, RentReceiptAllocation.rent_receipt_id == RentReceipt.id)
+        .filter(
+            RentReceipt.agreement_id == db_receipt.agreement_id,
+            or_(
+                RentReceipt.receipt_date < db_receipt.receipt_date,
+                and_(
+                    RentReceipt.receipt_date == db_receipt.receipt_date,
+                    RentReceipt.id <= db_receipt.id,
+                ),
+            ),
+        )
+        .group_by(RentReceiptAllocation.schedule_line_id)
+        .all()
+    )
+    return {line_id: float(total) for line_id, total in rows}
 
 
 def _distribute_amount(db: Session, agreement: RentAgreement, receipt_id: int, amount: float) -> None:

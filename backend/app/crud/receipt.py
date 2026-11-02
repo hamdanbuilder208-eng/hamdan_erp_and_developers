@@ -1,5 +1,6 @@
 from datetime import date
 
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.payment_details import CHEQUE_FIELDS, TRANSFER_FIELDS, apply_payment_details
@@ -47,6 +48,27 @@ def get_receipt(db: Session, receipt_id: int) -> Receipt | None:
     return _load_query(db).filter(Receipt.id == receipt_id).first()
 
 
+def line_paid_as_of(db: Session, db_receipt: Receipt) -> dict[int, float]:
+    """How much each schedule line had been paid right after this receipt -
+    i.e. counting only this booking's receipts up to and including this one
+    (by date, then id). A printed receipt shows these figures so an older
+    receipt doesn't report payments made after it."""
+    rows = (
+        db.query(ReceiptAllocation.schedule_line_id, func.sum(ReceiptAllocation.amount))
+        .join(Receipt, ReceiptAllocation.receipt_id == Receipt.id)
+        .filter(
+            Receipt.booking_id == db_receipt.booking_id,
+            or_(
+                Receipt.receipt_date < db_receipt.receipt_date,
+                and_(Receipt.receipt_date == db_receipt.receipt_date, Receipt.id <= db_receipt.id),
+            ),
+        )
+        .group_by(ReceiptAllocation.schedule_line_id)
+        .all()
+    )
+    return {line_id: float(total) for line_id, total in rows}
+
+
 def _distribute_amount(
     db: Session,
     booking: Booking,
@@ -62,7 +84,8 @@ def _distribute_amount(
     order if needed) — e.g. targeting the 2nd installment specifically — and any
     amount left over still spills into the rest, oldest first."""
     remaining = amount
-    lines = sorted(booking.schedule_lines, key=lambda l: l.due_date)
+    # Same-date lines are settled in the order they were entered (id).
+    lines = sorted(booking.schedule_lines, key=lambda l: (l.due_date, l.id))
     if schedule_line_id is not None:
         target = next((l for l in lines if l.id == schedule_line_id), None)
         if target:

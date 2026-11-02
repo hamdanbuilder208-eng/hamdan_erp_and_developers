@@ -11,6 +11,7 @@ from app.models.user import User
 from app.schemas.receipt import (
     ChequeStatusUpdate,
     ReceiptCreate,
+    ReceiptPrintOut,
     ReceiptUpdate,
     ReceiptWithBookingOut,
 )
@@ -40,11 +41,12 @@ def list_pending_cheques(due_by: date | None = None, db: Session = Depends(get_d
     return receipt_crud.list_pending_cheques(db, due_by=due_by or date.today())
 
 
-@router.get("/{receipt_id}", response_model=ReceiptWithBookingOut)
+@router.get("/{receipt_id}", response_model=ReceiptPrintOut)
 def get_receipt(receipt_id: int, db: Session = Depends(get_db)):
     db_receipt = receipt_crud.get_receipt(db, receipt_id)
     if not db_receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
+    db_receipt.line_paid_as_of = receipt_crud.line_paid_as_of(db, db_receipt)
     return db_receipt
 
 

@@ -300,7 +300,7 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
                 booking_id=db_booking.id,
                 installment_no=0,
                 label="Full Payment" if booking_in.one_shot else "Down Payment",
-                due_date=booking_in.booking_date,
+                due_date=booking_in.down_payment_date or booking_in.booking_date,
                 amount=booking_in.down_payment_amount,
             )
         )

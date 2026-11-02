@@ -151,3 +151,17 @@ def test_receipt_out_lists_the_installments_it_paid(db: Session, booking, cash_a
     out = ReceiptOut.model_validate(receipt)
     paid = sorted((a.schedule_line.installment_no, a.amount) for a in out.allocations)
     assert [amount for _, amount in paid] == [500_000, 100_000]
+
+
+def test_line_paid_as_of_ignores_later_receipts(db: Session, booking, cash_account):
+    """A printed older receipt must show what was paid up to it, not today's total."""
+    from datetime import timedelta
+
+    first = receipt_crud.create_receipt(
+        db, _receipt_in(booking, cash_account, amount=200_000, receipt_date=TODAY - timedelta(days=30))
+    )
+    second = receipt_crud.create_receipt(db, _receipt_in(booking, cash_account, amount=600_000))
+
+    lines = sorted(booking.schedule_lines, key=lambda l: l.installment_no)
+    assert receipt_crud.line_paid_as_of(db, first) == {lines[0].id: 200_000}
+    assert receipt_crud.line_paid_as_of(db, second) == {lines[0].id: 500_000, lines[1].id: 300_000}

@@ -240,3 +240,63 @@ def test_one_shot_booking_must_be_paid_in_full(db: Session, project, unit, allot
             db,
             _booking_in(unit, project, allottee, one_shot=True, down_payment_amount=float(unit.total_price) / 2),
         )
+
+
+def test_down_payment_line_uses_its_own_date(db: Session, project, unit, allottee):
+    """Back-dated bookings: the down payment can be dated separately from the booking."""
+    from datetime import date
+
+    result = booking_crud.create_booking(
+        db,
+        _booking_in(
+            unit,
+            project,
+            allottee,
+            booking_date=date(2024, 3, 1),
+            down_payment_amount=100_000,
+            down_payment_date=date(2024, 3, 5),
+            installment_plans=[_plan(2, float(unit.total_price) - 100_000, start=date(2024, 4, 10))],
+        ),
+    )
+
+    down = next(l for l in result.schedule_lines if l.installment_no == 0)
+    assert down.due_date == date(2024, 3, 5)
+    assert min(result.schedule_lines, key=lambda l: l.due_date) is down
+
+
+def test_down_payment_date_defaults_to_booking_date(db: Session, project, unit, allottee):
+    from datetime import date
+
+    result = booking_crud.create_booking(
+        db,
+        _booking_in(unit, project, allottee, booking_date=date(2024, 3, 1), down_payment_amount=100_000),
+    )
+
+    down = next(l for l in result.schedule_lines if l.installment_no == 0)
+    assert down.due_date == date(2024, 3, 1)
+
+
+def test_same_date_plans_are_paid_in_entry_order(
+    db: Session, project, unit, allottee, cash_account, accounting_accounts
+):
+    """Plans of 2L, 20L, 30L all due the same day: payments settle them in that order."""
+    from app.crud import receipt as receipt_crud
+    from app.schemas.receipt import ReceiptCreate
+
+    price = float(unit.total_price)
+    small, mid = round(price * 0.04, 2), round(price * 0.38, 2)
+    amounts = [small, mid, round(price - small - mid, 2)]
+    booking = booking_crud.create_booking(
+        db,
+        _booking_in(unit, project, allottee, installment_plans=[_plan(1, a) for a in amounts]),
+    )
+    assert [float(l.amount) for l in booking.schedule_lines] == amounts
+
+    receipt_crud.create_receipt(
+        db,
+        ReceiptCreate(
+            receipt_date=TODAY, booking_id=booking.id, credit_account_id=cash_account.id, amount=small + mid + 1_000
+        ),
+    )
+    db.refresh(booking)
+    assert [float(l.paid_amount) for l in booking.schedule_lines] == [small, mid, 1_000]

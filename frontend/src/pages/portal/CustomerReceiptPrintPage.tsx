@@ -38,12 +38,15 @@ export default function CustomerReceiptPrintPage() {
   }
 
   const booking = receipt.booking;
-  const totalPaid = booking.schedule_lines.reduce((s, l) => s + Number(l.paid_amount), 0);
+  // Figures as of this receipt, not today — later payments mustn't show on an older slip.
+  const paidOn = (lineId: number, paidToday: number) =>
+    receipt.line_paid_as_of ? (receipt.line_paid_as_of[lineId] ?? 0) : Number(paidToday);
+  const totalPaid = booking.schedule_lines.reduce((s, l) => s + paidOn(l.id, l.paid_amount), 0);
   const outstanding = Number(booking.total_price) - totalPaid;
   const nextDue = booking.schedule_lines
     .slice()
     .sort((a, b) => a.due_date.localeCompare(b.due_date))
-    .find((l) => Number(l.paid_amount) < Number(l.amount));
+    .find((l) => paidOn(l.id, l.paid_amount) < Number(l.amount));
 
   const orderedHistory = (allMyReceipts ?? [])
     .filter((r) => r.booking_id === receipt.booking_id)
@@ -157,7 +160,7 @@ export default function CustomerReceiptPrintPage() {
                 <p className="mt-1 font-semibold text-navy-950">{nextDue.label}</p>
                 <p className="text-slate-600">{nextDue.due_date}</p>
                 <p className="mt-2 text-lg font-bold text-navy-950">
-                  PKR {(Number(nextDue.amount) - Number(nextDue.paid_amount)).toLocaleString()}
+                  PKR {(Number(nextDue.amount) - paidOn(nextDue.id, nextDue.paid_amount)).toLocaleString()}
                 </p>
               </>
             ) : (

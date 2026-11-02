@@ -7,6 +7,7 @@ from app.core.security import create_access_token
 from app.crud import booking as booking_crud
 from app.crud import company_settings as company_settings_crud
 from app.crud import customer_account as customer_account_crud
+from app.crud import receipt as receipt_crud
 from app.db.session import get_db
 from app.models.booking import Booking
 from app.models.customer_account import CustomerAccount
@@ -20,7 +21,7 @@ from app.schemas.customer_account import (
     CustomerForgotPassword,
     CustomerSignup,
 )
-from app.schemas.receipt import ReceiptWithBookingOut
+from app.schemas.receipt import ReceiptPrintOut, ReceiptWithBookingOut
 from app.schemas.refund import RefundOut
 from app.schemas.token import Token
 
@@ -108,7 +109,7 @@ def my_receipts(
     )
 
 
-@router.get("/me/receipts/{receipt_id}", response_model=ReceiptWithBookingOut)
+@router.get("/me/receipts/{receipt_id}", response_model=ReceiptPrintOut)
 def my_receipt(
     receipt_id: int,
     current_customer: CustomerAccount = Depends(get_current_customer),
@@ -121,6 +122,7 @@ def my_receipt(
     )
     if not receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
+    receipt.line_paid_as_of = receipt_crud.line_paid_as_of(db, receipt)
     return receipt
 
 
