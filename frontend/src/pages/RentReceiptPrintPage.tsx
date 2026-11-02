@@ -80,7 +80,9 @@ export default function RentReceiptPrintPage() {
             </p>
           </div>
           <div className="text-right">
-            <p className="text-xl font-bold uppercase tracking-wide text-navy-950">Rent Receipt</p>
+            <p className="text-xl font-bold uppercase tracking-wide text-navy-950">
+              {receipt.receipt_type === "Security Deposit" ? "Security Deposit Receipt" : "Rent Receipt"}
+            </p>
             <p className="mt-1 font-mono text-sm text-slate-500">{receipt.receipt_no}</p>
             <p className="text-xs text-slate-400">{receipt.receipt_date}</p>
           </div>

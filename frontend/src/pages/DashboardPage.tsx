@@ -41,8 +41,12 @@ import type {
   Unit,
   UnitStatus,
   LandPropertyStatus,
+  PendingLandCheque,
+  RentReceipt,
   WagePayment,
 } from "../types";
+
+const todayIsoDate = () => new Date().toISOString().slice(0, 10);
 
 function StatCard({
   label,
@@ -132,19 +136,82 @@ export default function DashboardPage() {
     queryFn: async () => (await api.get<Receipt[]>("/receipts/cheques/pending")).data,
   });
 
+  // Rent / security-deposit cheques and land / plot cheques — same reminder, due today or earlier.
+  const { data: pendingRentCheques } = useQuery({
+    queryKey: ["pending-cheques", "rent"],
+    queryFn: async () =>
+      (await api.get<RentReceipt[]>("/rentals/receipts/cheques/pending", { params: { due_by: todayIsoDate() } }))
+        .data,
+  });
+  const { data: pendingLandCheques } = useQuery({
+    queryKey: ["pending-cheques", "land"],
+    queryFn: async () =>
+      (
+        await api.get<PendingLandCheque[]>("/land-properties/payments/cheques/pending", {
+          params: { due_by: todayIsoDate() },
+        })
+      ).data,
+  });
+
+  // `path` is the status endpoint for whichever kind of cheque it is.
   const updateChequeStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: number; status: "Cleared" | "Bounced" }) =>
-      (await api.patch<Receipt>(`/receipts/${id}/cheque-status`, { status })).data,
+    mutationFn: async ({ path, status }: { path: string; status: "Cleared" | "Bounced" }) =>
+      (await api.patch(path, { status })).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pending-cheques"] });
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       queryClient.invalidateQueries({ queryKey: ["bookings"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["rentals"] });
+      queryClient.invalidateQueries({ queryKey: ["land-properties"] });
     },
     onError: (err: unknown) => {
       toast.error(apiErrorMessage(err, "Failed to update cheque status."));
     },
   });
+
+  type ChequeReminder = {
+    key: string;
+    who: string;
+    ref: string;
+    chequeNo: string | null;
+    clearingDate: string | null;
+    amount: number;
+    statusPath: string;
+    bounceNote: string;
+  };
+  const chequeReminders: ChequeReminder[] = [
+    ...(pendingCheques ?? []).map((r) => ({
+      key: `b${r.id}`,
+      who: r.booking.allottee.name,
+      ref: r.booking.booking_ref_no,
+      chequeNo: r.cheque_no,
+      clearingDate: r.cheque_clearing_date,
+      amount: Number(r.amount),
+      statusPath: `/receipts/${r.id}/cheque-status`,
+      bounceNote: "This will reverse the payment.",
+    })),
+    ...(pendingRentCheques ?? []).map((r) => ({
+      key: `r${r.id}`,
+      who: r.agreement.tenant.name,
+      ref: `${r.agreement.agreement_no} · ${r.receipt_type === "Security Deposit" ? "Security deposit" : "Rent"}`,
+      chequeNo: r.cheque_no,
+      clearingDate: r.cheque_clearing_date,
+      amount: Number(r.amount),
+      statusPath: `/rentals/receipts/${r.id}/cheque-status`,
+      bounceNote: "This rent receipt will be reversed.",
+    })),
+    ...(pendingLandCheques ?? []).map((p) => ({
+      key: `l${p.id}`,
+      who: `${p.land_property_ref_no} — ${p.land_property_location}`,
+      ref: p.direction === "From Buyer" ? "From buyer" : "To seller",
+      chequeNo: p.cheque_no,
+      clearingDate: p.cheque_clearing_date,
+      amount: Number(p.amount),
+      statusPath: `/land-properties/payments/${p.id}/cheque-status`,
+      bounceNote: "It will no longer count as paid.",
+    })),
+  ].sort((a, b) => (a.clearingDate ?? "").localeCompare(b.clearingDate ?? ""));
 
   const { data: projects, isLoading: projectsLoading } = useQuery({
     queryKey: ["projects"],
@@ -397,7 +464,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {!chequesLoading && pendingCheques && pendingCheques.length > 0 && (
+      {!chequesLoading && chequeReminders.length > 0 && (
         <Card className="border-warning-200 bg-warning-50/40 dark:border-warning-900/40 dark:bg-warning-900/10">
           <CardHeader>
             <CardTitle className="flex items-center gap-1.5">
@@ -406,13 +473,13 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {pendingCheques.map((r) => {
+            {chequeReminders.map((r) => {
               const today = new Date().toISOString().slice(0, 10);
-              const isToday = r.cheque_clearing_date === today;
-              const overdue = !!r.cheque_clearing_date && r.cheque_clearing_date < today;
+              const isToday = r.clearingDate === today;
+              const overdue = !!r.clearingDate && r.clearingDate < today;
               const daysOverdue = overdue
                 ? Math.round(
-                    (new Date(today).getTime() - new Date(r.cheque_clearing_date!).getTime()) /
+                    (new Date(today).getTime() - new Date(r.clearingDate!).getTime()) /
                       86400000,
                   )
                 : 0;
@@ -420,18 +487,18 @@ export default function DashboardPage() {
                 ? "This cheque was due to be cashed today — was it?"
                 : overdue
                   ? `This cheque was due to be cashed ${daysOverdue} day${daysOverdue > 1 ? "s" : ""} ago — still pending!`
-                  : `Due to be cashed on ${r.cheque_clearing_date}`;
+                  : `Due to be cashed on ${r.clearingDate}`;
               return (
                 <div
-                  key={r.id}
+                  key={r.key}
                   className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 bg-white px-4 py-2.5 dark:border-navy-800 dark:bg-navy-900"
                 >
                   <div>
                     <p className="text-sm font-medium text-navy-900 dark:text-slate-100">
-                      {r.booking.allottee.name}{" "}
+                      {r.who}{" "}
                       <span className="font-normal text-slate-400 dark:text-slate-500">
-                        · {r.booking.booking_ref_no}
-                        {r.cheque_no ? ` · Cheque #${r.cheque_no}` : ""}
+                        · {r.ref}
+                        {r.chequeNo ? ` · Cheque #${r.chequeNo}` : ""}
                       </span>
                     </p>
                     <p
@@ -441,14 +508,14 @@ export default function DashboardPage() {
                           : "text-slate-500 dark:text-slate-400"
                       }`}
                     >
-                      {statusLine} — PKR {Number(r.amount).toLocaleString()}
+                      {statusLine} — PKR {r.amount.toLocaleString()}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={() => updateChequeStatus.mutate({ id: r.id, status: "Cleared" })}
+                      onClick={() => updateChequeStatus.mutate({ path: r.statusPath, status: "Cleared" })}
                     >
                       Mark Cleared
                     </Button>
@@ -457,10 +524,10 @@ export default function DashboardPage() {
                       variant="danger"
                       onClick={async () => {
                         const ok = await confirm(
-                          `Mark cheque ${r.cheque_no ?? ""} as bounced? This will reverse the payment.`,
+                          `Mark cheque ${r.chequeNo ?? ""} as bounced? ${r.bounceNote}`,
                           { danger: true, confirmLabel: "Mark Bounced" },
                         );
-                        if (ok) updateChequeStatus.mutate({ id: r.id, status: "Bounced" });
+                        if (ok) updateChequeStatus.mutate({ path: r.statusPath, status: "Bounced" });
                       }}
                     >
                       Mark Bounced

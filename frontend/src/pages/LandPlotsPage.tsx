@@ -33,6 +33,8 @@ const emptyPaymentForm = {
   amount: "",
   payment_date: "",
   mode_of_payment: "Cash" as PaymentMode,
+  cheque_date: "",
+  cheque_clearing_date: "",
   narration: "",
   ...emptyPaymentDetails(),
 };
@@ -159,16 +161,33 @@ export default function LandPlotsPage() {
         payment_date: paymentForm.payment_date || todayIso(),
         mode_of_payment: paymentForm.mode_of_payment,
         narration: paymentForm.narration || null,
+        ...(paymentForm.mode_of_payment === "Cheque"
+          ? {
+              cheque_date: paymentForm.cheque_date || null,
+              cheque_clearing_date: paymentForm.cheque_clearing_date || null,
+            }
+          : {}),
         ...paymentDetailsPayload(paymentForm.mode_of_payment, paymentForm),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["land-properties"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-cheques"] });
       setPaymentModalOpen(false);
       setPaymentForm(emptyPaymentForm);
       setPaymentError(null);
       toast.success("Payment recorded.");
     },
     onError: (err: unknown) => setPaymentError(apiErrorMessage(err, "Failed to record payment.")),
+  });
+
+  const updateLandChequeStatus = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: "Cleared" | "Bounced" }) =>
+      api.patch(`/land-properties/payments/${id}/cheque-status`, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["land-properties"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-cheques"] });
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to update cheque status.")),
   });
 
   const deletePayment = useMutation({
@@ -482,7 +501,10 @@ export default function LandPlotsPage() {
                 .filter((pm) => pm.direction === direction)
                 .slice()
                 .sort((a, b) => a.payment_date.localeCompare(b.payment_date));
-              const totalMoved = relevantPayments.reduce((s, pm) => s + Number(pm.amount), 0);
+              // A bounced cheque stays listed but was never actually paid.
+              const totalMoved = relevantPayments
+                .filter((pm) => pm.cheque_status !== "Bounced")
+                .reduce((s, pm) => s + Number(pm.amount), 0);
               const remaining = Math.round((total - totalMoved) * 100) / 100;
               const dueField = isSold ? "buyer_payment_due_date" : "seller_payment_due_date";
               const dueValue = (isSold ? detailProperty.buyer_payment_due_date : detailProperty.seller_payment_due_date) ?? "";
@@ -568,10 +590,59 @@ export default function LandPlotsPage() {
                           >
                             <span className="text-navy-900 dark:text-slate-100">
                               {pm.payment_date} · PKR {Number(pm.amount).toLocaleString()} · {pm.mode_of_payment}
+                              {pm.cheque_status && (
+                                <span
+                                  className={`ml-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                    pm.cheque_status === "Cleared"
+                                      ? "bg-success-50 text-success-700"
+                                      : pm.cheque_status === "Bounced"
+                                        ? "bg-danger-50 text-danger-700"
+                                        : "bg-warning-50 text-warning-700"
+                                  }`}
+                                >
+                                  {pm.cheque_status}
+                                  {pm.cheque_clearing_date ? ` · ${pm.cheque_clearing_date}` : ""}
+                                </span>
+                              )}
                               {paymentDetailsSummary(pm.mode_of_payment, pm) && (
                                 <span className="block text-xs text-slate-400">
                                   {paymentDetailsSummary(pm.mode_of_payment, pm)}
                                 </span>
+                              )}
+                              {pm.cheque_status === "Pending" && (
+                                <span className="mt-1 flex gap-1.5">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => updateLandChequeStatus.mutate({ id: pm.id, status: "Cleared" })}
+                                  >
+                                    Mark Cleared
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="danger"
+                                    onClick={async () => {
+                                      const ok = await confirm(
+                                        `Mark cheque ${pm.cheque_no ?? ""} as bounced? It will no longer count as paid.`,
+                                        { danger: true, confirmLabel: "Mark Bounced" },
+                                      );
+                                      if (ok) updateLandChequeStatus.mutate({ id: pm.id, status: "Bounced" });
+                                    }}
+                                  >
+                                    Mark Bounced
+                                  </Button>
+                                </span>
+                              )}
+                              {pm.cheque_status === "Bounced" && (
+                                <button
+                                  type="button"
+                                  onClick={() => updateLandChequeStatus.mutate({ id: pm.id, status: "Cleared" })}
+                                  className="mt-1 block text-[11px] font-medium text-slate-500 hover:underline"
+                                >
+                                  Re-presented and cleared? Mark Cleared
+                                </button>
                               )}
                             </span>
                             <button
@@ -720,6 +791,29 @@ export default function LandPlotsPage() {
             value={paymentForm}
             onChange={(patch) => setPaymentForm({ ...paymentForm, ...patch })}
           />
+          {paymentForm.mode_of_payment === "Cheque" && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="lp_cheque_date">Cheque Date</Label>
+                <Input
+                  id="lp_cheque_date"
+                  type="date"
+                  value={paymentForm.cheque_date}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, cheque_date: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="lp_cash_date">Cash Date (reminder)</Label>
+                <Input
+                  id="lp_cash_date"
+                  type="date"
+                  required
+                  value={paymentForm.cheque_clearing_date}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, cheque_clearing_date: e.target.value })}
+                />
+              </div>
+            </div>
+          )}
           <div>
             <Label htmlFor="payment_narration">Narration (optional)</Label>
             <Input

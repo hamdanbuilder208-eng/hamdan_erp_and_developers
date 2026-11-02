@@ -7,6 +7,7 @@ from app.core.errors import delete_with_fk_guard
 from app.crud import rent_receipt as rent_receipt_crud
 from app.crud import rental as rental_crud
 from app.db.session import get_db
+from app.schemas.receipt import ChequeStatusUpdate
 from app.schemas.rental import (
     RentAgreementCreate,
     RentAgreementOut,
@@ -112,6 +113,25 @@ def list_receipts(agreement_id: int | None = None, db: Session = Depends(get_db)
 def create_receipt(receipt_in: RentReceiptCreate, db: Session = Depends(get_db)):
     try:
         return rent_receipt_crud.create_receipt(db, receipt_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/receipts/cheques/pending", response_model=list[RentReceiptOut])
+def list_pending_rent_cheques(due_by: date | None = None, db: Session = Depends(get_db)):
+    """Rent / deposit cheques awaiting clearing, for the dashboard reminder."""
+    return rent_receipt_crud.list_pending_cheques(db, due_by=due_by)
+
+
+@router.patch("/receipts/{receipt_id}/cheque-status", response_model=RentReceiptOut)
+def update_rent_cheque_status(
+    receipt_id: int, status_in: ChequeStatusUpdate, db: Session = Depends(get_db)
+):
+    db_receipt = rent_receipt_crud.get_receipt(db, receipt_id)
+    if not db_receipt:
+        raise HTTPException(status_code=404, detail="Rent receipt not found")
+    try:
+        return rent_receipt_crud.mark_cheque_status(db, db_receipt, status_in.status)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

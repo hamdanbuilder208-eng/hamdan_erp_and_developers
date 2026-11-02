@@ -914,14 +914,22 @@ export interface PaymentDetailFields {
   transfer_to_account_no: string | null;
 }
 
+export type ChequeStatus = "Pending" | "Cleared" | "Bounced";
+export type RentReceiptType = "Rent" | "Security Deposit";
+
 export interface RentReceipt extends PaymentDetailFields {
   id: number;
   receipt_no: string;
   receipt_date: string;
+  receipt_type: RentReceiptType;
   agreement_id: number;
   credit_account_id: number;
   amount: number;
   mode_of_payment: string;
+  cheque_date: string | null;
+  /** When the cheque can be cashed — drives the dashboard reminder. */
+  cheque_clearing_date: string | null;
+  cheque_status: ChequeStatus | null;
   narration: string | null;
   voucher_id: number | null;
   credit_account: Account;
@@ -939,7 +947,18 @@ export interface LandPropertyPayment extends PaymentDetailFields {
   amount: number;
   payment_date: string;
   mode_of_payment: PaymentMode;
+  cheque_date: string | null;
+  /** When the cheque can be cashed — drives the dashboard reminder. */
+  cheque_clearing_date: string | null;
+  /** A bounced cheque stays on record but no longer counts as paid. */
+  cheque_status: ChequeStatus | null;
   narration: string | null;
+}
+
+/** Dashboard reminder row: a pending land/plot cheque and which property it's for. */
+export interface PendingLandCheque extends LandPropertyPayment {
+  land_property_ref_no: string;
+  land_property_location: string;
 }
 
 export interface LandProperty {

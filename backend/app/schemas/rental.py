@@ -3,7 +3,8 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from app.models.rental import RentAgreementStatus
+from app.models.receipt import ChequeStatus
+from app.models.rental import RentAgreementStatus, RentReceiptType
 from app.schemas.account import AccountOut
 from app.schemas.allottee import _clean_cnic, _clean_phone
 from app.schemas.land_property import LandPropertyOut
@@ -106,15 +107,23 @@ class RentAgreementOut(RentAgreementBase):
 
 class RentReceiptBase(PaymentDetailsFields):
     receipt_date: date
+    receipt_type: RentReceiptType = RentReceiptType.RENT
     agreement_id: int
     credit_account_id: int
     amount: float
     mode_of_payment: str = "Cash"
+    cheque_date: date | None = None
+    # When the cheque can be cashed — drives the dashboard reminder.
+    cheque_clearing_date: date | None = None
     narration: str | None = None
 
 
 class RentReceiptCreate(RentReceiptBase):
-    pass
+    @model_validator(mode="after")
+    def validate_amount(self):
+        if self.amount <= 0:
+            raise ValueError("Amount must be greater than zero")
+        return self
 
 
 class RentReceiptOut(RentReceiptBase):
@@ -122,6 +131,7 @@ class RentReceiptOut(RentReceiptBase):
     id: int
     receipt_no: str
     voucher_id: int | None
+    cheque_status: ChequeStatus | None = None
     credit_account: AccountOut
     agreement: RentAgreementOut
 

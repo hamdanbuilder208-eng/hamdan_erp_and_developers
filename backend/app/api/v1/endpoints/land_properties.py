@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -10,10 +12,38 @@ from app.schemas.land_property import (
     LandPropertyOut,
     LandPropertyPaymentCreate,
     LandPropertyPaymentOut,
+    LandPropertyPaymentWithPropertyOut,
     LandPropertyUpdate,
 )
+from app.schemas.receipt import ChequeStatusUpdate
 
 router = APIRouter()
+
+
+@router.get("/payments/cheques/pending", response_model=list[LandPropertyPaymentWithPropertyOut])
+def list_pending_land_cheques(due_by: date | None = None, db: Session = Depends(get_db)):
+    """Land / plot cheques awaiting clearing, for the dashboard reminder."""
+    return [
+        LandPropertyPaymentWithPropertyOut(
+            **LandPropertyPaymentOut.model_validate(p).model_dump(),
+            land_property_ref_no=p.land_property.property_ref_no,
+            land_property_location=p.land_property.area_location,
+        )
+        for p in land_crud.list_pending_cheques(db, due_by=due_by)
+    ]
+
+
+@router.patch("/payments/{payment_id}/cheque-status", response_model=LandPropertyPaymentOut)
+def update_land_cheque_status(
+    payment_id: int, status_in: ChequeStatusUpdate, db: Session = Depends(get_db)
+):
+    db_payment = land_crud.get_payment(db, payment_id)
+    if not db_payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    try:
+        return land_crud.mark_cheque_status(db, db_payment, status_in.status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/", response_model=list[LandPropertyOut])

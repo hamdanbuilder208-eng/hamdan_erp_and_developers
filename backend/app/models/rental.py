@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base, TimestampMixin
 from app.models.payment_details import PaymentDetailsMixin
+from app.models.receipt import ChequeStatus
 
 
 class Tenant(Base, TimestampMixin):
@@ -82,12 +83,22 @@ class RentScheduleLine(Base, TimestampMixin):
     agreement: Mapped["RentAgreement"] = relationship(back_populates="schedule_lines")
 
 
+class RentReceiptType(str, enum.Enum):
+    RENT = "Rent"
+    # The tenant's refundable deposit: owed back to them, so it's booked as a
+    # liability, not income, and never settles a month's rent.
+    SECURITY_DEPOSIT = "Security Deposit"
+
+
 class RentReceipt(Base, PaymentDetailsMixin, TimestampMixin):
     __tablename__ = "rent_receipts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     receipt_no: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
     receipt_date: Mapped[date] = mapped_column(Date, nullable=False)
+    receipt_type: Mapped[RentReceiptType] = mapped_column(
+        Enum(RentReceiptType), default=RentReceiptType.RENT, server_default="RENT", nullable=False
+    )
 
     agreement_id: Mapped[int] = mapped_column(ForeignKey("rent_agreements.id"), nullable=False)
     credit_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
@@ -95,10 +106,24 @@ class RentReceipt(Base, PaymentDetailsMixin, TimestampMixin):
 
     amount: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
     mode_of_payment: Mapped[str] = mapped_column(String(30), default="Cash")
+    # Cheques: written date, the date it can be cashed, and whether it has.
+    cheque_date: Mapped[date | None] = mapped_column(Date)
+    cheque_clearing_date: Mapped[date | None] = mapped_column(Date)
+    cheque_status: Mapped[ChequeStatus | None] = mapped_column(Enum(ChequeStatus))
     narration: Mapped[str | None] = mapped_column(Text)
 
     agreement: Mapped["RentAgreement"] = relationship()
     credit_account: Mapped["Account"] = relationship()
+
+
+def counts_as_rent_received():
+    """Query filter: receipts that are actual rent income — not a security
+    deposit, and not a cheque that bounced."""
+    from sqlalchemy import or_
+
+    return (RentReceipt.receipt_type == RentReceiptType.RENT) & or_(
+        RentReceipt.cheque_status.is_(None), RentReceipt.cheque_status != ChequeStatus.BOUNCED
+    )
 
 
 class RentReceiptAllocation(Base, TimestampMixin):

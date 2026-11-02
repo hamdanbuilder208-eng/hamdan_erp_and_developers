@@ -21,7 +21,8 @@ from app.models.inventory import (
 )
 from app.models.land_property import LandProperty, LandPropertyPaymentDirection, LandPropertyStatus
 from app.models.project import Project
-from app.models.rental import RentAgreement, RentAgreementStatus, RentReceipt
+from app.models.receipt import ChequeStatus
+from app.models.rental import RentAgreement, RentAgreementStatus, RentReceipt, counts_as_rent_received
 from app.models.voucher import Voucher, VoucherLine
 from app.schemas.report import (
     AgingReport,
@@ -678,7 +679,7 @@ def get_land_property_report(db: Session) -> list[LandPropertyReportRow]:
     rent_receipts = (
         db.query(RentReceipt)
         .join(RentAgreement, RentReceipt.agreement_id == RentAgreement.id)
-        .filter(RentAgreement.land_property_id.is_not(None))
+        .filter(RentAgreement.land_property_id.is_not(None), counts_as_rent_received())
         .options(joinedload(RentReceipt.agreement))
         .all()
     )
@@ -688,11 +689,13 @@ def get_land_property_report(db: Session) -> list[LandPropertyReportRow]:
 
     rows: list[LandPropertyReportRow] = []
     for p in properties:
+        # A bounced cheque was never actually paid.
+        payments = [x for x in p.payments if x.cheque_status != ChequeStatus.BOUNCED]
         paid_to_seller = sum(
-            float(x.amount) for x in p.payments if x.direction == LandPropertyPaymentDirection.TO_SELLER
+            float(x.amount) for x in payments if x.direction == LandPropertyPaymentDirection.TO_SELLER
         )
         received_from_buyer = sum(
-            float(x.amount) for x in p.payments if x.direction == LandPropertyPaymentDirection.FROM_BUYER
+            float(x.amount) for x in payments if x.direction == LandPropertyPaymentDirection.FROM_BUYER
         )
         purchase_price = float(p.purchase_rate or 0)
         sale_price = float(p.sale_rate or 0) if p.status == LandPropertyStatus.SOLD else 0.0

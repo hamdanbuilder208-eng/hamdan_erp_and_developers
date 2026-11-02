@@ -84,3 +84,115 @@ def test_delete_receipt_reverses_allocation_and_voucher(
     db.refresh(agreement)
     assert all(l.paid_amount == 0 for l in agreement.schedule_lines)
     assert db.get(Voucher, voucher_id) is None
+
+
+# Security deposits and cheques
+
+
+def _lines_by_account(db, voucher_id):
+    from app.models.account import Account
+    from app.models.voucher import VoucherLine
+
+    lines = db.query(VoucherLine).filter(VoucherLine.voucher_id == voucher_id).all()
+    return {db.get(Account, l.account_id).code: (float(l.debit), float(l.credit)) for l in lines}
+
+
+def test_security_deposit_is_a_liability_not_rent(db: Session, agreement, cash_account):
+    from app.models.rental import RentReceiptType
+
+    receipt = rent_receipt_crud.create_receipt(
+        db,
+        _receipt_in(agreement, cash_account, amount=50_000, receipt_type=RentReceiptType.SECURITY_DEPOSIT),
+    )
+
+    # Works without a Rental Income account: deposits don't touch it.
+    assert _lines_by_account(db, receipt.voucher_id) == {
+        "1010": (50_000, 0),
+        "2040": (0, 50_000),
+    }
+    db.refresh(agreement)
+    assert all(float(l.paid_amount) == 0 for l in agreement.schedule_lines)
+
+
+def _cheque(agreement, cash_account, **overrides):
+    return _receipt_in(
+        agreement,
+        cash_account,
+        mode_of_payment="Cheque",
+        cheque_no="200000",
+        cheque_bank_name="UBL",
+        cheque_clearing_date=TODAY,
+        **overrides,
+    )
+
+
+def test_rent_cheque_starts_pending_and_shows_in_reminders(
+    db: Session, agreement, cash_account, rental_income_account
+):
+    from app.models.receipt import ChequeStatus
+
+    receipt = rent_receipt_crud.create_receipt(db, _cheque(agreement, cash_account))
+
+    assert receipt.cheque_status == ChequeStatus.PENDING
+    assert [r.id for r in rent_receipt_crud.list_pending_cheques(db, due_by=TODAY)] == [receipt.id]
+
+    rent_receipt_crud.mark_cheque_status(db, receipt, ChequeStatus.CLEARED)
+    assert rent_receipt_crud.list_pending_cheques(db) == []
+
+
+def test_bounced_rent_cheque_reverses_and_re_presented_reapplies(
+    db: Session, agreement, cash_account, rental_income_account
+):
+    from app.models.receipt import ChequeStatus
+
+    receipt = rent_receipt_crud.create_receipt(db, _cheque(agreement, cash_account))
+    voucher_id = receipt.voucher_id
+
+    receipt = rent_receipt_crud.mark_cheque_status(db, receipt, ChequeStatus.BOUNCED)
+    assert receipt.voucher_id is None
+    assert db.get(Voucher, voucher_id) is None
+    db.refresh(agreement)
+    assert all(float(l.paid_amount) == 0 for l in agreement.schedule_lines)
+
+    receipt = rent_receipt_crud.mark_cheque_status(db, receipt, ChequeStatus.CLEARED)
+    assert receipt.voucher_id is not None
+    db.refresh(agreement)
+    assert sorted(float(l.paid_amount) for l in agreement.schedule_lines) == [0, 25_000]
+
+
+def test_cash_rent_has_no_cheque_status(db: Session, agreement, cash_account, rental_income_account):
+    receipt = rent_receipt_crud.create_receipt(db, _receipt_in(agreement, cash_account, cheque_clearing_date=TODAY))
+    assert receipt.cheque_status is None
+    with pytest.raises(ValueError, match="not paid by cheque"):
+        from app.models.receipt import ChequeStatus
+
+        rent_receipt_crud.mark_cheque_status(db, receipt, ChequeStatus.CLEARED)
+
+
+def test_land_payment_cheque_status(db: Session, land_property):
+    from app.crud import land_property as land_crud
+    from app.models.booking import PaymentMode
+    from app.models.land_property import LandPropertyPaymentDirection
+    from app.models.receipt import ChequeStatus
+    from app.schemas.land_property import LandPropertyPaymentCreate
+
+    payment = land_crud.create_payment(
+        db,
+        land_property,
+        LandPropertyPaymentCreate(
+            direction=LandPropertyPaymentDirection.FROM_BUYER,
+            amount=100_000,
+            payment_date=TODAY,
+            mode_of_payment=PaymentMode.CHEQUE,
+            cheque_no="9",
+            cheque_bank_name="HBL",
+            cheque_clearing_date=TODAY,
+        ),
+    )
+    assert payment.cheque_status == ChequeStatus.PENDING
+    assert [p.id for p in land_crud.list_pending_cheques(db, due_by=TODAY)] == [payment.id]
+
+    land_crud.mark_cheque_status(db, payment, ChequeStatus.BOUNCED)
+    assert land_crud.list_pending_cheques(db) == []
+    with pytest.raises(ValueError, match="already marked Bounced"):
+        land_crud.mark_cheque_status(db, payment, ChequeStatus.BOUNCED)

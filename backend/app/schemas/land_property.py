@@ -9,6 +9,7 @@ from app.models.land_property import (
     PropertyType,
     SizeUnit,
 )
+from app.models.receipt import ChequeStatus
 from app.schemas.payment_details import PaymentDetailsFields
 
 
@@ -49,6 +50,9 @@ class LandPropertyPaymentBase(PaymentDetailsFields):
     amount: float
     payment_date: date
     mode_of_payment: PaymentMode = PaymentMode.CASH
+    cheque_date: date | None = None
+    # When the cheque can be cashed — drives the dashboard reminder.
+    cheque_clearing_date: date | None = None
     narration: str | None = None
 
 
@@ -60,6 +64,14 @@ class LandPropertyPaymentOut(LandPropertyPaymentBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     land_property_id: int
+    cheque_status: ChequeStatus | None = None
+
+
+class LandPropertyPaymentWithPropertyOut(LandPropertyPaymentOut):
+    """For the dashboard cheque reminder, which needs to say which property."""
+
+    land_property_ref_no: str
+    land_property_location: str
 
 
 class LandPropertyOut(LandPropertyBase):

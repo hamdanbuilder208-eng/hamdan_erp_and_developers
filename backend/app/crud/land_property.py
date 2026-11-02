@@ -1,8 +1,12 @@
+from datetime import date
+
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.payment_details import apply_payment_details
 from app.core.sequences import next_sequence_number
+from app.models.booking import PaymentMode
 from app.models.land_property import LandProperty, LandPropertyPayment, LandPropertyStatus
+from app.models.receipt import ChequeStatus
 from app.schemas.land_property import LandPropertyCreate, LandPropertyPaymentCreate, LandPropertyUpdate
 
 
@@ -78,7 +82,40 @@ def create_payment(
     data = payment_in.model_dump()
     db_payment = LandPropertyPayment(land_property_id=db_property.id, **data)
     apply_payment_details(db_payment, payment_in.mode_of_payment, data)
+    if payment_in.mode_of_payment == PaymentMode.CHEQUE:
+        db_payment.cheque_status = ChequeStatus.PENDING
+    else:
+        db_payment.cheque_date = db_payment.cheque_clearing_date = None
     db.add(db_payment)
+    db.commit()
+    db.refresh(db_payment)
+    return db_payment
+
+
+def list_pending_cheques(db: Session, due_by: date | None = None) -> list[LandPropertyPayment]:
+    """Land / plot cheques not yet confirmed — for the dashboard reminder."""
+    query = (
+        db.query(LandPropertyPayment)
+        .options(joinedload(LandPropertyPayment.land_property))
+        .filter(LandPropertyPayment.cheque_status == ChequeStatus.PENDING)
+    )
+    if due_by is not None:
+        query = query.filter(LandPropertyPayment.cheque_clearing_date <= due_by)
+    return query.order_by(LandPropertyPayment.cheque_clearing_date.asc()).all()
+
+
+def mark_cheque_status(
+    db: Session, db_payment: LandPropertyPayment, new_status: ChequeStatus
+) -> LandPropertyPayment:
+    """These payments aren't posted to the books, so only the status changes;
+    a bounced one simply stops counting toward what's been paid."""
+    if db_payment.mode_of_payment != PaymentMode.CHEQUE:
+        raise ValueError("This payment was not made by cheque")
+    if db_payment.cheque_status == new_status:
+        raise ValueError(f"This cheque is already marked {new_status.value}")
+    if new_status not in (ChequeStatus.CLEARED, ChequeStatus.BOUNCED):
+        raise ValueError("Status must be Cleared or Bounced")
+    db_payment.cheque_status = new_status
     db.commit()
     db.refresh(db_payment)
     return db_payment

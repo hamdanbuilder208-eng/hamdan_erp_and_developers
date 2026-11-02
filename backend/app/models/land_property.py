@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base_class import Base, TimestampMixin
 from app.models.booking import PaymentMode
 from app.models.payment_details import PaymentDetailsMixin
+from app.models.receipt import ChequeStatus
 
 
 class PropertyType(str, enum.Enum):
@@ -89,6 +90,11 @@ class LandPropertyPayment(Base, PaymentDetailsMixin, TimestampMixin):
     amount: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
     payment_date: Mapped[date] = mapped_column(Date, nullable=False)
     mode_of_payment: Mapped[PaymentMode] = mapped_column(Enum(PaymentMode), default=PaymentMode.CASH)
+    # Cheques: written date, the date it can be cashed, and whether it has.
+    # A bounced cheque stays on record but no longer counts as paid.
+    cheque_date: Mapped[date | None] = mapped_column(Date)
+    cheque_clearing_date: Mapped[date | None] = mapped_column(Date)
+    cheque_status: Mapped[ChequeStatus | None] = mapped_column(Enum(ChequeStatus))
     narration: Mapped[str | None] = mapped_column(Text)
 
     land_property: Mapped["LandProperty"] = relationship(back_populates="payments")

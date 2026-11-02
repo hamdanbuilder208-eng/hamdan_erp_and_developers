@@ -19,11 +19,13 @@ import {
 } from "../components/payments/PaymentDetailsFields";
 import type {
   Account,
+  ChequeStatus,
   LandProperty,
   OfficeExpense,
   Project,
   RentAgreement,
   RentReceipt,
+  RentReceiptType,
   Tenant,
   Unit,
 } from "../types";
@@ -52,7 +54,38 @@ const emptyAgreementForm = {
   duration_months: "11",
   narration: "",
 };
-const emptyReceiptForm = { amount: "", credit_account_id: "", mode_of_payment: "Cash", ...emptyPaymentDetails() };
+const emptyReceiptForm = {
+  receipt_type: "Rent" as RentReceiptType,
+  receipt_date: "",
+  amount: "",
+  credit_account_id: "",
+  mode_of_payment: "Cash",
+  cheque_date: "",
+  cheque_clearing_date: "",
+  ...emptyPaymentDetails(),
+};
+
+// Security deposit received so far (cheques that bounced don't count).
+const depositReceived = (receipts: RentReceipt[] | undefined) =>
+  (receipts ?? [])
+    .filter((r) => r.receipt_type === "Security Deposit" && r.cheque_status !== "Bounced")
+    .reduce((s, r) => s + Number(r.amount), 0);
+
+function ChequeStatusChip({ r }: { r: { cheque_status: ChequeStatus | null; cheque_clearing_date: string | null } }) {
+  if (!r.cheque_status) return null;
+  const tone =
+    r.cheque_status === "Cleared"
+      ? "bg-success-50 text-success-700"
+      : r.cheque_status === "Bounced"
+        ? "bg-danger-50 text-danger-700"
+        : "bg-warning-50 text-warning-700";
+  return (
+    <span className={`ml-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${tone}`}>
+      {r.cheque_status}
+      {r.cheque_clearing_date ? ` · ${r.cheque_clearing_date}` : ""}
+    </span>
+  );
+}
 
 function targetLabel(a: RentAgreement, projectName?: (id: number) => string) {
   if (a.unit)
@@ -326,24 +359,56 @@ export default function RentalsPage() {
     mutationFn: async () =>
       (
         await api.post<RentReceipt>("/rentals/receipts", {
-          receipt_date: todayIso(),
+          receipt_date: receiptForm.receipt_date || todayIso(),
+          receipt_type: receiptForm.receipt_type,
           agreement_id: detailAgreement!.id,
           credit_account_id: Number(receiptForm.credit_account_id),
           amount: Number(receiptForm.amount),
           mode_of_payment: receiptForm.mode_of_payment,
+          ...(receiptForm.mode_of_payment === "Cheque"
+            ? {
+                cheque_date: receiptForm.cheque_date || null,
+                cheque_clearing_date: receiptForm.cheque_clearing_date || null,
+              }
+            : {}),
           ...paymentDetailsPayload(receiptForm.mode_of_payment, receiptForm),
         })
       ).data,
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["rentals"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-cheques"] });
       await refreshDetail(detailAgreement!.id);
       setReceiptModalOpen(false);
+      toast.success(`${receiptForm.receipt_type === "Rent" ? "Rent" : "Security deposit"} receipt recorded.`);
       setReceiptForm(emptyReceiptForm);
       setReceiptError(null);
-      toast.success("Rent receipt recorded.");
     },
     onError: (err: unknown) => setReceiptError(apiErrorMessage(err, "Failed to record receipt.")),
   });
+
+  const updateRentChequeStatus = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: "Cleared" | "Bounced" }) =>
+      (await api.patch<RentReceipt>(`/rentals/receipts/${id}/cheque-status`, { status })).data,
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ["rentals"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-cheques"] });
+      if (detailAgreement) await refreshDetail(detailAgreement.id);
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to update cheque status.")),
+  });
+
+  const openReceiptModal = (type: RentReceiptType) => {
+    const depositDue = detailAgreement
+      ? Math.max(Number(detailAgreement.security_deposit) - depositReceived(receipts), 0)
+      : 0;
+    setReceiptForm({
+      ...emptyReceiptForm,
+      receipt_type: type,
+      amount: type === "Security Deposit" && depositDue > 0 ? String(depositDue) : "",
+    });
+    setReceiptError(null);
+    setReceiptModalOpen(true);
+  };
 
   const deleteReceipt = useMutation({
     mutationFn: async (id: number) => api.delete(`/rentals/receipts/${id}`),
@@ -849,14 +914,14 @@ export default function RentalsPage() {
                 </Button>
                 {/* An expired (renewed) agreement can still have old rent to collect. */}
                 {detailAgreement.status === "Expired" && (
-                  <Button size="sm" onClick={() => setReceiptModalOpen(true)}>
+                  <Button size="sm" onClick={() => openReceiptModal("Rent")}>
                     <ReceiptIcon className="h-3.5 w-3.5" />
                     Record Receipt
                   </Button>
                 )}
                 {detailAgreement.status === "Active" && (
                   <>
-                    <Button size="sm" onClick={() => setReceiptModalOpen(true)}>
+                    <Button size="sm" onClick={() => openReceiptModal("Rent")}>
                       <ReceiptIcon className="h-3.5 w-3.5" />
                       Record Receipt
                     </Button>
@@ -900,6 +965,22 @@ export default function RentalsPage() {
                 <p className="font-medium text-navy-900 dark:text-slate-100">
                   PKR {Number(detailAgreement.security_deposit).toLocaleString()}
                 </p>
+                {Number(detailAgreement.security_deposit) > 0 &&
+                  (() => {
+                    const got = depositReceived(receipts);
+                    const due = Number(detailAgreement.security_deposit) - got;
+                    return due > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => openReceiptModal("Security Deposit")}
+                        className="text-xs font-medium text-warning-700 hover:underline"
+                      >
+                        PKR {due.toLocaleString()} not received yet — record it
+                      </button>
+                    ) : (
+                      <p className="text-xs text-success-700">Received</p>
+                    );
+                  })()}
               </div>
               <div>
                 <p className="text-xs text-slate-400">Start Date</p>
@@ -959,10 +1040,51 @@ export default function RentalsPage() {
                       <span className="text-navy-900 dark:text-slate-100">
                         {r.receipt_no} · {r.receipt_date} · PKR {Number(r.amount).toLocaleString()} ·{" "}
                         {r.mode_of_payment}
+                        {r.receipt_type === "Security Deposit" && (
+                          <span className="ml-1.5 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
+                            Deposit
+                          </span>
+                        )}
+                        <ChequeStatusChip r={r} />
                         {paymentDetailsSummary(r.mode_of_payment, r) && (
                           <span className="block text-xs text-slate-400">
                             {paymentDetailsSummary(r.mode_of_payment, r)}
                           </span>
+                        )}
+                        {r.cheque_status === "Pending" && (
+                          <span className="mt-1 flex gap-1.5">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => updateRentChequeStatus.mutate({ id: r.id, status: "Cleared" })}
+                            >
+                              Mark Cleared
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="danger"
+                              onClick={async () => {
+                                const ok = await confirm(
+                                  `Mark cheque ${r.cheque_no ?? ""} as bounced? This receipt will be reversed.`,
+                                  { danger: true, confirmLabel: "Mark Bounced" },
+                                );
+                                if (ok) updateRentChequeStatus.mutate({ id: r.id, status: "Bounced" });
+                              }}
+                            >
+                              Mark Bounced
+                            </Button>
+                          </span>
+                        )}
+                        {r.cheque_status === "Bounced" && (
+                          <button
+                            type="button"
+                            onClick={() => updateRentChequeStatus.mutate({ id: r.id, status: "Cleared" })}
+                            className="mt-1 block text-[11px] font-medium text-slate-500 hover:underline"
+                          >
+                            Re-presented and cleared? Mark Cleared
+                          </button>
                         )}
                       </span>
                       <div className="flex items-center gap-1">
@@ -999,7 +1121,7 @@ export default function RentalsPage() {
           setReceiptModalOpen(false);
           setReceiptError(null);
         }}
-        title="Record Rent Receipt"
+        title={receiptForm.receipt_type === "Rent" ? "Record Rent Receipt" : "Record Security Deposit"}
       >
         <form
           onSubmit={(e) => {
@@ -1011,17 +1133,46 @@ export default function RentalsPage() {
           {receiptError && (
             <p className="rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">{receiptError}</p>
           )}
-          <div>
-            <Label htmlFor="receipt_amount">Amount (PKR)</Label>
-            <Input
-              id="receipt_amount"
-              type="number"
-              min="1"
-              required
-              value={receiptForm.amount}
-              onChange={(e) => setReceiptForm({ ...receiptForm, amount: e.target.value })}
-            />
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <Label htmlFor="receipt_type">For</Label>
+              <Select
+                id="receipt_type"
+                value={receiptForm.receipt_type}
+                onChange={(e) => openReceiptModal(e.target.value as RentReceiptType)}
+              >
+                <option value="Rent">Rent</option>
+                <option value="Security Deposit">Security Deposit</option>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="receipt_amount">Amount (PKR)</Label>
+              <Input
+                id="receipt_amount"
+                type="number"
+                min="1"
+                required
+                value={receiptForm.amount}
+                onChange={(e) => setReceiptForm({ ...receiptForm, amount: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="receipt_date">Date</Label>
+              <Input
+                id="receipt_date"
+                type="date"
+                required
+                value={receiptForm.receipt_date || todayIso()}
+                onChange={(e) => setReceiptForm({ ...receiptForm, receipt_date: e.target.value })}
+              />
+            </div>
           </div>
+          {receiptForm.receipt_type === "Security Deposit" && (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Booked to Security Deposits (Tenants) — a liability returned to the tenant later, not rental
+              income. It doesn't pay any month's rent.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="receipt_mode">Mode of Payment</Label>
@@ -1059,6 +1210,29 @@ export default function RentalsPage() {
             value={receiptForm}
             onChange={(patch) => setReceiptForm({ ...receiptForm, ...patch })}
           />
+          {receiptForm.mode_of_payment === "Cheque" && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="rr_cheque_date">Cheque Date</Label>
+                <Input
+                  id="rr_cheque_date"
+                  type="date"
+                  value={receiptForm.cheque_date}
+                  onChange={(e) => setReceiptForm({ ...receiptForm, cheque_date: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="rr_cash_date">Cash Date (reminder)</Label>
+                <Input
+                  id="rr_cash_date"
+                  type="date"
+                  required
+                  value={receiptForm.cheque_clearing_date}
+                  onChange={(e) => setReceiptForm({ ...receiptForm, cheque_clearing_date: e.target.value })}
+                />
+              </div>
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setReceiptModalOpen(false)}>
               Cancel

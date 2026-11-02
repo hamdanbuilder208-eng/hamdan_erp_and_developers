@@ -19,7 +19,7 @@ from app.models.expense import OfficeExpense, WagePayment
 from app.models.inventory import GRN, GRNLine, MaterialIssue, MaterialIssueLine
 from app.models.petty_cash import PettyCashExpense
 from app.models.receipt import ChequeStatus, Receipt
-from app.models.rental import RentAgreement, RentReceipt
+from app.models.rental import RentAgreement, RentReceipt, counts_as_rent_received
 from app.schemas.report import (
     PeriodReport,
     PeriodReportCategory,
@@ -242,7 +242,7 @@ def _rent_received(db: Session, d_from: date | None, d_to: date | None) -> list[
         joinedload(RentReceipt.agreement).joinedload(RentAgreement.tenant),
         joinedload(RentReceipt.agreement).joinedload(RentAgreement.unit),
         joinedload(RentReceipt.agreement).joinedload(RentAgreement.land_property),
-    )
+    ).filter(counts_as_rent_received())
     if d_from:
         q = q.filter(RentReceipt.receipt_date >= d_from)
     if d_to:
