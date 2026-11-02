@@ -39,6 +39,8 @@ class BookingCommissionRow(BaseModel):
     received_amount: float
     received_percent: float
     commission_percent: float
+    # Full commission for this booking (fixed amount, or percent of the unit price).
+    commission_amount: float
     is_eligible: bool
     commission_eligible_amount: float
     commission_paid: float

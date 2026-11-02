@@ -42,6 +42,63 @@ const extraChargesReasons: ExtraChargesReason[] = [
   "Other",
 ];
 
+// Broker commission as a % of the unit price, or a fixed PKR amount.
+// Either way it never applies to extra charges (see the backend's _commission_row).
+type CommissionForm = {
+  commission_mode: "percent" | "amount";
+  agent_commission_percent: string;
+  agent_commission_amount: string;
+};
+
+const commissionPayload = (f: CommissionForm) => ({
+  agent_commission_percent:
+    f.commission_mode === "percent" && f.agent_commission_percent ? Number(f.agent_commission_percent) : null,
+  agent_commission_amount:
+    f.commission_mode === "amount" && f.agent_commission_amount ? Number(f.agent_commission_amount) : null,
+});
+
+function CommissionField({
+  id,
+  value,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  value: CommissionForm;
+  disabled: boolean;
+  onChange: (patch: Partial<CommissionForm>) => void;
+}) {
+  const isAmount = value.commission_mode === "amount";
+  return (
+    <div>
+      <Label htmlFor={id}>{isAmount ? "Commission (PKR)" : "Commission %"}</Label>
+      <div className="flex gap-1.5">
+        <Select
+          aria-label="Commission type"
+          disabled={disabled}
+          value={value.commission_mode}
+          onChange={(e) => onChange({ commission_mode: e.target.value as CommissionForm["commission_mode"] })}
+          className="w-20 shrink-0"
+        >
+          <option value="percent">%</option>
+          <option value="amount">PKR</option>
+        </Select>
+        <Input
+          id={id}
+          type="number"
+          step="0.01"
+          min="0"
+          disabled={disabled}
+          value={isAmount ? value.agent_commission_amount : value.agent_commission_percent}
+          onChange={(e) =>
+            onChange(isAmount ? { agent_commission_amount: e.target.value } : { agent_commission_percent: e.target.value })
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
 type InstallmentPlanForm = {
   label: string;
   frequency: ScheduleFrequency;
@@ -83,7 +140,9 @@ const emptyForm = {
   one_shot: false,
   remarks: "",
   booking_agent_id: "",
+  commission_mode: "percent" as CommissionForm["commission_mode"],
   agent_commission_percent: "",
+  agent_commission_amount: "",
 };
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -314,9 +373,7 @@ export default function BookingsPage() {
           })),
           remarks: form.remarks || null,
           booking_agent_id: form.booking_agent_id ? Number(form.booking_agent_id) : null,
-          agent_commission_percent: form.agent_commission_percent
-            ? Number(form.agent_commission_percent)
-            : null,
+          ...commissionPayload(form),
         })
       ).data,
     onSuccess: () => {
@@ -331,17 +388,22 @@ export default function BookingsPage() {
     },
   });
 
-  const [agentAssignForm, setAgentAssignForm] = React.useState({
+  const [agentAssignForm, setAgentAssignForm] = React.useState<{ booking_agent_id: string } & CommissionForm>({
     booking_agent_id: "",
+    commission_mode: "percent",
     agent_commission_percent: "",
+    agent_commission_amount: "",
   });
 
   React.useEffect(() => {
     if (detailBooking) {
       setAgentAssignForm({
         booking_agent_id: detailBooking.booking_agent_id ? String(detailBooking.booking_agent_id) : "",
+        commission_mode: detailBooking.agent_commission_amount != null ? "amount" : "percent",
         agent_commission_percent:
           detailBooking.agent_commission_percent != null ? String(detailBooking.agent_commission_percent) : "",
+        agent_commission_amount:
+          detailBooking.agent_commission_amount != null ? String(detailBooking.agent_commission_amount) : "",
       });
     }
   }, [detailBooking?.id]);
@@ -351,9 +413,7 @@ export default function BookingsPage() {
       (
         await api.put<Booking>(`/bookings/${detailBooking!.id}/agent`, {
           booking_agent_id: agentAssignForm.booking_agent_id ? Number(agentAssignForm.booking_agent_id) : null,
-          agent_commission_percent: agentAssignForm.agent_commission_percent
-            ? Number(agentAssignForm.agent_commission_percent)
-            : null,
+          ...commissionPayload(agentAssignForm),
         })
       ).data,
     onSuccess: (updated) => {
@@ -723,18 +783,31 @@ export default function BookingsPage() {
                   ))}
                 </Select>
               </div>
-              <div>
-                <Label htmlFor="b_agent_commission">Commission %</Label>
-                <Input
-                  id="b_agent_commission"
-                  type="number"
-                  step="0.01"
-                  disabled={!form.booking_agent_id}
-                  value={form.agent_commission_percent}
-                  onChange={(e) => setForm({ ...form, agent_commission_percent: e.target.value })}
-                />
-              </div>
+              <CommissionField
+                id="b_agent_commission"
+                value={form}
+                disabled={!form.booking_agent_id}
+                onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
+              />
             </div>
+            {form.booking_agent_id && selectedUnit && (
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                Commission on the unit price only (PKR {(previewTotal - previewExtraCharges).toLocaleString()}) —
+                extra charges are not included.
+                {form.commission_mode === "percent" && Number(form.agent_commission_percent) > 0 && (
+                  <>
+                    {" "}
+                    Total commission: PKR{" "}
+                    {(
+                      Math.round(
+                        (previewTotal - previewExtraCharges) * Number(form.agent_commission_percent),
+                      ) / 100
+                    ).toLocaleString()}
+                    .
+                  </>
+                )}
+              </p>
+            )}
           </div>
 
           <div className="border-t border-slate-100 dark:border-navy-800 pt-4">
@@ -1023,9 +1096,11 @@ export default function BookingsPage() {
                       const agent = agents?.find((a) => a.id === Number(e.target.value));
                       setAgentAssignForm({
                         booking_agent_id: e.target.value,
+                        commission_mode: "percent",
                         agent_commission_percent: agent
                           ? String(agent.default_commission_percent)
                           : "",
+                        agent_commission_amount: "",
                       });
                     }}
                   >
@@ -1037,17 +1112,12 @@ export default function BookingsPage() {
                     ))}
                   </Select>
                 </div>
-                <div className="w-24">
-                  <Label htmlFor="detail_agent_commission">Commission %</Label>
-                  <Input
+                <div className="w-52">
+                  <CommissionField
                     id="detail_agent_commission"
-                    type="number"
-                    step="0.01"
+                    value={agentAssignForm}
                     disabled={!agentAssignForm.booking_agent_id}
-                    value={agentAssignForm.agent_commission_percent}
-                    onChange={(e) =>
-                      setAgentAssignForm({ ...agentAssignForm, agent_commission_percent: e.target.value })
-                    }
+                    onChange={(patch) => setAgentAssignForm((f) => ({ ...f, ...patch }))}
                   />
                 </div>
                 <Button

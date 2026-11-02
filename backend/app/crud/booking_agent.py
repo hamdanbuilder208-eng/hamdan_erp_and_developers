@@ -60,13 +60,25 @@ def delete_agent(db: Session, db_agent: BookingAgent) -> None:
 
 
 def _commission_row(db: Session, booking: Booking) -> BookingCommissionRow:
-    received_amount = sum(float(l.paid_amount) for l in booking.schedule_lines)
-    total_price = float(booking.total_price)
+    # Commission is on the unit's own price only: extra charges (and what's
+    # been paid against them) are left out of both the price and the receipts.
+    extra_line_ids = {c.schedule_line_id for c in booking.extra_charges}
+    received_amount = sum(
+        float(l.paid_amount) for l in booking.schedule_lines if l.id not in extra_line_ids
+    )
+    total_price = float(booking.total_price) - sum(float(c.amount) for c in booking.extra_charges)
     received_percent = (received_amount / total_price * 100) if total_price > 0 else 0
     commission_percent = float(booking.agent_commission_percent or 0)
+    commission_amount = (
+        float(booking.agent_commission_amount)
+        if booking.agent_commission_amount is not None
+        else commission_percent / 100 * total_price
+    )
     # Commission is eligible as soon as any payment is received — proportional to
     # whatever's come in so far, no minimum-received-percent gate.
-    commission_eligible_amount = commission_percent / 100 * received_amount
+    commission_eligible_amount = (
+        commission_amount * received_amount / total_price if total_price > 0 else 0
+    )
 
     paid = (
         db.query(CommissionPayout)
@@ -86,6 +98,7 @@ def _commission_row(db: Session, booking: Booking) -> BookingCommissionRow:
         received_amount=received_amount,
         received_percent=round(received_percent, 2),
         commission_percent=commission_percent,
+        commission_amount=round(commission_amount, 2),
         is_eligible=received_amount > 0,
         commission_eligible_amount=round(commission_eligible_amount, 2),
         commission_paid=round(commission_paid, 2),

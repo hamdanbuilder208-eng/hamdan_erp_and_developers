@@ -613,6 +613,8 @@ export interface BookingCommissionRow {
   received_amount: number;
   received_percent: number;
   commission_percent: number;
+  /** Full commission for this booking — fixed amount, or percent of the unit price (never extra charges). */
+  commission_amount: number;
   is_eligible: boolean;
   commission_eligible_amount: number;
   commission_paid: number;
@@ -708,6 +710,8 @@ export interface Booking {
   remarks: string | null;
   booking_agent_id: number | null;
   agent_commission_percent: number | null;
+  /** Fixed PKR commission; used instead of the percent when set. */
+  agent_commission_amount: number | null;
   down_payment_amount: number;
   extra_charges: BookingExtraCharge[];
   project: Project;

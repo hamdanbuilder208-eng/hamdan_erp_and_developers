@@ -287,6 +287,9 @@ export default function BrokersPage() {
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums text-navy-900 dark:text-slate-100">
                           {row.commission_eligible_amount.toLocaleString()}
+                          <p className="text-xs text-slate-400 dark:text-slate-500">
+                            of {row.commission_amount.toLocaleString()}
+                          </p>
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums text-success-700">
                           {row.commission_paid.toLocaleString()}

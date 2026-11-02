@@ -88,6 +88,8 @@ class BookingBase(BaseModel):
     remarks: str | None = None
     booking_agent_id: int | None = None
     agent_commission_percent: float | None = None
+    # Fixed PKR commission; when set it's used instead of the percent.
+    agent_commission_amount: float | None = None
     down_payment_amount: float = 0
 
 
@@ -108,6 +110,7 @@ class BookingStatusUpdate(BaseModel):
 class BookingAgentAssign(BaseModel):
     booking_agent_id: int | None = None
     agent_commission_percent: float | None = None
+    agent_commission_amount: float | None = None
 
 
 class BookingOut(BookingBase):

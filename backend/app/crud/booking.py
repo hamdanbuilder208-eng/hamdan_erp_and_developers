@@ -289,6 +289,7 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
         remarks=booking_in.remarks,
         booking_agent_id=booking_in.booking_agent_id,
         agent_commission_percent=booking_in.agent_commission_percent,
+        agent_commission_amount=booking_in.agent_commission_amount,
         down_payment_amount=booking_in.down_payment_amount,
     )
     db.add(db_booking)
@@ -359,10 +360,15 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
 
 
 def assign_agent(
-    db: Session, db_booking: Booking, booking_agent_id: int | None, agent_commission_percent: float | None
+    db: Session,
+    db_booking: Booking,
+    booking_agent_id: int | None,
+    agent_commission_percent: float | None,
+    agent_commission_amount: float | None = None,
 ) -> Booking:
     db_booking.booking_agent_id = booking_agent_id
     db_booking.agent_commission_percent = agent_commission_percent if booking_agent_id else None
+    db_booking.agent_commission_amount = agent_commission_amount if booking_agent_id else None
     db.commit()
     return get_booking(db, db_booking.id)
 

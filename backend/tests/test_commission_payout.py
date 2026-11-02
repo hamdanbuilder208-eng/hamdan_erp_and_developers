@@ -160,3 +160,60 @@ def test_delete_payout_removes_voucher(db: Session, booking_with_agent, agent, c
     payout_crud.delete_payout(db, payout)
 
     assert db.get(Voucher, voucher_id) is None
+
+
+def _booking_with_extras(db, project, unit, allottee, agent, **commission):
+    """Unit price 1,000,000 plus a 100,000 extra charge, all due today."""
+    from app.models.booking import ExtraChargesReason
+    from app.schemas.booking import ExtraChargeCreate
+
+    return booking_crud.create_booking(
+        db,
+        BookingCreate(
+            booking_date=TODAY,
+            project_id=project.id,
+            unit_id=unit.id,
+            allottee_id=allottee.id,
+            status_date=TODAY,
+            booking_agent_id=agent.id,
+            installment_plans=[
+                InstallmentPlanCreate(no_of_installments=1, total_amount=1_000_000, start_date=TODAY)
+            ],
+            extra_charges=[
+                ExtraChargeCreate(reason=ExtraChargesReason.ELECTRICITY, amount=100_000, charge_date=TODAY)
+            ],
+            **commission,
+        ),
+    )
+
+
+def test_commission_ignores_extra_charges(
+    db: Session, project, unit, allottee, accounting_accounts, agent, cash_account
+):
+    booking = _booking_with_extras(db, project, unit, allottee, agent, agent_commission_percent=5)
+    _receive_full_amount(db, booking, cash_account)
+
+    row = _commission_row(db, booking)
+    assert row.total_price == 1_000_000
+    assert row.received_amount == 1_000_000
+    assert row.commission_amount == 50_000
+    assert row.commission_eligible_amount == 50_000
+
+
+def test_fixed_commission_amount_scales_with_unit_payments(
+    db: Session, project, unit, allottee, accounting_accounts, agent, cash_account
+):
+    booking = _booking_with_extras(db, project, unit, allottee, agent, agent_commission_amount=80_000)
+    # Half the unit price received (the extra charge line is due the same day
+    # but entered after the plan, so it is paid last).
+    receipt_crud.create_receipt(
+        db,
+        ReceiptCreate(
+            receipt_date=TODAY, booking_id=booking.id, credit_account_id=cash_account.id, amount=500_000
+        ),
+    )
+    db.refresh(booking)
+
+    row = _commission_row(db, booking)
+    assert row.commission_amount == 80_000
+    assert row.commission_eligible_amount == 40_000

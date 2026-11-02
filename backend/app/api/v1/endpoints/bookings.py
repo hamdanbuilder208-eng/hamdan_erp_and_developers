@@ -65,7 +65,11 @@ def assign_booking_agent(
     if not db_booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     return booking_crud.assign_agent(
-        db, db_booking, agent_in.booking_agent_id, agent_in.agent_commission_percent
+        db,
+        db_booking,
+        agent_in.booking_agent_id,
+        agent_in.agent_commission_percent,
+        agent_in.agent_commission_amount,
     )
 
 
