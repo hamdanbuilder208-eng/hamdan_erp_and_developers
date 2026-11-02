@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
   Clock,
+  Forward,
   MessageCircle,
   Pencil,
   Plus,
@@ -304,6 +305,58 @@ export default function ReceiptsPage() {
     },
   });
 
+  // ---- Forward a pending cheque to another party as payment ----
+  const [forwardReceipt, setForwardReceipt] = React.useState<Receipt | null>(null);
+  const [forwardForm, setForwardForm] = React.useState({
+    forward_date: todayIso(),
+    party_name: "",
+    party_contact: "",
+    debit_account_id: "",
+    narration: "",
+  });
+  // What the cheque pays for: an expense, or a payable/liability it settles.
+  const forwardAccounts =
+    accounts?.filter((a) => (a.nature === "Expense" || a.nature === "Liability") && !a.is_control) ?? [];
+  const openForward = (r: Receipt) => {
+    setForwardForm({ forward_date: todayIso(), party_name: "", party_contact: "", debit_account_id: "", narration: "" });
+    setForwardReceipt(r);
+  };
+
+  const invalidateChequeQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ["receipts"] });
+    queryClient.invalidateQueries({ queryKey: ["bookings"] });
+    queryClient.invalidateQueries({ queryKey: ["accounts"] });
+    queryClient.invalidateQueries({ queryKey: ["pending-cheques"] });
+  };
+
+  const forwardCheque = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post<Receipt>(`/receipts/${forwardReceipt!.id}/forward`, {
+          forward_date: forwardForm.forward_date,
+          party_name: forwardForm.party_name,
+          party_contact: forwardForm.party_contact || null,
+          debit_account_id: Number(forwardForm.debit_account_id),
+          narration: forwardForm.narration || null,
+        })
+      ).data,
+    onSuccess: () => {
+      invalidateChequeQueries();
+      toast.success(`Cheque forwarded to ${forwardForm.party_name}.`);
+      setForwardReceipt(null);
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to forward cheque.")),
+  });
+
+  const undoForward = useMutation({
+    mutationFn: async (id: number) => (await api.delete<Receipt>(`/receipts/${id}/forward`)).data,
+    onSuccess: () => {
+      invalidateChequeQueries();
+      toast.success("Forward undone — the cheque is back with you.");
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to undo forward.")),
+  });
+
   const updateChequeStatus = useMutation({
     mutationFn: async ({ id, status }: { id: number; status: "Cleared" | "Bounced" }) =>
       (await api.patch<Receipt>(`/receipts/${id}/cheque-status`, { status })).data,
@@ -402,32 +455,78 @@ export default function ReceiptsPage() {
                           Bounced{r.cheque_clearing_date ? ` · ${r.cheque_clearing_date}` : ""}
                         </span>
                       )}
-                      {r.cheque_status === "Pending" && (
-                        <div className="flex w-full gap-1.5">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => updateChequeStatus.mutate({ id: r.id, status: "Cleared" })}
-                          >
-                            Mark Cleared
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="danger"
-                            onClick={async () => {
-                              const ok = await confirm(
-                                `Mark cheque ${r.cheque_no ?? ""} as bounced? This will reverse the payment.`,
-                                { danger: true, confirmLabel: "Mark Bounced" },
-                              );
-                              if (ok) updateChequeStatus.mutate({ id: r.id, status: "Bounced" });
-                            }}
-                          >
-                            Mark Bounced
-                          </Button>
-                        </div>
+                      {(r.forwards ?? []).length > 0 && (
+                        // Cheque history: received from the customer, then each hand-on.
+                        <ul className="w-full space-y-0.5 border-l-2 border-slate-200 pl-2 text-[11px] text-slate-500 dark:border-navy-700 dark:text-slate-400">
+                          <li>Received from customer · {r.receipt_date}</li>
+                          {r.forwards.map((f) => (
+                            <li key={f.id}>
+                              <span className="font-medium text-navy-800 dark:text-slate-200">
+                                Forwarded to {f.party_name}
+                              </span>
+                              {f.party_contact ? ` (${f.party_contact})` : ""} · {f.forward_date} · {f.forward_no} ·{" "}
+                              {f.debit_account.name}
+                              {f.status !== "Forwarded" && (
+                                <span className={f.status === "Bounced" ? "text-danger-600" : "text-success-700"}>
+                                  {" "}
+                                  → {f.status} at party{f.status_date ? ` · ${f.status_date}` : ""}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
                       )}
+                      {r.cheque_status === "Pending" && (() => {
+                        const forwarded = (r.forwards ?? []).find((f) => f.status === "Forwarded");
+                        return (
+                          <div className="flex w-full flex-wrap gap-1.5">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => updateChequeStatus.mutate({ id: r.id, status: "Cleared" })}
+                            >
+                              {forwarded ? "Cleared at Party" : "Mark Cleared"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="danger"
+                              onClick={async () => {
+                                const ok = await confirm(
+                                  forwarded
+                                    ? `Cheque ${r.cheque_no ?? ""} bounced at ${forwarded.party_name}? The customer's payment and the payment to ${forwarded.party_name} will both be reversed.`
+                                    : `Mark cheque ${r.cheque_no ?? ""} as bounced? This will reverse the payment.`,
+                                  { danger: true, confirmLabel: "Mark Bounced" },
+                                );
+                                if (ok) updateChequeStatus.mutate({ id: r.id, status: "Bounced" });
+                              }}
+                            >
+                              {forwarded ? "Bounced at Party" : "Mark Bounced"}
+                            </Button>
+                            {forwarded ? (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const ok = await confirm(
+                                    `Undo forwarding this cheque to ${forwarded.party_name}? Use this only if it was entered by mistake — the payment to them is removed.`,
+                                    { confirmLabel: "Undo Forward" },
+                                  );
+                                  if (ok) undoForward.mutate(r.id);
+                                }}
+                                className="text-[11px] font-medium text-slate-500 hover:underline"
+                              >
+                                Undo forward
+                              </button>
+                            ) : (
+                              <Button type="button" size="sm" variant="secondary" onClick={() => openForward(r)}>
+                                <Forward className="h-3.5 w-3.5" />
+                                Forward
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {r.cheque_status === "Bounced" && (
                         <div className="flex w-full gap-1.5">
                           <Button
@@ -942,6 +1041,95 @@ export default function ReceiptsPage() {
           relatedId={messageReceipt.id}
         />
       )}
+
+      <Modal
+        open={!!forwardReceipt}
+        onClose={() => setForwardReceipt(null)}
+        title="Forward Cheque"
+        description={
+          forwardReceipt
+            ? `Cheque #${forwardReceipt.cheque_no ?? "—"}${forwardReceipt.cheque_bank_name ? ` (${forwardReceipt.cheque_bank_name})` : ""} for PKR ${Number(forwardReceipt.amount).toLocaleString()} from ${forwardReceipt.booking.allottee.name} — hand it on to another party as payment instead of depositing it.`
+            : undefined
+        }
+      >
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            forwardCheque.mutate();
+          }}
+        >
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="fwd_party">Given To (party)</Label>
+              <Input
+                id="fwd_party"
+                required
+                placeholder="e.g. Ali Steel Traders"
+                value={forwardForm.party_name}
+                onChange={(e) => setForwardForm({ ...forwardForm, party_name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="fwd_contact">Phone / Contact (optional)</Label>
+              <Input
+                id="fwd_contact"
+                value={forwardForm.party_contact}
+                onChange={(e) => setForwardForm({ ...forwardForm, party_contact: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="fwd_date">Date Given</Label>
+              <Input
+                id="fwd_date"
+                type="date"
+                required
+                value={forwardForm.forward_date}
+                onChange={(e) => setForwardForm({ ...forwardForm, forward_date: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="fwd_account">Payment For (account)</Label>
+              <Select
+                id="fwd_account"
+                required
+                value={forwardForm.debit_account_id}
+                onChange={(e) => setForwardForm({ ...forwardForm, debit_account_id: e.target.value })}
+              >
+                <option value="">Select account</option>
+                {forwardAccounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.code} — {a.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="fwd_narration">Narration (optional)</Label>
+            <Input
+              id="fwd_narration"
+              placeholder="e.g. Steel bill #123"
+              value={forwardForm.narration}
+              onChange={(e) => setForwardForm({ ...forwardForm, narration: e.target.value })}
+            />
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Recorded as a payment to this party. When their bank clears or bounces the cheque, mark it
+            here — a bounce reverses both the customer's payment and this payment.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setForwardReceipt(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={forwardCheque.isPending}>
+              Forward Cheque
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

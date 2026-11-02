@@ -9,6 +9,7 @@ from app.crud import receipt as receipt_crud
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.receipt import (
+    ChequeForwardCreate,
     ChequeStatusUpdate,
     ReceiptCreate,
     ReceiptPrintOut,
@@ -75,6 +76,31 @@ def update_cheque_status(
         raise HTTPException(status_code=404, detail="Receipt not found")
     try:
         return receipt_crud.mark_cheque_status(db, db_receipt, status_in.status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/{receipt_id}/forward", response_model=ReceiptWithBookingOut)
+def forward_cheque(
+    receipt_id: int, forward_in: ChequeForwardCreate, db: Session = Depends(get_db)
+):
+    """Hand this pending cheque on to another party as payment."""
+    db_receipt = receipt_crud.get_receipt(db, receipt_id)
+    if not db_receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    try:
+        return receipt_crud.forward_cheque(db, db_receipt, forward_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.delete("/{receipt_id}/forward", response_model=ReceiptWithBookingOut)
+def undo_forward(receipt_id: int, db: Session = Depends(get_db)):
+    db_receipt = receipt_crud.get_receipt(db, receipt_id)
+    if not db_receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    try:
+        return receipt_crud.undo_forward(db, db_receipt)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

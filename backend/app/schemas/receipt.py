@@ -1,8 +1,8 @@
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.models.receipt import ChequeStatus, ReceiptPaymentType
+from app.models.receipt import ChequeForwardStatus, ChequeStatus, ReceiptPaymentType
 from app.schemas.account import AccountOut
 from app.schemas.booking import BookingOut
 
@@ -71,6 +71,38 @@ class ReceiptAllocationOut(BaseModel):
     schedule_line: AllocatedScheduleLineOut
 
 
+class ChequeForwardCreate(BaseModel):
+    """Hand a pending customer cheque on to another party as payment."""
+
+    forward_date: date
+    party_name: str
+    party_contact: str | None = None
+    # Expense / payable account the payment is for.
+    debit_account_id: int
+    narration: str | None = None
+
+    @field_validator("party_name")
+    @classmethod
+    def party_name_required(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Enter who the cheque was given to")
+        return v.strip()
+
+
+class ChequeForwardOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    forward_no: str
+    forward_date: date
+    party_name: str
+    party_contact: str | None
+    debit_account: AccountOut
+    voucher_id: int | None
+    status: ChequeForwardStatus
+    status_date: date | None
+    narration: str | None
+
+
 class ReceiptOut(ReceiptBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -79,6 +111,8 @@ class ReceiptOut(ReceiptBase):
     cheque_status: ChequeStatus | None
     credit_account: AccountOut
     allocations: list[ReceiptAllocationOut] = []
+    # Every time this cheque was handed on to another party, oldest first.
+    forwards: list[ChequeForwardOut] = []
 
 
 class ReceiptWithBookingOut(ReceiptOut):

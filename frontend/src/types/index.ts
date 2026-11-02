@@ -765,6 +765,21 @@ export interface Receipt {
   }[];
   /** Detail endpoint only: schedule_line_id → amount paid on it as of this receipt. */
   line_paid_as_of?: Record<number, number>;
+  /** Every time this cheque was handed on to another party, oldest first. */
+  forwards: ChequeForward[];
+}
+
+export interface ChequeForward {
+  id: number;
+  forward_no: string;
+  forward_date: string;
+  party_name: string;
+  party_contact: string | null;
+  debit_account: Account;
+  voucher_id: number | null;
+  status: "Forwarded" | "Cleared" | "Bounced";
+  status_date: string | null;
+  narration: string | null;
 }
 
 export interface Allottee {

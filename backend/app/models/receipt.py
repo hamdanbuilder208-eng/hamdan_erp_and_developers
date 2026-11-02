@@ -59,6 +59,42 @@ class Receipt(Base, TimestampMixin):
     allocations: Mapped[list["ReceiptAllocation"]] = relationship(
         back_populates="receipt", cascade="all, delete-orphan"
     )
+    forwards: Mapped[list["ChequeForward"]] = relationship(
+        back_populates="receipt", order_by="ChequeForward.id"
+    )
+
+
+class ChequeForwardStatus(str, enum.Enum):
+    FORWARDED = "Forwarded"
+    CLEARED = "Cleared"
+    BOUNCED = "Bounced"
+
+
+class ChequeForward(Base, TimestampMixin):
+    """A customer's cheque handed on to another party as payment (endorsed)
+    instead of being deposited. Booked as a payment: debit `debit_account`
+    (the expense/payable it settles), credit the account the cheque was
+    received into. If the cheque later bounces at the party's bank, that
+    payment is reversed along with the customer's receipt."""
+
+    __tablename__ = "cheque_forwards"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    forward_no: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    receipt_id: Mapped[int] = mapped_column(ForeignKey("receipts.id"), nullable=False)
+    forward_date: Mapped[date] = mapped_column(Date, nullable=False)
+    party_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    party_contact: Mapped[str | None] = mapped_column(String(100))
+    debit_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
+    status: Mapped[ChequeForwardStatus] = mapped_column(
+        Enum(ChequeForwardStatus), default=ChequeForwardStatus.FORWARDED, nullable=False
+    )
+    status_date: Mapped[date | None] = mapped_column(Date)
+    narration: Mapped[str | None] = mapped_column(Text)
+
+    receipt: Mapped["Receipt"] = relationship(back_populates="forwards")
+    debit_account: Mapped["Account"] = relationship()
 
 
 class ReceiptAllocation(Base, TimestampMixin):

@@ -18,7 +18,7 @@ from app.models.booking import (
     PaymentScheduleLine,
     BookingTransfer,
 )
-from app.models.receipt import Receipt, ReceiptAllocation
+from app.models.receipt import ChequeForward, Receipt, ReceiptAllocation
 from app.models.booking_agent import BookingAgent
 from app.models.commission_payout import CommissionPayout
 from app.models.contractor import ContractAgreement, Contractor, ContractorBill, ContractorPayment
@@ -70,6 +70,7 @@ __all__ = [
     "BookingTransfer",
     "Receipt",
     "ReceiptAllocation",
+    "ChequeForward",
     "BookingAgent",
     "CommissionPayout",
     "Contractor",

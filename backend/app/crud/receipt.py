@@ -8,9 +8,15 @@ from app.core.sequences import next_sequence_number
 from app.crud.booking import sync_unit_sold
 from app.models.account import Account
 from app.models.booking import Booking, PaymentScheduleLine
-from app.models.receipt import ChequeStatus, Receipt, ReceiptAllocation
+from app.models.receipt import (
+    ChequeForward,
+    ChequeForwardStatus,
+    ChequeStatus,
+    Receipt,
+    ReceiptAllocation,
+)
 from app.models.voucher import Voucher, VoucherLine, VoucherType
-from app.schemas.receipt import ReceiptCreate, ReceiptUpdate
+from app.schemas.receipt import ChequeForwardCreate, ReceiptCreate, ReceiptUpdate
 
 RECEIVABLE_ACCOUNT_CODE = "1030"
 
@@ -30,6 +36,7 @@ def _load_query(db: Session):
         joinedload(Receipt.booking).joinedload(Booking.project),
         joinedload(Receipt.booking).joinedload(Booking.unit),
         joinedload(Receipt.booking).joinedload(Booking.allottee),
+        joinedload(Receipt.forwards).joinedload(ChequeForward.debit_account),
     )
 
 
@@ -202,6 +209,8 @@ def update_receipt(db: Session, db_receipt: Receipt, receipt_in: ReceiptUpdate) 
     booked (allocations + voucher — same pattern as mark_cheque_status), applies
     the edited fields, then re-books it exactly like a fresh receipt would be."""
     data = receipt_in.model_dump(exclude_unset=True)
+    if _active_forward(db_receipt):
+        raise ValueError("This cheque has been forwarded to another party — undo the forward before editing it")
 
     old_booking_id = db_receipt.booking_id
     new_booking_id = data.get("booking_id", db_receipt.booking_id)
@@ -284,6 +293,19 @@ def mark_cheque_status(db: Session, db_receipt: Receipt, new_status: ChequeStatu
     was_applied = db_receipt.cheque_status != ChequeStatus.BOUNCED
     will_be_applied = new_status != ChequeStatus.BOUNCED
 
+    # A cheque handed on to another party clears or bounces at their bank, so
+    # its forward follows the same status — and a bounce undoes that payment.
+    forward = _active_forward(db_receipt)
+    if forward:
+        if new_status == ChequeStatus.BOUNCED:
+            # Unlink first: cheque_forwards.voucher_id is a live FK.
+            forward_voucher_id = forward.voucher_id
+            forward.voucher_id = None
+            db.flush()
+            _delete_voucher(db, forward_voucher_id)
+        forward.status = ChequeForwardStatus(new_status.value)
+        forward.status_date = date.today()
+
     if was_applied and not will_be_applied:
         # Cleared/Pending -> Bounced: the money was never actually received —
         # undo exactly what this receipt did, but keep the row as a record.
@@ -310,7 +332,118 @@ def mark_cheque_status(db: Session, db_receipt: Receipt, new_status: ChequeStatu
     return get_receipt(db, db_receipt.id)
 
 
+# Cheque forwarding (endorsing a customer's cheque over to another party)
+
+
+def _next_forward_no(db: Session) -> str:
+    return next_sequence_number(db, ChequeForward.forward_no, "CHF-", 5)
+
+
+def _active_forward(db_receipt: Receipt) -> ChequeForward | None:
+    """The forward still riding on this cheque (not bounced back to us)."""
+    return next(
+        (f for f in db_receipt.forwards if f.status != ChequeForwardStatus.BOUNCED), None
+    )
+
+
+def _delete_voucher(db: Session, voucher_id: int | None) -> None:
+    if voucher_id:
+        voucher = db.query(Voucher).filter(Voucher.id == voucher_id).first()
+        if voucher:
+            db.delete(voucher)
+            db.flush()
+
+
+def forward_cheque(db: Session, db_receipt: Receipt, forward_in: ChequeForwardCreate) -> Receipt:
+    """Books handing a pending customer cheque to another party as a payment:
+    debit what it pays for, credit the account the cheque was received into
+    (it leaves our hands without being deposited)."""
+    if db_receipt.mode_of_payment != "Cheque":
+        raise ValueError("Only a cheque can be forwarded")
+    if db_receipt.cheque_status != ChequeStatus.PENDING:
+        raise ValueError(
+            f"Only a pending cheque can be forwarded (this one is {db_receipt.cheque_status.value.lower()})"
+        )
+    if _active_forward(db_receipt):
+        raise ValueError("This cheque has already been forwarded")
+    debit_account = db.query(Account).filter(Account.id == forward_in.debit_account_id).first()
+    if not debit_account:
+        raise ValueError("Account not found")
+
+    booking = db.query(Booking).filter(Booking.id == db_receipt.booking_id).first()
+    db_forward = ChequeForward(
+        forward_no=_next_forward_no(db),
+        receipt_id=db_receipt.id,
+        forward_date=forward_in.forward_date,
+        party_name=forward_in.party_name,
+        party_contact=forward_in.party_contact,
+        debit_account_id=debit_account.id,
+        narration=forward_in.narration,
+        status=ChequeForwardStatus.FORWARDED,
+    )
+    db.add(db_forward)
+    db.flush()
+
+    narration = (
+        f"Cheque #{db_receipt.cheque_no or '—'} ({db_receipt.receipt_no}) forwarded to "
+        f"{forward_in.party_name} — {db_forward.forward_no}"
+    )
+    voucher = Voucher(
+        voucher_no=next_sequence_number(db, Voucher.voucher_no, "PV-", 5),
+        voucher_type=VoucherType.PAYMENT,
+        voucher_date=forward_in.forward_date,
+        project_id=booking.project_id if booking else None,
+        narration=narration,
+    )
+    db.add(voucher)
+    db.flush()
+    db.add(
+        VoucherLine(
+            voucher_id=voucher.id,
+            account_id=debit_account.id,
+            debit=db_receipt.amount,
+            credit=0,
+            narration=f"Paid to {forward_in.party_name}",
+        )
+    )
+    db.add(
+        VoucherLine(
+            voucher_id=voucher.id,
+            account_id=db_receipt.credit_account_id,
+            debit=0,
+            credit=db_receipt.amount,
+            narration=narration,
+        )
+    )
+    db_forward.voucher_id = voucher.id
+    db.commit()
+    db.expire(db_receipt)
+    return get_receipt(db, db_receipt.id)
+
+
+def undo_forward(db: Session, db_receipt: Receipt) -> Receipt:
+    """Entered by mistake: the cheque is back with us, still pending."""
+    forward = _active_forward(db_receipt)
+    if not forward or forward.status != ChequeForwardStatus.FORWARDED:
+        raise ValueError("There is no pending forward on this cheque to undo")
+    voucher_id = forward.voucher_id
+    db.delete(forward)
+    db.flush()
+    _delete_voucher(db, voucher_id)
+    db.commit()
+    db.expire(db_receipt)
+    return get_receipt(db, db_receipt.id)
+
+
 def delete_receipt(db: Session, db_receipt: Receipt) -> None:
+    if _active_forward(db_receipt):
+        raise ValueError(
+            "This cheque was forwarded to another party — undo the forward first, "
+            "or keep the receipt as the record of it."
+        )
+    # Bounced forwards have no voucher left; they go with the receipt.
+    for forward in list(db_receipt.forwards):
+        db.delete(forward)
     _reverse_receipt_allocations(db, db_receipt)
 
     # The receipt row must be gone before its voucher is deleted — receipts.voucher_id

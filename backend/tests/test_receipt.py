@@ -165,3 +165,135 @@ def test_line_paid_as_of_ignores_later_receipts(db: Session, booking, cash_accou
     lines = sorted(booking.schedule_lines, key=lambda l: l.installment_no)
     assert receipt_crud.line_paid_as_of(db, first) == {lines[0].id: 200_000}
     assert receipt_crud.line_paid_as_of(db, second) == {lines[0].id: 500_000, lines[1].id: 300_000}
+
+
+# Forwarding a customer's cheque to another party
+
+
+def _cheque_receipt(db, booking, cash_account):
+    return receipt_crud.create_receipt(
+        db,
+        _receipt_in(
+            booking,
+            cash_account,
+            amount=300_000,
+            mode_of_payment="Cheque",
+            cheque_no="222222",
+            cheque_bank_name="HBL",
+            cheque_date=TODAY,
+            cheque_clearing_date=TODAY,
+        ),
+    )
+
+
+@pytest.fixture()
+def vendor_expense_account(db: Session):
+    from app.models.account import Account, AccountNature
+
+    obj = Account(code="5999", name="Vendor Payments", nature=AccountNature.EXPENSE)
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+def _forward_in(account, **overrides):
+    from app.schemas.receipt import ChequeForwardCreate
+
+    data = dict(forward_date=TODAY, party_name="Steel Vendor", debit_account_id=account.id)
+    data.update(overrides)
+    return ChequeForwardCreate(**data)
+
+
+def _balanced_lines(db, voucher_id):
+    from app.models.voucher import VoucherLine
+
+    lines = db.query(VoucherLine).filter(VoucherLine.voucher_id == voucher_id).all()
+    return {l.account_id: (float(l.debit), float(l.credit)) for l in lines}
+
+
+def test_forward_cheque_books_payment_to_party(
+    db: Session, booking, cash_account, vendor_expense_account
+):
+    receipt = _cheque_receipt(db, booking, cash_account)
+
+    result = receipt_crud.forward_cheque(db, receipt, _forward_in(vendor_expense_account))
+
+    assert len(result.forwards) == 1
+    fwd = result.forwards[0]
+    assert fwd.forward_no.startswith("CHF-")
+    assert fwd.party_name == "Steel Vendor"
+    assert fwd.status.value == "Forwarded"
+    assert _balanced_lines(db, fwd.voucher_id) == {
+        vendor_expense_account.id: (300_000, 0),
+        cash_account.id: (0, 300_000),
+    }
+    # Customer still credited — the cheque is still pending.
+    assert result.cheque_status == ChequeStatus.PENDING
+    assert sum(float(a.amount) for a in result.allocations) == 300_000
+
+
+def test_forwarded_cheque_cleared_at_party(
+    db: Session, booking, cash_account, vendor_expense_account
+):
+    receipt = _cheque_receipt(db, booking, cash_account)
+    receipt = receipt_crud.forward_cheque(db, receipt, _forward_in(vendor_expense_account))
+
+    result = receipt_crud.mark_cheque_status(db, receipt, ChequeStatus.CLEARED)
+
+    assert result.forwards[0].status.value == "Cleared"
+    assert result.forwards[0].voucher_id is not None
+    assert result.voucher_id is not None
+
+
+def test_forwarded_cheque_bounced_reverses_both_sides(
+    db: Session, booking, cash_account, vendor_expense_account
+):
+    receipt = _cheque_receipt(db, booking, cash_account)
+    receipt = receipt_crud.forward_cheque(db, receipt, _forward_in(vendor_expense_account))
+    forward_voucher_id = receipt.forwards[0].voucher_id
+
+    result = receipt_crud.mark_cheque_status(db, receipt, ChequeStatus.BOUNCED)
+
+    assert result.forwards[0].status.value == "Bounced"
+    assert result.forwards[0].voucher_id is None
+    assert db.query(Voucher).filter(Voucher.id == forward_voucher_id).first() is None
+    # Customer's payment reversed too.
+    assert result.voucher_id is None
+    db.refresh(booking)
+    assert sum(float(l.paid_amount) for l in booking.schedule_lines) == 0
+
+
+def test_forward_rejects_non_pending_or_already_forwarded(
+    db: Session, booking, cash_account, vendor_expense_account
+):
+    receipt = _cheque_receipt(db, booking, cash_account)
+    receipt = receipt_crud.forward_cheque(db, receipt, _forward_in(vendor_expense_account))
+    with pytest.raises(ValueError, match="already been forwarded"):
+        receipt_crud.forward_cheque(db, receipt, _forward_in(vendor_expense_account))
+
+    cash = receipt_crud.create_receipt(db, _receipt_in(booking, cash_account, amount=1_000))
+    with pytest.raises(ValueError, match="Only a cheque"):
+        receipt_crud.forward_cheque(db, cash, _forward_in(vendor_expense_account))
+
+
+def test_undo_forward_removes_payment(db: Session, booking, cash_account, vendor_expense_account):
+    receipt = _cheque_receipt(db, booking, cash_account)
+    receipt = receipt_crud.forward_cheque(db, receipt, _forward_in(vendor_expense_account))
+    voucher_id = receipt.forwards[0].voucher_id
+
+    result = receipt_crud.undo_forward(db, receipt)
+
+    assert result.forwards == []
+    assert db.query(Voucher).filter(Voucher.id == voucher_id).first() is None
+    assert result.cheque_status == ChequeStatus.PENDING
+
+
+def test_delete_receipt_blocked_while_forwarded(
+    db: Session, booking, cash_account, vendor_expense_account
+):
+    receipt = _cheque_receipt(db, booking, cash_account)
+    receipt = receipt_crud.forward_cheque(db, receipt, _forward_in(vendor_expense_account))
+
+    with pytest.raises(ValueError, match="undo the forward first"):
+        receipt_crud.delete_receipt(db, receipt)
