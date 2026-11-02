@@ -769,6 +769,45 @@ export interface Receipt {
   forwards: ChequeForward[];
 }
 
+export type PeriodReportCategory =
+  | "material_purchases"
+  | "material_issues"
+  | "customer_receipts"
+  | "expenses"
+  | "contractor_payments"
+  | "wages"
+  | "rent_received"
+  | "commission_paid";
+export type PeriodReportPeriod = "day" | "week" | "month" | "year";
+export type PeriodReportGroupBy = "project" | "item" | "payment_mode" | "party";
+
+export interface PeriodReportRow {
+  period_start: string;
+  period_end: string;
+  period_label: string;
+  group: string | null;
+  count: number;
+  /** Only when every entry in the row is in the same unit (e.g. one material). */
+  quantity: number | null;
+  unit: string | null;
+  amount: number;
+}
+
+export interface PeriodReport {
+  category: PeriodReportCategory;
+  category_label: string;
+  period: PeriodReportPeriod;
+  group_by: PeriodReportGroupBy | null;
+  rows: PeriodReportRow[];
+  total_count: number;
+  total_quantity: number | null;
+  total_unit: string | null;
+  total_amount: number;
+  items: string[];
+  parties: string[];
+  payment_modes: string[];
+}
+
 export interface ChequeForward {
   id: number;
   forward_no: string;

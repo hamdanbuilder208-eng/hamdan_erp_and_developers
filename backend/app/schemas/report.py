@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -249,3 +250,48 @@ class EmployeeSummaryRow(BaseModel):
     total_paid: float
     payment_count: int
     last_payment_date: date | None
+
+
+# Period report (any category, totalled per day / week / month / year)
+
+PeriodReportCategory = Literal[
+    "material_purchases",
+    "material_issues",
+    "customer_receipts",
+    "expenses",
+    "contractor_payments",
+    "wages",
+    "rent_received",
+    "commission_paid",
+]
+PeriodReportPeriod = Literal["day", "week", "month", "year"]
+PeriodReportGroupBy = Literal["project", "item", "payment_mode", "party"]
+
+
+class PeriodReportRow(BaseModel):
+    period_start: date
+    period_end: date
+    period_label: str
+    # Value of the group_by field for this row (None when not grouping).
+    group: str | None = None
+    count: int
+    # Only when every entry in the row is in the same unit (e.g. one material).
+    quantity: float | None = None
+    unit: str | None = None
+    amount: float
+
+
+class PeriodReport(BaseModel):
+    category: PeriodReportCategory
+    category_label: str
+    period: PeriodReportPeriod
+    group_by: PeriodReportGroupBy | None = None
+    rows: list[PeriodReportRow]
+    total_count: int
+    total_quantity: float | None = None
+    total_unit: str | None = None
+    total_amount: float
+    # Filter choices available in this category and date range.
+    items: list[str]
+    parties: list[str]
+    payment_modes: list[str]

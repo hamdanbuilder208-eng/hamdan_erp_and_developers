@@ -6,9 +6,11 @@ import { REPORT_SCOPES, isReportScope, reportFilterFromSearch, reportFilterParam
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
 import hamdanIcon from "../assets/hamdan-icon-transparent.png";
+import { PERIODS, PeriodReportTable, categoryInfo, groupByLabel } from "../components/reports/PeriodReportTable";
 import type {
   BalanceSheetReport,
   CompanySettings,
+  PeriodReport,
   ProfitLossReport,
   Project,
   TrialBalanceReport,
@@ -256,9 +258,41 @@ function BalanceSheetPrint() {
   );
 }
 
+function PeriodPrint() {
+  const [searchParams] = useSearchParams();
+  const params = Object.fromEntries(searchParams.entries());
+  const scope = useProjectScope();
+  const { data } = useQuery({
+    queryKey: ["reports", "period", params],
+    queryFn: async () => (await api.get<PeriodReport>("/reports/period", { params })).data,
+  });
+  if (!data) return <p className="text-sm text-slate-400">Loading...</p>;
+
+  const info = categoryInfo(data.category);
+  const filters = [
+    params.date_from || params.date_to
+      ? `Dates: ${params.date_from ?? "start"} to ${params.date_to ?? "today"}`
+      : null,
+    params.item ? `${info.itemLabel}: ${params.item}` : null,
+    params.payment_mode ? `Payment Mode: ${params.payment_mode}` : null,
+    params.party ? `${info.partyLabel}: ${params.party}` : null,
+    data.group_by ? `Split by: ${groupByLabel(data.category, data.group_by)}` : null,
+  ].filter(Boolean);
+
+  return (
+    <PrintShell
+      title={`${data.category_label} — ${PERIODS.find((p) => p.key === data.period)?.label}${scope.suffix}`}
+    >
+      {filters.length > 0 && <p className="mb-3 text-xs text-slate-500">{filters.join(" · ")}</p>}
+      <PeriodReportTable report={data} compact />
+    </PrintShell>
+  );
+}
+
 export default function ReportPrintPage() {
   const { type } = useParams();
 
+  if (type === "period") return <PeriodPrint />;
   if (type === "trial-balance") return <TrialBalancePrint />;
   if (type === "profit-loss") return <ProfitLossPrint />;
   if (type === "balance-sheet") return <BalanceSheetPrint />;

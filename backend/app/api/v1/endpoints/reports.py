@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.crud import inventory as inventory_crud
+from app.crud import period_report as period_report_crud
 from app.crud import report as report_crud
 from app.db.session import get_db
 from app.schemas.inventory import StockBalanceOut
@@ -18,6 +19,10 @@ from app.schemas.report import (
     LandPropertyReportRow,
     MaterialSummaryRow,
     PartnerSummaryRow,
+    PeriodReport,
+    PeriodReportCategory,
+    PeriodReportGroupBy,
+    PeriodReportPeriod,
     ProfitLossReport,
     RentalIncomeRow,
     SalesPurchaseReport,
@@ -30,6 +35,35 @@ from app.schemas.report import (
 Scope = Literal["office", "land"]
 
 router = APIRouter()
+
+
+@router.get("/period", response_model=PeriodReport)
+def period_report(
+    category: PeriodReportCategory,
+    period: PeriodReportPeriod = "month",
+    date_from: date | None = None,
+    date_to: date | None = None,
+    project_id: int | None = None,
+    item: str | None = None,
+    payment_mode: str | None = None,
+    party: str | None = None,
+    group_by: PeriodReportGroupBy | None = None,
+    db: Session = Depends(get_db),
+):
+    """One category's totals per day / week / month / year, filtered and
+    optionally split by project, item, payment mode or party."""
+    return period_report_crud.get_period_report(
+        db,
+        category=category,
+        period=period,
+        date_from=date_from,
+        date_to=date_to,
+        project_id=project_id,
+        item=item,
+        payment_mode=payment_mode,
+        party=party,
+        group_by=group_by,
+    )
 
 
 @router.get("/trial-balance", response_model=TrialBalanceReport)

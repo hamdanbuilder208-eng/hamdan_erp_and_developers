@@ -6,6 +6,7 @@ import { REPORT_SCOPES, isReportScope, reportFilterParams, withReportFilter } fr
 import { Button } from "../components/ui/Button";
 import { Card, CardContent } from "../components/ui/Card";
 import { Select } from "../components/ui/Input";
+import { PeriodReportPanel } from "../components/reports/PeriodReportPanel";
 import type {
   Account,
   AgingReport,
@@ -28,6 +29,7 @@ import type {
 } from "../types";
 
 type ReportTab =
+  | "period"
   | "trial-balance"
   | "profit-loss"
   | "balance-sheet"
@@ -42,6 +44,7 @@ type ReportTab =
   | "land-plots";
 
 const tabs: { key: ReportTab; label: string }[] = [
+  { key: "period", label: "Period Report" },
   { key: "trial-balance", label: "Trial Balance" },
   { key: "profit-loss", label: "Profit & Loss" },
   { key: "balance-sheet", label: "Balance Sheet" },
@@ -74,7 +77,7 @@ function BalanceBadge({ isBalanced }: { isBalanced: boolean }) {
 }
 
 export default function ReportsPage() {
-  const [tab, setTab] = React.useState<ReportTab>("trial-balance");
+  const [tab, setTab] = React.useState<ReportTab>("period");
   const [selectedAccountId, setSelectedAccountId] = React.useState("");
   const [selectedMaterialId, setSelectedMaterialId] = React.useState("");
   const [projectId, setProjectId] = React.useState("");
@@ -278,6 +281,8 @@ export default function ReportsPage() {
           </button>
         ))}
       </div>
+
+      {tab === "period" && <PeriodReportPanel projectId={projectId} projectLabel={scopeLabel} />}
 
       {tab === "trial-balance" && (
         <Card>
