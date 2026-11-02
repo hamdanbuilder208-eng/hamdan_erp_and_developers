@@ -36,7 +36,9 @@ class ExtraChargesReason(str, enum.Enum):
     CORNER = "Corner"
     WATER = "Water"
     ELECTRICITY = "Electricity"
+    GAS = "Gas"
     DOCUMENTS = "Documents"
+    # With custom_reason naming it, so new kinds of charge need no code change.
     OTHER = "Other"
 
 
@@ -164,11 +166,24 @@ class BookingExtraCharge(Base, TimestampMixin):
     voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
 
     reason: Mapped[ExtraChargesReason] = mapped_column(Enum(ExtraChargesReason), nullable=False)
+    # Typed-in name when reason is Other (e.g. "Maintenance Deposit").
+    custom_reason: Mapped[str | None] = mapped_column(String(100))
     amount: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
     charge_date: Mapped[date] = mapped_column(Date, nullable=False)
     narration: Mapped[str | None] = mapped_column(Text)
 
     booking: Mapped["Booking"] = relationship(back_populates="extra_charges")
+
+    @property
+    def reason_label(self) -> str:
+        return charge_reason_label(self.reason, self.custom_reason)
+
+
+def charge_reason_label(reason: ExtraChargesReason, custom_reason: str | None) -> str:
+    """What an extra charge is called: its reason, or the typed name for Other."""
+    if reason == ExtraChargesReason.OTHER and custom_reason:
+        return custom_reason
+    return reason.value
     schedule_line: Mapped["PaymentScheduleLine"] = relationship()
 
 

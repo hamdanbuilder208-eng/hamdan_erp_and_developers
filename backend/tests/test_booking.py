@@ -300,3 +300,34 @@ def test_same_date_plans_are_paid_in_entry_order(
     )
     db.refresh(booking)
     assert [float(l.paid_amount) for l in booking.schedule_lines] == [small, mid, 1_000]
+
+
+def test_gas_extra_charge(db: Session, project, unit, allottee):
+    result = booking_crud.create_booking(
+        db, _booking_in(unit, project, allottee, extra_charges=[_extra(40_000, ExtraChargesReason.GAS)])
+    )
+    assert result.extra_charges[0].reason_label == "Gas"
+    assert any(l.label == "Extra Charges — Gas" for l in result.schedule_lines)
+
+
+def test_other_extra_charge_uses_typed_name(db: Session, project, unit, allottee):
+    charge = ExtraChargeCreate(
+        reason=ExtraChargesReason.OTHER, custom_reason="  Maintenance Deposit ", amount=25_000, charge_date=TODAY
+    )
+    result = booking_crud.create_booking(db, _booking_in(unit, project, allottee, extra_charges=[charge]))
+
+    assert result.extra_charges[0].custom_reason == "Maintenance Deposit"
+    assert result.extra_charges[0].reason_label == "Maintenance Deposit"
+    assert any(l.label == "Extra Charges — Maintenance Deposit" for l in result.schedule_lines)
+
+
+def test_other_extra_charge_requires_a_name():
+    with pytest.raises(ValidationError, match="type what the charge is for"):
+        ExtraChargeCreate(reason=ExtraChargesReason.OTHER, custom_reason=" ", amount=1_000, charge_date=TODAY)
+
+
+def test_custom_name_ignored_for_listed_reasons():
+    charge = ExtraChargeCreate(
+        reason=ExtraChargesReason.WATER, custom_reason="ignored", amount=1_000, charge_date=TODAY
+    )
+    assert charge.custom_reason is None

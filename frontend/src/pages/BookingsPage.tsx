@@ -38,6 +38,7 @@ const extraChargesReasons: ExtraChargesReason[] = [
   "Corner",
   "Water",
   "Electricity",
+  "Gas",
   "Documents",
   "Other",
 ];
@@ -117,14 +118,22 @@ const emptyInstallmentPlan = (): InstallmentPlanForm => ({
 
 type ExtraChargeForm = {
   reason: ExtraChargesReason;
+  // What the charge is, typed in when reason is "Other".
+  custom_reason: string;
   amount: string;
   narration: string;
 };
 
 const emptyExtraCharge = (): ExtraChargeForm => ({
   reason: "Road Facing",
+  custom_reason: "",
   amount: "",
   narration: "",
+});
+
+const extraChargePayload = (c: ExtraChargeForm) => ({
+  reason: c.reason,
+  custom_reason: c.reason === "Other" ? c.custom_reason.trim() : null,
 });
 
 const emptyForm = {
@@ -358,7 +367,7 @@ export default function BookingsPage() {
           down_payment_amount: form.down_payment_amount ? Number(form.down_payment_amount) : 0,
           down_payment_date: form.down_payment_date || form.booking_date,
           extra_charges: form.extraCharges.map((c) => ({
-            reason: c.reason,
+            ...extraChargePayload(c),
             amount: Number(c.amount) || 0,
             charge_date: form.booking_date,
             narration: c.narration || null,
@@ -460,7 +469,7 @@ export default function BookingsPage() {
     mutationFn: async () =>
       (
         await api.post<Booking>(`/bookings/${detailBooking!.id}/extra-charges`, {
-          reason: extraChargeForm.reason,
+          ...extraChargePayload(extraChargeForm),
           amount: Number(extraChargeForm.amount) || 0,
           charge_date: todayIso(),
           narration: extraChargeForm.narration || null,
@@ -723,6 +732,17 @@ export default function BookingsPage() {
                       ))}
                     </Select>
                   </div>
+                  {charge.reason === "Other" && (
+                    <div className="flex-1">
+                      <Input
+                        required
+                        aria-label="Charge name"
+                        placeholder="What is this charge for?"
+                        value={charge.custom_reason}
+                        onChange={(e) => updateExtraCharge(idx, { custom_reason: e.target.value })}
+                      />
+                    </div>
+                  )}
                   <div className="w-32">
                     <Input
                       type="number"
@@ -1194,12 +1214,12 @@ export default function BookingsPage() {
                         className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm dark:border-navy-800"
                       >
                         <span className="text-navy-900 dark:text-slate-100">
-                          {c.reason} · PKR {Number(c.amount).toLocaleString()} · {c.charge_date}
+                          {c.reason_label} · PKR {Number(c.amount).toLocaleString()} · {c.charge_date}
                         </span>
                         {!paid && (
                           <button
                             onClick={async () => {
-                              const ok = await confirm(`Remove "${c.reason}" charge?`, {
+                              const ok = await confirm(`Remove "${c.reason_label}" charge?`, {
                                 danger: true,
                                 confirmLabel: "Remove",
                               });
@@ -1539,6 +1559,18 @@ export default function BookingsPage() {
                 ))}
               </Select>
             </div>
+            {extraChargeForm.reason === "Other" && (
+              <div>
+                <Label htmlFor="ec_custom">Charge Name</Label>
+                <Input
+                  id="ec_custom"
+                  required
+                  placeholder="What is this charge for?"
+                  value={extraChargeForm.custom_reason}
+                  onChange={(e) => setExtraChargeForm({ ...extraChargeForm, custom_reason: e.target.value })}
+                />
+              </div>
+            )}
             <div>
               <Label htmlFor="ec_amount">Amount (PKR)</Label>
               <Input

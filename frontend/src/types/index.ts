@@ -663,6 +663,7 @@ export type ExtraChargesReason =
   | "Corner"
   | "Water"
   | "Electricity"
+  | "Gas"
   | "Documents"
   | "Other";
 
@@ -691,6 +692,10 @@ export interface BookingExtraCharge {
   id: number;
   schedule_line_id: number;
   reason: ExtraChargesReason;
+  /** Typed-in name when reason is Other. */
+  custom_reason: string | null;
+  /** The reason, or the typed name for Other — what to show. */
+  reason_label: string;
   amount: number;
   charge_date: string;
   narration: string | null;

@@ -57,6 +57,8 @@ class InstallmentPlanOut(BaseModel):
 
 class ExtraChargeCreate(BaseModel):
     reason: ExtraChargesReason
+    # Required name when reason is Other; ignored otherwise.
+    custom_reason: str | None = None
     amount: float
     charge_date: date
     narration: str | None = None
@@ -65,6 +67,12 @@ class ExtraChargeCreate(BaseModel):
     def validate_amount(self):
         if self.amount <= 0:
             raise ValueError("Extra charge amount must be greater than zero")
+        if self.reason == ExtraChargesReason.OTHER:
+            self.custom_reason = (self.custom_reason or "").strip()
+            if not self.custom_reason:
+                raise ValueError("For an 'Other' extra charge, type what the charge is for")
+        else:
+            self.custom_reason = None
         return self
 
 
@@ -73,6 +81,9 @@ class ExtraChargeOut(BaseModel):
     id: int
     schedule_line_id: int
     reason: ExtraChargesReason
+    custom_reason: str | None = None
+    # The reason, or the typed name for Other — what to show.
+    reason_label: str
     amount: float
     charge_date: date
     narration: str | None

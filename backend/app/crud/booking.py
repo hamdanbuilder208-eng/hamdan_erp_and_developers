@@ -13,6 +13,7 @@ from app.models.booking import (
     BookingTransfer,
     PaymentScheduleLine,
     ScheduleFrequency,
+    charge_reason_label,
 )
 from app.models.commission_payout import CommissionPayout
 from app.models.receipt import Receipt
@@ -82,10 +83,11 @@ def _add_extra_charge(db: Session, db_booking: Booking, charge_in: ExtraChargeCr
     revenue-recognition voucher (kept separate from the booking's own so it
     can be added and reversed independently), and bumps total_price. Used
     both at booking creation and for charges added later (see add_extra_charge)."""
+    reason_label = charge_reason_label(charge_in.reason, charge_in.custom_reason)
     schedule_line = PaymentScheduleLine(
         booking_id=db_booking.id,
         installment_no=0,
-        label=f"Extra Charges — {charge_in.reason.value}",
+        label=f"Extra Charges — {reason_label}",
         due_date=charge_in.charge_date,
         amount=charge_in.amount,
     )
@@ -101,7 +103,7 @@ def _add_extra_charge(db: Session, db_booking: Booking, charge_in: ExtraChargeCr
             voucher_type=VoucherType.JOURNAL,
             voucher_date=charge_in.charge_date,
             project_id=db_booking.project_id,
-            narration=f"Extra charge ({charge_in.reason.value}) on booking {db_booking.booking_ref_no}",
+            narration=f"Extra charge ({reason_label}) on booking {db_booking.booking_ref_no}",
         )
         db.add(voucher)
         db.flush()
@@ -111,7 +113,7 @@ def _add_extra_charge(db: Session, db_booking: Booking, charge_in: ExtraChargeCr
                 account_id=receivable_account.id,
                 debit=charge_in.amount,
                 credit=0,
-                narration=f"Extra charge ({charge_in.reason.value}) — {db_booking.booking_ref_no}",
+                narration=f"Extra charge ({reason_label}) — {db_booking.booking_ref_no}",
             )
         )
         db.add(
@@ -120,7 +122,7 @@ def _add_extra_charge(db: Session, db_booking: Booking, charge_in: ExtraChargeCr
                 account_id=revenue_account.id,
                 debit=0,
                 credit=charge_in.amount,
-                narration=f"Extra charge ({charge_in.reason.value}) — {db_booking.booking_ref_no}",
+                narration=f"Extra charge ({reason_label}) — {db_booking.booking_ref_no}",
             )
         )
 
@@ -129,6 +131,7 @@ def _add_extra_charge(db: Session, db_booking: Booking, charge_in: ExtraChargeCr
         schedule_line_id=schedule_line.id,
         voucher_id=voucher.id if voucher else None,
         reason=charge_in.reason,
+        custom_reason=charge_in.custom_reason,
         amount=charge_in.amount,
         charge_date=charge_in.charge_date,
         narration=charge_in.narration,
