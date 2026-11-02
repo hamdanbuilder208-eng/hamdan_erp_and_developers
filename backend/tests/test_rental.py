@@ -154,3 +154,61 @@ def test_delete_tenant_blocked_when_agreements_exist(db: Session, tenant, land_p
 def test_delete_tenant_succeeds_when_untouched(db: Session, tenant):
     rental_crud.delete_tenant(db, tenant)
     assert rental_crud.get_tenant(db, tenant.id) is None
+
+
+# Renewing an agreement
+
+
+def _renew_in(**overrides):
+    from datetime import date
+
+    from app.schemas.rental import RentAgreementRenew
+
+    data = dict(
+        agreement_date=TODAY,
+        start_date=date(2027, 1, 1),
+        monthly_rent=30_000,
+        duration_months=12,
+        security_deposit=50_000,
+    )
+    data.update(overrides)
+    return RentAgreementRenew(**data)
+
+
+def test_renew_creates_new_term_and_expires_old(db: Session, tenant, land_property):
+    from datetime import date
+
+    old = rental_crud.create_agreement(db, _agreement_in(tenant, land_property_id=land_property.id))
+
+    new = rental_crud.renew_agreement(db, old, _renew_in())
+
+    assert new.id != old.id
+    assert new.agreement_no != old.agreement_no
+    assert new.tenant_id == old.tenant_id
+    assert new.land_property_id == land_property.id
+    assert new.status == RentAgreementStatus.ACTIVE
+    assert len(new.schedule_lines) == 12
+    assert all(l.amount == 30_000 for l in new.schedule_lines)
+    assert new.schedule_lines[0].due_date == date(2027, 1, 1)
+    assert "Renewal of" in new.narration
+
+    db.refresh(old)
+    assert old.status == RentAgreementStatus.EXPIRED
+    # Old schedule is kept so any unpaid rent on it can still be collected.
+    assert len(old.schedule_lines) == 3
+
+    db.refresh(land_property)
+    assert land_property.status == LandPropertyStatus.RENTED
+
+
+def test_renew_rejects_non_active_agreement(db: Session, tenant, land_property):
+    old = rental_crud.create_agreement(db, _agreement_in(tenant, land_property_id=land_property.id))
+    rental_crud.terminate_agreement(db, old, TODAY)
+
+    with pytest.raises(ValueError, match="Only an active agreement"):
+        rental_crud.renew_agreement(db, old, _renew_in())
+
+
+def test_renew_rejects_zero_duration():
+    with pytest.raises(ValidationError, match="at least 1 month"):
+        _renew_in(duration_months=0)

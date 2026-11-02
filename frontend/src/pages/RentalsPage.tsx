@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, MapPin, Plus, Printer, Receipt as ReceiptIcon, Trash2 } from "lucide-react";
+import { Building2, MapPin, Plus, Printer, Receipt as ReceiptIcon, RefreshCw, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -30,8 +30,9 @@ import type {
 type RentalTab = "agreements" | "tenants" | "income";
 
 const rentCollected = (a: RentAgreement) => a.schedule_lines.reduce((s, l) => s + Number(l.paid_amount), 0);
+// Expired = renewed into a new agreement; its unpaid rent is still owed.
 const rentOutstanding = (a: RentAgreement) =>
-  a.status === "Active"
+  a.status === "Active" || a.status === "Expired"
     ? a.schedule_lines
         .filter((l) => l.due_date <= todayIso())
         .reduce((s, l) => s + Math.max(Number(l.amount) - Number(l.paid_amount), 0), 0)
@@ -245,6 +246,50 @@ export default function RentalsPage() {
       toast.success("Agreement terminated.");
     },
     onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to terminate agreement.")),
+  });
+
+  // ---- Renew: same tenant + unit/property, a new term (new agreement no.) ----
+  const [renewFrom, setRenewFrom] = React.useState<RentAgreement | null>(null);
+  const [renewForm, setRenewForm] = React.useState({
+    start_date: "",
+    monthly_rent: "",
+    duration_months: "",
+    security_deposit: "",
+    narration: "",
+  });
+  const openRenew = (a: RentAgreement) => {
+    // New term starts the month after the old one ends.
+    const start = new Date(`${a.start_date}T00:00:00Z`);
+    start.setUTCMonth(start.getUTCMonth() + a.duration_months);
+    setRenewForm({
+      start_date: start.toISOString().slice(0, 10),
+      monthly_rent: String(a.monthly_rent),
+      duration_months: String(a.duration_months),
+      security_deposit: String(a.security_deposit),
+      narration: "",
+    });
+    setRenewFrom(a);
+  };
+
+  const renewAgreement = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post<RentAgreement>(`/rentals/agreements/${renewFrom!.id}/renew`, {
+          agreement_date: todayIso(),
+          start_date: renewForm.start_date,
+          monthly_rent: Number(renewForm.monthly_rent),
+          duration_months: Number(renewForm.duration_months),
+          security_deposit: Number(renewForm.security_deposit || 0),
+          narration: renewForm.narration || null,
+        })
+      ).data,
+    onSuccess: (renewed) => {
+      queryClient.invalidateQueries({ queryKey: ["rentals", "agreements"] });
+      setRenewFrom(null);
+      setDetailAgreement(renewed);
+      toast.success(`Renewed as ${renewed.agreement_no}.`);
+    },
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to renew agreement.")),
   });
 
   const deleteAgreement = useMutation({
@@ -740,11 +785,22 @@ export default function RentalsPage() {
                   <Printer className="h-3.5 w-3.5" />
                   Print Agreement
                 </Button>
+                {/* An expired (renewed) agreement can still have old rent to collect. */}
+                {detailAgreement.status === "Expired" && (
+                  <Button size="sm" onClick={() => setReceiptModalOpen(true)}>
+                    <ReceiptIcon className="h-3.5 w-3.5" />
+                    Record Receipt
+                  </Button>
+                )}
                 {detailAgreement.status === "Active" && (
                   <>
                     <Button size="sm" onClick={() => setReceiptModalOpen(true)}>
                       <ReceiptIcon className="h-3.5 w-3.5" />
                       Record Receipt
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => openRenew(detailAgreement)}>
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Renew
                     </Button>
                     <Button
                       size="sm"
@@ -953,6 +1009,93 @@ export default function RentalsPage() {
             </Button>
             <Button type="submit" disabled={createReceipt.isPending}>
               Record Receipt
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ---- Renew Agreement Modal ---- */}
+      <Modal
+        open={!!renewFrom}
+        onClose={() => setRenewFrom(null)}
+        title={`Renew ${renewFrom?.agreement_no ?? ""}`}
+        description={
+          renewFrom
+            ? `${renewFrom.tenant.name} — ${targetLabel(renewFrom)}. A new agreement is created for the next term; this one is marked Expired, and any rent still unpaid on it can still be collected.`
+            : undefined
+        }
+      >
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            renewAgreement.mutate();
+          }}
+        >
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="renew_rent">Monthly Rent (PKR)</Label>
+              <Input
+                id="renew_rent"
+                type="number"
+                min="1"
+                required
+                value={renewForm.monthly_rent}
+                onChange={(e) => setRenewForm({ ...renewForm, monthly_rent: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="renew_deposit">Security Deposit</Label>
+              <Input
+                id="renew_deposit"
+                type="number"
+                min="0"
+                value={renewForm.security_deposit}
+                onChange={(e) => setRenewForm({ ...renewForm, security_deposit: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="renew_start">New Start Date</Label>
+              <Input
+                id="renew_start"
+                type="date"
+                required
+                value={renewForm.start_date}
+                onChange={(e) => setRenewForm({ ...renewForm, start_date: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="renew_duration">Duration (months)</Label>
+              <Input
+                id="renew_duration"
+                type="number"
+                min="1"
+                required
+                value={renewForm.duration_months}
+                onChange={(e) => setRenewForm({ ...renewForm, duration_months: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="renew_narration">Narration (optional)</Label>
+            <Input
+              id="renew_narration"
+              placeholder={renewFrom ? `Renewal of ${renewFrom.agreement_no}` : undefined}
+              value={renewForm.narration}
+              onChange={(e) => setRenewForm({ ...renewForm, narration: e.target.value })}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setRenewFrom(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={renewAgreement.isPending}>
+              Renew Agreement
             </Button>
           </div>
         </form>

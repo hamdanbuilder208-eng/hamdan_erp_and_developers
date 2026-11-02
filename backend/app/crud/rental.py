@@ -12,7 +12,7 @@ from app.models.rental import (
     Tenant,
 )
 from app.models.unit import Unit, UnitStatus
-from app.schemas.rental import RentAgreementCreate, TenantCreate
+from app.schemas.rental import RentAgreementCreate, RentAgreementRenew, TenantCreate
 
 # Tenant
 
@@ -76,6 +76,19 @@ def get_agreement(db: Session, agreement_id: int) -> RentAgreement | None:
     return _load_query(db).filter(RentAgreement.id == agreement_id).first()
 
 
+def _add_schedule_lines(db: Session, db_agreement: RentAgreement) -> None:
+    """One rent line per month of the agreement, from its start date."""
+    for month_no in range(1, db_agreement.duration_months + 1):
+        db.add(
+            RentScheduleLine(
+                agreement_id=db_agreement.id,
+                month_no=month_no,
+                due_date=db_agreement.start_date + relativedelta(months=month_no - 1),
+                amount=db_agreement.monthly_rent,
+            )
+        )
+
+
 def create_agreement(db: Session, agreement_in: RentAgreementCreate) -> RentAgreement:
     tenant = db.query(Tenant).filter(Tenant.id == agreement_in.tenant_id).first()
     if not tenant:
@@ -113,17 +126,7 @@ def create_agreement(db: Session, agreement_in: RentAgreementCreate) -> RentAgre
     )
     db.add(db_agreement)
     db.flush()
-
-    for month_no in range(1, agreement_in.duration_months + 1):
-        due_date = agreement_in.start_date + relativedelta(months=month_no - 1)
-        db.add(
-            RentScheduleLine(
-                agreement_id=db_agreement.id,
-                month_no=month_no,
-                due_date=due_date,
-                amount=agreement_in.monthly_rent,
-            )
-        )
+    _add_schedule_lines(db, db_agreement)
 
     if unit:
         unit.status = UnitStatus.RENTED
@@ -132,6 +135,37 @@ def create_agreement(db: Session, agreement_in: RentAgreementCreate) -> RentAgre
 
     db.commit()
     return get_agreement(db, db_agreement.id)
+
+
+def renew_agreement(
+    db: Session, db_agreement: RentAgreement, renew_in: RentAgreementRenew
+) -> RentAgreement:
+    """Same tenant, same unit/property, a fresh term: a new agreement with its
+    own number and schedule. The old one is marked Expired — any rent still
+    unpaid on it stays there and can still be collected against it. The
+    unit/property simply stays Rented."""
+    if db_agreement.status != RentAgreementStatus.ACTIVE:
+        raise ValueError(f"Only an active agreement can be renewed (this one is {db_agreement.status.value.lower()})")
+
+    db_new = RentAgreement(
+        agreement_no=_next_agreement_no(db),
+        agreement_date=renew_in.agreement_date,
+        tenant_id=db_agreement.tenant_id,
+        unit_id=db_agreement.unit_id,
+        land_property_id=db_agreement.land_property_id,
+        monthly_rent=renew_in.monthly_rent,
+        security_deposit=renew_in.security_deposit,
+        start_date=renew_in.start_date,
+        duration_months=renew_in.duration_months,
+        narration=renew_in.narration or f"Renewal of {db_agreement.agreement_no}",
+    )
+    db.add(db_new)
+    db.flush()
+    _add_schedule_lines(db, db_new)
+
+    db_agreement.status = RentAgreementStatus.EXPIRED
+    db.commit()
+    return get_agreement(db, db_new.id)
 
 
 def terminate_agreement(db: Session, db_agreement: RentAgreement, end_date: date) -> RentAgreement:

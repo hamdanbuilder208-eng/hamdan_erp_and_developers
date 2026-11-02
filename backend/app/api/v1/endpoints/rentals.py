@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.schemas.rental import (
     RentAgreementCreate,
     RentAgreementOut,
+    RentAgreementRenew,
     RentReceiptCreate,
     RentReceiptOut,
     RentReceiptPrintOut,
@@ -63,6 +64,21 @@ def get_agreement(agreement_id: int, db: Session = Depends(get_db)):
     if not db_agreement:
         raise HTTPException(status_code=404, detail="Rent agreement not found")
     return db_agreement
+
+
+@router.post(
+    "/agreements/{agreement_id}/renew",
+    response_model=RentAgreementOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def renew_agreement(agreement_id: int, renew_in: RentAgreementRenew, db: Session = Depends(get_db)):
+    db_agreement = rental_crud.get_agreement(db, agreement_id)
+    if not db_agreement:
+        raise HTTPException(status_code=404, detail="Rent agreement not found")
+    try:
+        return rental_crud.renew_agreement(db, db_agreement, renew_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/agreements/{agreement_id}/terminate", response_model=RentAgreementOut)

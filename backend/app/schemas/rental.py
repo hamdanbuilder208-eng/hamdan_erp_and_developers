@@ -59,6 +59,25 @@ class RentAgreementCreate(RentAgreementBase):
         return self
 
 
+class RentAgreementRenew(BaseModel):
+    """New term for an existing agreement — tenant and unit/property carry over."""
+
+    agreement_date: date
+    start_date: date
+    monthly_rent: float
+    duration_months: int
+    security_deposit: float = 0
+    narration: str | None = None
+
+    @model_validator(mode="after")
+    def validate_terms(self):
+        if self.duration_months <= 0:
+            raise ValueError("Duration must be at least 1 month")
+        if self.monthly_rent <= 0:
+            raise ValueError("Monthly rent must be greater than zero")
+        return self
+
+
 class RentAgreementOut(RentAgreementBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
