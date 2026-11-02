@@ -227,8 +227,8 @@ class MaterialIssueLineOut(MaterialIssueLineBase):
 class MaterialIssueBase(BaseModel):
     issue_date: date
     project_id: int
-    # Nullable for output only — issues created before the warehouses feature
-    # have no warehouse on file. New issues must pick one (enforced below).
+    # None: issued from the project's own site stock (or, for old issues,
+    # recorded before the warehouses feature).
     warehouse_id: int | None = None
     reason: MaterialIssueReason = MaterialIssueReason.SITE_CONSUMPTION
     issued_to: str | None = None
@@ -236,7 +236,9 @@ class MaterialIssueBase(BaseModel):
 
 
 class MaterialIssueCreate(MaterialIssueBase):
-    warehouse_id: int
+    # None = issued from the project's own site stock (material delivered
+    # straight to the site by a GRN), not from a warehouse.
+    warehouse_id: int | None = None
     lines: list[MaterialIssueLineCreate]
 
     @model_validator(mode="after")

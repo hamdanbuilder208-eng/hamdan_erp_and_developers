@@ -92,7 +92,7 @@ const unitStatusColorVar: Record<UnitStatus, string> = {
   Rented: "var(--color-rented-500)",
 };
 
-const landStatusOrder: LandPropertyStatus[] = ["Available", "Reserved", "Sold"];
+const landStatusOrder: LandPropertyStatus[] = ["Available", "Reserved", "Sold", "Rented"];
 const landStatusColorVar: Record<LandPropertyStatus, string> = {
   Available: "var(--color-success-500)",
   Reserved: "var(--color-warning-500)",

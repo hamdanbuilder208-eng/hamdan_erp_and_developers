@@ -345,6 +345,8 @@ export default function MaterialInventoryPage() {
   const [issueForm, setIssueForm] = React.useState({
     project_id: "",
     warehouse_id: "",
+    // true = issuing from the project's own site stock rather than a warehouse.
+    from_site: false,
     reason: "Site Consumption" as MaterialIssueReason,
     issued_to: "",
     narration: "",
@@ -364,6 +366,7 @@ export default function MaterialInventoryPage() {
     setIssueForm({
       project_id: "",
       warehouse_id: "",
+      from_site: false,
       reason: "Site Consumption",
       issued_to: "",
       narration: "",
@@ -378,7 +381,7 @@ export default function MaterialInventoryPage() {
         await api.post<MaterialIssue>("/inventory/issues", {
           issue_date: todayIso(),
           project_id: Number(issueForm.project_id),
-          warehouse_id: Number(issueForm.warehouse_id),
+          warehouse_id: issueForm.from_site ? null : Number(issueForm.warehouse_id),
           reason: issueForm.reason,
           issued_to: issueForm.issued_to || null,
           narration: issueForm.narration || null,
@@ -704,13 +707,14 @@ export default function MaterialInventoryPage() {
       <div className="flex flex-wrap gap-1 border-b border-slate-200 dark:border-navy-700">
         {(
           [
+            // The order things are set up and then used in.
             { key: "vendors", label: "Vendors" },
             { key: "materials", label: "Materials" },
+            { key: "warehouses", label: "Warehouses" },
             { key: "purchase-orders", label: "Purchase Orders" },
             { key: "grn", label: "GRN" },
-            { key: "issues", label: "Material Issues" },
-            { key: "warehouses", label: "Warehouses" },
             { key: "stock", label: "Stock Balance" },
+            { key: "issues", label: "Material Issues" },
           ] as { key: InventoryTab; label: string }[]
         ).map((t) => (
           <button
@@ -1150,7 +1154,7 @@ export default function MaterialInventoryPage() {
                     </td>
                     <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{iss.issue_date}</td>
                     <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
-                      {iss.warehouse?.name ?? "—"}
+                      {iss.warehouse?.name ?? "Site stock"}
                     </td>
                     <td className="px-5 py-3 text-navy-900 dark:text-slate-100">
                       {iss.project.project_name}
@@ -2048,19 +2052,45 @@ export default function MaterialInventoryPage() {
           )}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="issue_warehouse">From Warehouse</Label>
+              <Label htmlFor="issue_warehouse">From</Label>
+              {/* A warehouse, or a project's own site stock (material a GRN delivered straight to site). */}
               <Select
                 id="issue_warehouse"
                 required
-                value={issueForm.warehouse_id}
-                onChange={(e) => setIssueForm({ ...issueForm, warehouse_id: e.target.value })}
+                value={
+                  issueForm.from_site
+                    ? `p:${issueForm.project_id}`
+                    : issueForm.warehouse_id
+                      ? `w:${issueForm.warehouse_id}`
+                      : ""
+                }
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v.startsWith("w:")) {
+                    setIssueForm({ ...issueForm, from_site: false, warehouse_id: v.slice(2) });
+                  } else if (v.startsWith("p:")) {
+                    // Site stock can only be used on that same project.
+                    setIssueForm({ ...issueForm, from_site: true, warehouse_id: "", project_id: v.slice(2) });
+                  } else {
+                    setIssueForm({ ...issueForm, from_site: false, warehouse_id: "" });
+                  }
+                }}
               >
-                <option value="">Select warehouse</option>
-                {warehouses?.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.warehouse_code} — {w.name}
-                  </option>
-                ))}
+                <option value="">Select warehouse or project</option>
+                <optgroup label="Warehouses">
+                  {warehouses?.map((w) => (
+                    <option key={`w-${w.id}`} value={`w:${w.id}`}>
+                      {w.warehouse_code} — {w.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Projects — stock already at site">
+                  {projects?.map((p) => (
+                    <option key={`p-${p.id}`} value={`p:${p.id}`}>
+                      {p.project_name}
+                    </option>
+                  ))}
+                </optgroup>
               </Select>
             </div>
             <div>
@@ -2068,6 +2098,7 @@ export default function MaterialInventoryPage() {
               <Select
                 id="issue_project"
                 required
+                disabled={issueForm.from_site}
                 value={issueForm.project_id}
                 onChange={(e) => setIssueForm({ ...issueForm, project_id: e.target.value })}
               >

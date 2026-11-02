@@ -546,10 +546,15 @@ def create_material_issue(db: Session, issue_in: MaterialIssueCreate) -> Materia
     )
     material_stock_account = _get_account_by_code(db, MATERIAL_STOCK_ACCOUNT_CODE)
 
+    # No warehouse: the material comes out of the project's own site stock,
+    # which is keyed by project (see _get_current_balance).
+    from_site = issue_in.warehouse_id is None
     total_amount = 0.0
     line_data = []
     for line in issue_in.lines:
-        balance_qty, balance_value = _get_current_balance(db, line.material_id, issue_in.warehouse_id)
+        balance_qty, balance_value = _get_current_balance(
+            db, line.material_id, issue_in.warehouse_id, issue_in.project_id if from_site else None
+        )
         if line.quantity > balance_qty:
             material = db.query(Material).filter(Material.id == line.material_id).first()
             name = material.name if material else f"material #{line.material_id}"
@@ -570,6 +575,11 @@ def create_material_issue(db: Session, issue_in: MaterialIssueCreate) -> Materia
         issued_to=issue_in.issued_to,
         narration=issue_in.narration,
     )
+    if from_site:
+        # Already at the site — nothing to dispatch or wait for.
+        db_issue.status = MaterialIssueStatus.RECEIVED
+        db_issue.received_date = issue_in.issue_date
+        db_issue.received_by = issue_in.issued_to
     db.add(db_issue)
     db.flush()
 
@@ -642,6 +652,7 @@ def delete_material_issue(db: Session, db_issue: MaterialIssue) -> None:
             StockRefType.ISSUE,
             db_issue.id,
             f"Material Issue {db_issue.issue_no}",
+            project_id=db_issue.project_id,
         )
 
     db.query(StockLedger).filter(

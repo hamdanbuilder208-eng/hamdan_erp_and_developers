@@ -280,3 +280,52 @@ def test_numbering_continues_after_existing_data(db: Session):
     db.add(Vendor(vendor_code="VEN-00041", name="Imported"))
     db.commit()
     assert next_persistent_sequence_number(db, Vendor.vendor_code, "VEN-", 5) == "VEN-00042"
+
+
+def test_issue_from_project_site_stock(
+    db, vendor, material, material_stock_account, consumption_account, cash_account, project
+):
+    """Material a GRN delivered straight to site can be issued from that site's stock."""
+    from app.models.inventory import MaterialIssueStatus
+    from app.schemas.inventory import MaterialIssueCreate, MaterialIssueLineCreate
+
+    inventory_crud.create_grn(
+        db,
+        GRNCreate(
+            grn_date=TODAY,
+            vendor_id=vendor.id,
+            project_id=project.id,
+            payment_account_id=cash_account.id,
+            lines=[GRNLineCreate(material_id=material.id, quantity=100, rate=10)],
+        ),
+    )
+
+    issue = inventory_crud.create_material_issue(
+        db,
+        MaterialIssueCreate(
+            issue_date=TODAY,
+            project_id=project.id,
+            lines=[MaterialIssueLineCreate(material_id=material.id, quantity=40)],
+        ),
+    )
+
+    assert issue.warehouse_id is None
+    assert issue.status == MaterialIssueStatus.RECEIVED
+    assert issue.lines[0].rate == 10
+    last = db.query(StockLedger).order_by(StockLedger.id.desc()).first()
+    assert last.warehouse_id is None and last.project_id == project.id
+    assert last.balance_qty == 60
+
+    with pytest.raises(ValueError, match="Insufficient stock"):
+        inventory_crud.create_material_issue(
+            db,
+            MaterialIssueCreate(
+                issue_date=TODAY,
+                project_id=project.id,
+                lines=[MaterialIssueLineCreate(material_id=material.id, quantity=61)],
+            ),
+        )
+
+    inventory_crud.delete_material_issue(db, issue)
+    last = db.query(StockLedger).order_by(StockLedger.id.desc()).first()
+    assert last.balance_qty == 100
