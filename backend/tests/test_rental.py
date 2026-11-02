@@ -212,3 +212,31 @@ def test_renew_rejects_non_active_agreement(db: Session, tenant, land_property):
 def test_renew_rejects_zero_duration():
     with pytest.raises(ValidationError, match="at least 1 month"):
         _renew_in(duration_months=0)
+
+
+# Tenant CNIC / mobile validation
+
+
+def test_tenant_accepts_valid_cnic_and_mobile():
+    from app.schemas.rental import TenantCreate
+
+    t = TenantCreate(name="Ali", cnic=" 42101-1234567-1 ", mobile="0300-1234567")
+    assert t.cnic == "42101-1234567-1"
+    assert t.mobile == "0300-1234567"
+    assert TenantCreate(name="Ali", cnic="", mobile="").cnic is None
+
+
+@pytest.mark.parametrize(
+    "fields, message",
+    [
+        ({"cnic": "42101-12345"}, "13 digits"),
+        ({"cnic": "abcde-1234567-1"}, "digits and dashes"),
+        ({"mobile": "0300-ABC"}, "only contain numbers"),
+        ({"mobile": "0300-12"}, "looks incomplete"),
+    ],
+)
+def test_tenant_rejects_bad_cnic_or_mobile(fields, message):
+    from app.schemas.rental import TenantCreate
+
+    with pytest.raises(ValidationError, match=message):
+        TenantCreate(name="Ali", **fields)

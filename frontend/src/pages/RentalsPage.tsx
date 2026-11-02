@@ -10,6 +10,7 @@ import { RentAgreementStatusBadge } from "../components/ui/Badge";
 import { TableRowsSkeleton } from "../components/ui/Skeleton";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
+import { formatCnic, isCompleteCnic, isCompletePhone, onlyPhoneChars } from "../lib/identityFormat";
 import {
   PaymentDetailsFields,
   emptyPaymentDetails,
@@ -550,6 +551,14 @@ export default function RentalsPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (!isCompleteCnic(tenantForm.cnic)) {
+              toast.error("CNIC must have 13 digits (e.g. 42101-1234567-1).");
+              return;
+            }
+            if (!isCompletePhone(tenantForm.mobile)) {
+              toast.error("Mobile number looks incomplete (e.g. 0300-1234567).");
+              return;
+            }
             createTenant.mutate();
           }}
           className="space-y-4"
@@ -568,16 +577,22 @@ export default function RentalsPage() {
               <Label htmlFor="tenant_cnic">CNIC (optional)</Label>
               <Input
                 id="tenant_cnic"
+                inputMode="numeric"
+                placeholder="42101-1234567-1"
                 value={tenantForm.cnic}
-                onChange={(e) => setTenantForm({ ...tenantForm, cnic: e.target.value })}
+                onChange={(e) => setTenantForm({ ...tenantForm, cnic: formatCnic(e.target.value) })}
               />
             </div>
             <div>
               <Label htmlFor="tenant_mobile">Mobile (optional)</Label>
               <Input
                 id="tenant_mobile"
+                type="tel"
+                inputMode="tel"
+                placeholder="0300-1234567"
+                maxLength={20}
                 value={tenantForm.mobile}
-                onChange={(e) => setTenantForm({ ...tenantForm, mobile: e.target.value })}
+                onChange={(e) => setTenantForm({ ...tenantForm, mobile: onlyPhoneChars(e.target.value) })}
               />
             </div>
           </div>

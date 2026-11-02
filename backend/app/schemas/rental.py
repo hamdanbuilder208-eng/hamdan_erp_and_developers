@@ -1,9 +1,11 @@
+import re
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.models.rental import RentAgreementStatus
 from app.schemas.account import AccountOut
+from app.schemas.allottee import _clean_cnic, _clean_phone
 from app.schemas.land_property import LandPropertyOut
 from app.schemas.payment_details import PaymentDetailsFields
 from app.schemas.unit import UnitOut
@@ -17,7 +19,20 @@ class TenantBase(BaseModel):
 
 
 class TenantCreate(TenantBase):
-    pass
+    # Same checks as an allottee's CNIC and phone numbers. Only on input, so
+    # tenants saved before these checks existed still load.
+    @field_validator("cnic")
+    @classmethod
+    def _v_cnic(cls, v: str | None) -> str | None:
+        return _clean_cnic(v, "CNIC")
+
+    @field_validator("mobile")
+    @classmethod
+    def _v_mobile(cls, v: str | None) -> str | None:
+        v = _clean_phone(v, "Mobile")
+        if v and len(re.sub(r"\D", "", v)) < 10:
+            raise ValueError("Mobile number looks incomplete (e.g. 0300-1234567)")
+        return v
 
 
 class TenantOut(TenantBase):

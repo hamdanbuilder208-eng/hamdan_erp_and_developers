@@ -11,6 +11,7 @@ import { SendMessageModal } from "../components/communication/SendMessageModal";
 import { TableRowsSkeleton } from "../components/ui/Skeleton";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
+import { cnicDigits, formatCnic, onlyPhoneChars } from "../lib/identityFormat";
 import type { Allottee } from "../types";
 
 const portalUrl = `${window.location.origin}/portal/login`;
@@ -38,17 +39,6 @@ const emptyForm = {
   nominee_picture_url: "" as string | null,
 };
 
-// Phone fields: digits plus the usual separators — letters are dropped as typed.
-const onlyPhoneChars = (v: string) => v.replace(/[^0-9+\-() ]/g, "");
-
-// CNIC: digits only, auto-dashed as xxxxx-xxxxxxx-x (13 digits max).
-function formatCnic(v: string) {
-  const d = v.replace(/\D/g, "").slice(0, 13);
-  if (d.length <= 5) return d;
-  if (d.length <= 12) return `${d.slice(0, 5)}-${d.slice(5)}`;
-  return `${d.slice(0, 5)}-${d.slice(5, 12)}-${d.slice(12)}`;
-}
-const cnicDigits = (v: string) => v.replace(/\D/g, "");
 
 function PhotoPicker({
   label,

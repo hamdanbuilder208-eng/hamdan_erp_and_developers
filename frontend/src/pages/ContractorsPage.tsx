@@ -16,6 +16,7 @@ import {
 } from "../components/payments/PaymentDetailsFields";
 import { toast, apiErrorMessage } from "../lib/toast";
 import { confirm } from "../lib/confirm";
+import { formatCnic } from "../lib/identityFormat";
 import type {
   Account,
   ContractAgreement,
@@ -97,14 +98,6 @@ const emptyPaymentForm = () => ({
   narration: "",
   ...emptyPaymentMode(),
 });
-
-// CNIC: digits only, auto-dashed as xxxxx-xxxxxxx-x.
-function formatCnic(v: string) {
-  const d = v.replace(/\D/g, "").slice(0, 13);
-  if (d.length <= 5) return d;
-  if (d.length <= 12) return `${d.slice(0, 5)}-${d.slice(5)}`;
-  return `${d.slice(0, 5)}-${d.slice(5, 12)}-${d.slice(12)}`;
-}
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "danger" | "success" }) {
   return (
