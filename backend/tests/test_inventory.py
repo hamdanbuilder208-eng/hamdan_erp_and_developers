@@ -420,3 +420,32 @@ def test_grn_paid_amount_needs_an_account_and_cannot_exceed_total(
         _grn(vendor, warehouse, None, material, 10, 100, amount_paid=500)
     with pytest.raises(ValueError, match="more than the GRN total"):
         inventory_crud.create_grn(db, _grn(vendor, warehouse, cash_account, material, 10, 100, amount_paid=1_500))
+
+
+def test_vendor_payment_settles_oldest_grns_first(
+    db, vendor, warehouse, material, material_stock_account, cash_account, payable_account
+):
+    from datetime import timedelta
+
+    from app.schemas.inventory import GRNPaymentCreate
+
+    older = inventory_crud.create_grn(
+        db, _grn(vendor, warehouse, cash_account, material, 10, 1_000, amount_paid=4_000, grn_date=TODAY - timedelta(days=5))
+    )
+    newer = inventory_crud.create_grn(db, _grn(vendor, warehouse, None, material, 5, 1_000, amount_paid=0))
+    assert sum(g.balance for g in inventory_crud.vendor_unpaid_grns(db, vendor.id)) == 11_000
+
+    with pytest.raises(ValueError, match="Only PKR 11,000.00 is owed"):
+        inventory_crud.create_vendor_payment(
+            db, vendor.id, GRNPaymentCreate(payment_date=TODAY, amount=12_000, payment_account_id=cash_account.id)
+        )
+
+    payments = inventory_crud.create_vendor_payment(
+        db, vendor.id, GRNPaymentCreate(payment_date=TODAY, amount=8_000, payment_account_id=cash_account.id)
+    )
+
+    assert [(p.grn_no, float(p.amount)) for p in payments] == [(older.grn_no, 6_000), (newer.grn_no, 2_000)]
+    db.expire_all()
+    assert inventory_crud.get_grn(db, older.id).payment_status == "Paid"
+    assert inventory_crud.get_grn(db, newer.id).balance == 3_000
+    assert {p.vendor_name for p in inventory_crud.list_grn_payments(db, vendor_id=vendor.id)} == {vendor.name}

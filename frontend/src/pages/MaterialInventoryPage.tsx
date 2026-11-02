@@ -40,6 +40,7 @@ import type {
   PurchaseOrder,
   StockBalance,
   Vendor,
+  VendorPayment,
   Warehouse,
 } from "../types";
 
@@ -49,6 +50,7 @@ type InventoryTab =
   | "materials"
   | "purchase-orders"
   | "grn"
+  | "vendor-payments"
   | "issues"
   | "stock";
 
@@ -400,13 +402,62 @@ export default function MaterialInventoryPage() {
   });
   const deleteGrnPayment = useMutation({
     mutationFn: async (id: number) => api.delete(`/inventory/grn-payments/${id}`),
-    onSuccess: invalidateGrnMoney,
+    onSuccess: () => {
+      invalidateGrnMoney();
+      queryClient.invalidateQueries({ queryKey: ["vendor-payments"] });
+    },
     onError: (err: unknown) => toast.error(errorMessage(err, "Failed to delete payment.")),
   });
 
   // What's still owed to each vendor across their GRNs.
   const vendorPayable = (vendorId: number) =>
     (grns ?? []).filter((g) => g.vendor_id === vendorId).reduce((s, g) => s + Number(g.balance), 0);
+
+  // ---- Vendor Payments tab: pay a vendor a lump sum, settled oldest GRN first ----
+  const [vpVendorId, setVpVendorId] = React.useState("");
+  const emptyVpForm = () => ({
+    payment_date: todayIso(),
+    amount: "",
+    payment_account_id: "",
+    narration: "",
+    ...emptyPaymentMode(),
+  });
+  const [vpForm, setVpForm] = React.useState(emptyVpForm);
+  const vpUnpaidGrns = (grns ?? [])
+    .filter((g) => g.vendor_id === Number(vpVendorId) && g.balance > 0)
+    .sort((a, b) => a.grn_date.localeCompare(b.grn_date) || a.id - b.id);
+  const vpOwed = vpUnpaidGrns.reduce((s, g) => s + Number(g.balance), 0);
+
+  const { data: vendorPayments } = useQuery({
+    queryKey: ["vendor-payments", vpVendorId],
+    queryFn: async () =>
+      (
+        await api.get<VendorPayment[]>("/inventory/vendor-payments", {
+          params: { vendor_id: vpVendorId || undefined },
+        })
+      ).data,
+    enabled: tab === "vendor-payments",
+  });
+
+  const payVendor = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post<VendorPayment[]>(`/inventory/vendors/${vpVendorId}/payments`, {
+          payment_date: vpForm.payment_date,
+          amount: Number(vpForm.amount),
+          payment_account_id: Number(vpForm.payment_account_id),
+          narration: vpForm.narration || null,
+          ...paymentModePayload(vpForm),
+        })
+      ).data,
+    onSuccess: (made) => {
+      invalidateGrnMoney();
+      queryClient.invalidateQueries({ queryKey: ["vendor-payments"] });
+      toast.success(`Payment saved against ${made.map((p) => p.grn_no).join(", ")}.`);
+      setVpForm(emptyVpForm());
+    },
+    onError: (err: unknown) => toast.error(errorMessage(err, "Failed to record payment.")),
+  });
 
   const deleteGrn = useMutation({
     mutationFn: async (id: number) => api.delete(`/inventory/grn/${id}`),
@@ -792,6 +843,7 @@ export default function MaterialInventoryPage() {
             { key: "warehouses", label: "Warehouses" },
             { key: "purchase-orders", label: "Purchase Orders" },
             { key: "grn", label: "GRN" },
+            { key: "vendor-payments", label: "Vendor Payments" },
             { key: "stock", label: "Stock Balance" },
             { key: "issues", label: "Material Issues" },
           ] as { key: InventoryTab; label: string }[]
@@ -1229,6 +1281,225 @@ export default function MaterialInventoryPage() {
           </table>
           </div>
         </Card>
+      )}
+
+      {tab === "vendor-payments" && (
+        <div className="space-y-4">
+          <Card>
+            <div className="border-b border-slate-100 px-5 py-4 dark:border-navy-800">
+              <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">Pay a Vendor</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Pick the vendor, see what's pending, and record whatever you pay now — it's applied to their
+                oldest unpaid GRN first and the balances update by themselves.
+              </p>
+            </div>
+            <div className="space-y-4 px-5 py-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr]">
+                <div>
+                  <Label htmlFor="vp_vendor">Vendor</Label>
+                  <Select
+                    id="vp_vendor"
+                    value={vpVendorId}
+                    onChange={(e) => {
+                      setVpVendorId(e.target.value);
+                      setVpForm(emptyVpForm());
+                    }}
+                  >
+                    <option value="">Select vendor</option>
+                    {vendors?.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name}
+                        {vendorPayable(v.id) > 0 ? ` — PKR ${vendorPayable(v.id).toLocaleString()} pending` : ""}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                {vpVendorId && (
+                  <div className="rounded-lg bg-slate-50 px-4 py-2 dark:bg-navy-800/60">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Pending</p>
+                    <p
+                      className={`text-lg font-semibold tabular-nums ${
+                        vpOwed > 0 ? "text-danger-600" : "text-success-700"
+                      }`}
+                    >
+                      PKR {vpOwed.toLocaleString()}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {vpVendorId && vpUnpaidGrns.length > 0 && (
+                <>
+                  <table className="w-full text-left text-sm">
+                    <thead className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      <tr>
+                        <th className="py-2 font-medium">GRN</th>
+                        <th className="py-2 font-medium">Date</th>
+                        <th className="py-2 text-right font-medium">Total</th>
+                        <th className="py-2 text-right font-medium">Paid</th>
+                        <th className="py-2 text-right font-medium">Pending</th>
+                        <th className="py-2 font-medium">Due</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
+                      {vpUnpaidGrns.map((g) => (
+                        <tr key={g.id}>
+                          <td className="py-2 font-mono text-xs text-slate-500">{g.grn_no}</td>
+                          <td className="py-2 text-slate-500 dark:text-slate-400">{g.grn_date}</td>
+                          <td className="py-2 text-right tabular-nums">{g.total_amount.toLocaleString()}</td>
+                          <td className="py-2 text-right tabular-nums text-success-700">
+                            {g.paid_amount.toLocaleString()}
+                          </td>
+                          <td className="py-2 text-right font-medium tabular-nums text-danger-600">
+                            {g.balance.toLocaleString()}
+                          </td>
+                          <td className="py-2 text-slate-500 dark:text-slate-400">{g.payment_due_date ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <form
+                    className="space-y-4 border-t border-slate-100 pt-4 dark:border-navy-800"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      payVendor.mutate();
+                    }}
+                  >
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      <div>
+                        <Label htmlFor="vp_amount">Amount Paying (PKR)</Label>
+                        <Input
+                          id="vp_amount"
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          max={vpOwed}
+                          required
+                          placeholder={String(vpOwed)}
+                          value={vpForm.amount}
+                          onChange={(e) => setVpForm({ ...vpForm, amount: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="vp_date">Date</Label>
+                        <Input
+                          id="vp_date"
+                          type="date"
+                          required
+                          value={vpForm.payment_date}
+                          onChange={(e) => setVpForm({ ...vpForm, payment_date: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="vp_account">Paid From</Label>
+                        <Select
+                          id="vp_account"
+                          required
+                          value={vpForm.payment_account_id}
+                          onChange={(e) => setVpForm({ ...vpForm, payment_account_id: e.target.value })}
+                        >
+                          <option value="">Select account</option>
+                          {paymentAccounts.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.code} — {a.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                    </div>
+                    <PaymentModeSection
+                      idPrefix="vp"
+                      value={vpForm}
+                      onChange={(patch) => setVpForm({ ...vpForm, ...patch })}
+                    />
+                    <div>
+                      <Label htmlFor="vp_narration">Narration (optional)</Label>
+                      <Input
+                        id="vp_narration"
+                        value={vpForm.narration}
+                        onChange={(e) => setVpForm({ ...vpForm, narration: e.target.value })}
+                      />
+                    </div>
+                    {Number(vpForm.amount) > 0 && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        After this, PKR {Math.max(vpOwed - Number(vpForm.amount), 0).toLocaleString()} will still be
+                        pending.
+                      </p>
+                    )}
+                    <div className="flex justify-end">
+                      <Button type="submit" disabled={payVendor.isPending}>
+                        Save Payment
+                      </Button>
+                    </div>
+                  </form>
+                </>
+              )}
+              {vpVendorId && vpUnpaidGrns.length === 0 && (
+                <p className="text-sm text-success-700">Nothing pending — this vendor is fully paid.</p>
+              )}
+            </div>
+          </Card>
+
+          <Card className="overflow-hidden">
+            <div className="border-b border-slate-100 px-5 py-4 dark:border-navy-800">
+              <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">
+                Payment History{vpVendorId ? ` — ${vendors?.find((v) => v.id === Number(vpVendorId))?.name ?? ""}` : ""}
+              </h3>
+            </div>
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-navy-800/60 dark:text-slate-400">
+                <tr>
+                  <th className="px-5 py-3 font-medium">Payment #</th>
+                  <th className="px-5 py-3 font-medium">Date</th>
+                  <th className="px-5 py-3 font-medium">Vendor</th>
+                  <th className="px-5 py-3 font-medium">Against GRN</th>
+                  <th className="px-5 py-3 font-medium">Mode</th>
+                  <th className="px-5 py-3 text-right font-medium">Amount</th>
+                  <th className="px-5 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
+                {(vendorPayments ?? []).length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-8 text-center text-slate-400 dark:text-slate-500">
+                      No vendor payments yet.
+                    </td>
+                  </tr>
+                )}
+                {vendorPayments?.map((p) => (
+                  <tr key={p.id}>
+                    <td className="px-5 py-3 font-mono text-xs text-slate-500">{p.payment_no}</td>
+                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{p.payment_date}</td>
+                    <td className="px-5 py-3 text-navy-900 dark:text-slate-100">{p.vendor_name}</td>
+                    <td className="px-5 py-3 font-mono text-xs text-slate-500">{p.grn_no}</td>
+                    <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
+                      {p.mode_of_payment} · {p.payment_account.name}
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums text-navy-900 dark:text-slate-100">
+                      PKR {Number(p.amount).toLocaleString()}
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <button
+                        onClick={async () => {
+                          const ok = await confirm(`Delete payment ${p.payment_no}? It will be pending again.`, {
+                            danger: true,
+                            confirmLabel: "Delete",
+                          });
+                          if (ok) deleteGrnPayment.mutate(p.id);
+                        }}
+                        title="Delete payment"
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-danger-50 hover:text-danger-500 dark:text-slate-500"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </div>
       )}
 
       {tab === "issues" && (

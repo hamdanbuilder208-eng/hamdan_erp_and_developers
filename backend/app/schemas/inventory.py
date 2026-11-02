@@ -220,6 +220,14 @@ class GRNPaymentOut(PaymentModeFields):
     narration: str | None
 
 
+class VendorPaymentOut(GRNPaymentOut):
+    """A GRN payment as listed on the Vendor Payments tab."""
+
+    grn_no: str
+    vendor_id: int
+    vendor_name: str
+
+
 class GRNOut(GRNBase):
     model_config = ConfigDict(from_attributes=True)
     id: int

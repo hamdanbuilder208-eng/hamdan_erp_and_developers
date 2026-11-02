@@ -160,6 +160,19 @@ class GRNPayment(Base, PaymentModeMixin, TimestampMixin):
     grn: Mapped["GRN"] = relationship(back_populates="payments")
     payment_account: Mapped["Account"] = relationship()
 
+    # For the Vendor Payments list.
+    @property
+    def grn_no(self) -> str:
+        return self.grn.grn_no
+
+    @property
+    def vendor_id(self) -> int:
+        return self.grn.vendor_id
+
+    @property
+    def vendor_name(self) -> str:
+        return self.grn.vendor.name
+
 
 class GRNLine(Base, TimestampMixin):
     __tablename__ = "grn_lines"

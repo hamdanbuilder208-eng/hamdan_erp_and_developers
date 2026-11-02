@@ -1080,6 +1080,13 @@ export interface GRNPayment extends PaymentModeRecord {
   narration: string | null;
 }
 
+/** A GRN payment as listed on the Vendor Payments tab. */
+export interface VendorPayment extends GRNPayment {
+  grn_no: string;
+  vendor_id: number;
+  vendor_name: string;
+}
+
 export interface MaterialIssueLine {
   id: number;
   material_id: number;

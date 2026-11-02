@@ -8,6 +8,7 @@ from app.schemas.inventory import (
     GRNCreate,
     GRNOut,
     GRNPaymentCreate,
+    VendorPaymentOut,
     MaterialCreate,
     MaterialIssueCreate,
     MaterialIssueOut,
@@ -201,6 +202,24 @@ def create_grn_payment(grn_id: int, payment_in: GRNPaymentCreate, db: Session = 
         raise HTTPException(status_code=404, detail="GRN not found")
     try:
         return inventory_crud.create_grn_payment(db, db_grn, payment_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/vendor-payments", response_model=list[VendorPaymentOut])
+def list_vendor_payments(vendor_id: int | None = None, db: Session = Depends(get_db)):
+    return inventory_crud.list_grn_payments(db, vendor_id=vendor_id)
+
+
+@router.post(
+    "/vendors/{vendor_id}/payments",
+    response_model=list[VendorPaymentOut],
+    status_code=status.HTTP_201_CREATED,
+)
+def pay_vendor(vendor_id: int, payment_in: GRNPaymentCreate, db: Session = Depends(get_db)):
+    """Pay a vendor a lump sum; it settles their unpaid GRNs oldest first."""
+    try:
+        return inventory_crud.create_vendor_payment(db, vendor_id, payment_in)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

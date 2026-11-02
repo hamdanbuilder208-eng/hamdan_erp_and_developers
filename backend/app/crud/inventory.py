@@ -525,15 +525,64 @@ def _get_or_create_payable_account(db: Session) -> Account:
 
 
 def create_grn_payment(db: Session, db_grn: GRN, payment_in: GRNPaymentCreate) -> GRN:
-    """Pays the vendor (all or part of) what's still owed on a GRN: debit
-    Accounts Payable, credit the cash/bank account it's paid from."""
+    """Pays the vendor (all or part of) what's still owed on one GRN."""
     amount = round(payment_in.amount, 2)
     if amount > db_grn.balance + 0.005:
         raise ValueError(
             f"Only PKR {db_grn.balance:,.2f} is still owed on {db_grn.grn_no} — "
             f"can't pay PKR {amount:,.2f}"
         )
+    _add_grn_payment(db, db_grn, payment_in, amount)
+    db.commit()
+    db.expire(db_grn)
+    return get_grn(db, db_grn.id)
 
+
+def vendor_unpaid_grns(db: Session, vendor_id: int) -> list[GRN]:
+    """A vendor's GRNs with money still owed, oldest first (the order a
+    vendor-level payment settles them in)."""
+    grns = _load_grn_query(db).filter(GRN.vendor_id == vendor_id).order_by(GRN.grn_date, GRN.id).all()
+    return [g for g in grns if g.balance > 0]
+
+
+def create_vendor_payment(db: Session, vendor_id: int, payment_in: GRNPaymentCreate) -> list[GRNPayment]:
+    """Pays a vendor a lump sum against everything owed to them: settles
+    their unpaid GRNs oldest first, recording one payment per GRN it lands on."""
+    vendor = db.query(Vendor).filter(Vendor.id == vendor_id).first()
+    if not vendor:
+        raise ValueError("Vendor not found")
+    unpaid = vendor_unpaid_grns(db, vendor_id)
+    owed = round(sum(g.balance for g in unpaid), 2)
+    remaining = round(payment_in.amount, 2)
+    if owed <= 0:
+        raise ValueError(f"Nothing is owed to {vendor.name}")
+    if remaining > owed + 0.005:
+        raise ValueError(f"Only PKR {owed:,.2f} is owed to {vendor.name} — can't pay PKR {remaining:,.2f}")
+
+    created = []
+    for grn in unpaid:
+        if remaining <= 0:
+            break
+        part = min(grn.balance, remaining)
+        created.append(_add_grn_payment(db, grn, payment_in, part))
+        remaining = round(remaining - part, 2)
+    db.commit()
+    return [get_grn_payment(db, p.id) for p in created]
+
+
+def list_grn_payments(db: Session, vendor_id: int | None = None) -> list[GRNPayment]:
+    query = db.query(GRNPayment).options(
+        joinedload(GRNPayment.payment_account),
+        joinedload(GRNPayment.grn).joinedload(GRN.vendor),
+    )
+    if vendor_id is not None:
+        query = query.join(GRN, GRNPayment.grn_id == GRN.id).filter(GRN.vendor_id == vendor_id)
+    return query.order_by(GRNPayment.payment_date.desc(), GRNPayment.id.desc()).all()
+
+
+def _add_grn_payment(db: Session, db_grn: GRN, payment_in: GRNPaymentCreate, amount: float) -> GRNPayment:
+    """Records `amount` paid to the vendor against one GRN (no commit): debit
+    Accounts Payable, credit the cash/bank account it's paid from."""
     db_payment = GRNPayment(
         payment_no=next_persistent_sequence_number(db, GRNPayment.payment_no, "VPY-", 5),
         grn_id=db_grn.id,
@@ -575,9 +624,9 @@ def create_grn_payment(db: Session, db_grn: GRN, payment_in: GRNPaymentCreate) -
         )
     )
     db_payment.voucher_id = voucher.id
-    db.commit()
-    db.expire(db_grn)
-    return get_grn(db, db_grn.id)
+    db.flush()
+    db.expire(db_grn)  # its payments (and so its balance) reload with this one
+    return db_payment
 
 
 def get_grn_payment(db: Session, payment_id: int) -> GRNPayment | None:
