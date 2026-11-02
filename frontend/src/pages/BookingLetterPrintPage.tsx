@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
 import type { Booking, BookingTransfer, CompanySettings } from "../types";
+import hamdanIcon from "../assets/hamdan-icon-transparent.png";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -34,7 +35,8 @@ function LetterShell({
       </div>
       <div className="mx-auto w-full max-w-[210mm] bg-white p-10 shadow-sm print:shadow-none print:p-6">
         <div className="flex items-start justify-between border-b border-slate-200 pb-5">
-          <div>
+          <div className="flex items-center gap-3">
+            <img src={hamdanIcon} alt="Hamdan" className="h-14 w-auto shrink-0" />
             <p className="text-lg font-bold text-navy-950">
               {companySettings?.company_name ?? "Hamdan Builders and Developers"}
             </p>
@@ -81,8 +83,7 @@ function AllotmentLetter({ booking }: { booking: Booking }) {
       <p>
         We are pleased to confirm that Unit <strong>{booking.unit.unit_number}</strong> in project{" "}
         <strong>{booking.project.project_name}</strong> has been allotted to you against Booking Ref{" "}
-        <strong>{booking.booking_ref_no}</strong> dated {booking.booking_date}, at a total price of{" "}
-        <strong>PKR {Number(booking.total_price).toLocaleString()}</strong>.
+        <strong>{booking.booking_ref_no}</strong> dated {booking.booking_date}.
       </p>
       <p>
         This allotment is subject to the terms and conditions of the Booking/Allotment Agreement

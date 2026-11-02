@@ -4,6 +4,7 @@ import { Printer, UserRound } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import type { Allottee, CompanySettings } from "../types";
+import hamdanIcon from "../assets/hamdan-icon-transparent.png";
 
 const API_ORIGIN = new URL(api.defaults.baseURL ?? "", window.location.origin).origin;
 const photoUrl = (path: string | null) => (path ? `${API_ORIGIN}${path}` : null);
@@ -60,7 +61,8 @@ export default function AllotteePrintPage() {
 
       <div className="mx-auto w-full max-w-[210mm] bg-white p-10 shadow-sm print:shadow-none print:p-6">
         <div className="flex items-start justify-between border-b border-slate-200 pb-5">
-          <div>
+          <div className="flex items-center gap-3">
+            <img src={hamdanIcon} alt="Hamdan" className="h-14 w-auto shrink-0" />
             <p className="text-lg font-bold text-navy-950">
               {companySettings?.company_name ?? "Hamdan Builders and Developers"}
             </p>

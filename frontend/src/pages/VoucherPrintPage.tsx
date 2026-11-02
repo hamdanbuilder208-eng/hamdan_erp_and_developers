@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
 import type { CompanySettings, Voucher } from "../types";
+import hamdanIcon from "../assets/hamdan-icon-transparent.png";
 
 const VOUCHER_TERMS = [
   "This voucher is recorded in the company's official books as per the accounts and amounts stated above.",
@@ -44,7 +45,8 @@ export default function VoucherPrintPage() {
 
       <div className="mx-auto w-full max-w-[210mm] bg-white p-10 shadow-sm print:shadow-none print:p-6">
         <div className="flex items-start justify-between border-b border-slate-200 pb-5">
-          <div>
+          <div className="flex items-center gap-3">
+            <img src={hamdanIcon} alt="Hamdan" className="h-14 w-auto shrink-0" />
             <p className="text-lg font-bold text-navy-950">
               {companySettings?.company_name ?? "Hamdan Builders and Developers"}
             </p>

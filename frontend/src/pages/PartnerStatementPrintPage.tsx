@@ -4,6 +4,7 @@ import { Printer } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { AccountantSignature } from "../components/print/SignatureBlock";
+import hamdanIcon from "../assets/hamdan-icon-transparent.png";
 import type {
   CompanySettings,
   PartnerContribution,
@@ -103,7 +104,8 @@ export default function PartnerStatementPrintPage() {
 
       <div className="mx-auto w-full max-w-[210mm] bg-white p-10 shadow-sm print:shadow-none print:p-6">
         <div className="flex items-start justify-between border-b border-slate-200 pb-5">
-          <div>
+          <div className="flex items-center gap-3">
+            <img src={hamdanIcon} alt="Hamdan" className="h-14 w-auto shrink-0" />
             <p className="text-lg font-bold text-navy-950">
               {companySettings?.company_name ?? "Hamdan Builders and Developers"}
             </p>
