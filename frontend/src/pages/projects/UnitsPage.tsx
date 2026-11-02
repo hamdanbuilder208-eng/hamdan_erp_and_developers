@@ -866,8 +866,7 @@ export default function UnitsPage() {
                     const category = categories?.find((c) => c.id === Number(e.target.value));
                     updateGenRow(i, {
                       unit_category_id: e.target.value,
-                      base_price:
-                        row.base_price || (category?.base_price ? String(category.base_price) : ""),
+                      base_price: category?.base_price ? String(category.base_price) : "",
                     });
                   }}
                   className="flex-1"
