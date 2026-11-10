@@ -88,6 +88,8 @@ export default function ReceiptsPage() {
   const [formError, setFormError] = React.useState<string | null>(null);
   const [messageReceipt, setMessageReceipt] = React.useState<Receipt | null>(null);
   const [filterProjectId, setFilterProjectId] = React.useState("");
+  const [view, setView] = React.useState<"receipts" | "forwards">("receipts");
+  const [forwardSearch, setForwardSearch] = React.useState("");
 
   const { data: receipts, isLoading } = useQuery({
     queryKey: ["receipts", filterProjectId],
@@ -372,6 +374,34 @@ export default function ReceiptsPage() {
     },
   });
 
+  // Every hand-on of a customer cheque, newest first, with the cheque it came from.
+  const forwardHistory = React.useMemo(() => {
+    const rows = (receipts ?? []).flatMap((r) => (r.forwards ?? []).map((f) => ({ f, r })));
+    rows.sort((a, b) => b.f.forward_date.localeCompare(a.f.forward_date) || b.f.id - a.f.id);
+    const terms = forwardSearch.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return rows;
+    return rows.filter(({ f, r }) => {
+      const hay = [
+        f.forward_no,
+        f.party_name,
+        f.party_contact,
+        f.debit_account.name,
+        f.status,
+        r.receipt_no,
+        r.cheque_no,
+        r.cheque_bank_name,
+        r.booking.allottee.name,
+        r.booking.project.project_name,
+        r.booking.unit.unit_number,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return terms.every((t) => hay.includes(t));
+    });
+  }, [receipts, forwardSearch]);
+  const forwardCount = (receipts ?? []).reduce((n, r) => n + (r.forwards ?? []).length, 0);
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -387,16 +417,125 @@ export default function ReceiptsPage() {
         </Button>
       </div>
 
-      <Select value={filterProjectId} onChange={(e) => setFilterProjectId(e.target.value)} className="w-56">
-        <option value="">All Projects</option>
-        {projects?.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.project_name}
-          </option>
-        ))}
-      </Select>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm dark:border-navy-700 dark:bg-navy-800">
+          {(
+            [
+              ["receipts", "All Receipts"],
+              ["forwards", `Forwarded Cheques (${forwardCount})`],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setView(key)}
+              className={
+                view === key
+                  ? "rounded-md bg-brand-600 px-3 py-1.5 font-medium text-white"
+                  : "rounded-md px-3 py-1.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-navy-700"
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <Select value={filterProjectId} onChange={(e) => setFilterProjectId(e.target.value)} className="w-56">
+          <option value="">All Projects</option>
+          {projects?.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.project_name}
+            </option>
+          ))}
+        </Select>
+        {view === "forwards" && (
+          <Input
+            value={forwardSearch}
+            onChange={(e) => setForwardSearch(e.target.value)}
+            placeholder="Search party, cheque #, customer…"
+            className="w-72"
+          />
+        )}
+      </div>
 
-      <Card className="overflow-hidden">
+      {view === "forwards" && (
+        <Card className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <tr>
+                <th className="px-5 py-3 font-medium">Forward #</th>
+                <th className="px-5 py-3 font-medium">Date</th>
+                <th className="px-5 py-3 font-medium">Cheque</th>
+                <th className="px-5 py-3 font-medium">Received From</th>
+                <th className="px-5 py-3 font-medium">Forwarded To</th>
+                <th className="px-5 py-3 font-medium">Paid For</th>
+                <th className="px-5 py-3 text-right font-medium">Amount</th>
+                <th className="px-5 py-3 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
+              {isLoading && <TableRowsSkeleton rows={4} cols={8} />}
+              {!isLoading && forwardHistory.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                    {forwardCount === 0
+                      ? "No cheques have been forwarded yet."
+                      : "No forwarded cheques match your search."}
+                  </td>
+                </tr>
+              )}
+              {forwardHistory.map(({ f, r }) => (
+                <tr key={f.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
+                  <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">{f.forward_no}</td>
+                  <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{f.forward_date}</td>
+                  <td className="px-5 py-3 text-navy-900 dark:text-slate-100">
+                    #{r.cheque_no ?? "—"}
+                    <div className="text-xs text-slate-400 dark:text-slate-500">
+                      {[r.cheque_bank_name, r.cheque_date && `dated ${r.cheque_date}`].filter(Boolean).join(" · ")}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3 text-slate-500 dark:text-slate-400">
+                    <span className="text-navy-900 dark:text-slate-100">{r.booking.allottee.name}</span>
+                    <div className="text-xs text-slate-400 dark:text-slate-500">
+                      {r.receipt_no} · {r.receipt_date} · {r.booking.project.project_name} · {r.booking.unit.unit_number}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3 text-navy-900 dark:text-slate-100">
+                    {f.party_name}
+                    {f.party_contact && (
+                      <div className="text-xs text-slate-400 dark:text-slate-500">{f.party_contact}</div>
+                    )}
+                    {f.narration && (
+                      <div className="text-xs text-slate-400 dark:text-slate-500">{f.narration}</div>
+                    )}
+                  </td>
+                  <td className="px-5 py-3 text-slate-500 dark:text-slate-400">{f.debit_account.name}</td>
+                  <td className="px-5 py-3 text-right font-medium text-navy-900 dark:text-slate-100">
+                    PKR {Number(r.amount).toLocaleString()}
+                  </td>
+                  <td className="px-5 py-3">
+                    <span
+                      className={
+                        f.status === "Cleared"
+                          ? "inline-flex rounded-full bg-success-50 px-2 py-0.5 text-[11px] font-medium text-success-700"
+                          : f.status === "Bounced"
+                            ? "inline-flex rounded-full bg-danger-50 px-2 py-0.5 text-[11px] font-medium text-danger-700"
+                            : "inline-flex rounded-full bg-warning-50 px-2 py-0.5 text-[11px] font-medium text-warning-700"
+                      }
+                    >
+                      {f.status === "Forwarded" ? "With party" : `${f.status} at party`}
+                    </span>
+                    {f.status_date && (
+                      <div className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">{f.status_date}</div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      <Card className={view === "forwards" ? "hidden" : "overflow-hidden"}>
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 dark:bg-navy-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
             <tr>
