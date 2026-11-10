@@ -849,12 +849,17 @@ export interface Allottee {
   nominee_picture_url: string | null;
 }
 
+export type LeadFollowUpStatus = "New" | "Called" | "No Answer" | "Interested" | "Not Interested" | "Booked";
+
 export interface Lead {
   id: number;
   name: string;
   mobile: string;
   source: string | null;
   notes: string | null;
+  follow_up_status: LeadFollowUpStatus;
+  // When the follow-up status last changed (the last call).
+  follow_up_date: string | null;
 }
 
 export interface LeadImportResult {

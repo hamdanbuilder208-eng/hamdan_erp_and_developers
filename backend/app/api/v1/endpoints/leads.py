@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.crud import lead as lead_crud
 from app.db.session import get_db
-from app.schemas.lead import LeadCreate, LeadImportResult, LeadOut
+from app.schemas.lead import LeadCreate, LeadFollowUpUpdate, LeadImportResult, LeadOut
 
 router = APIRouter()
 
@@ -33,6 +33,14 @@ async def import_leads(file: UploadFile, db: Session = Depends(get_db)):
         return lead_crud.import_leads_from_excel(db, contents)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.patch("/{lead_id}/follow-up", response_model=LeadOut)
+def update_lead_follow_up(lead_id: int, follow_up_in: LeadFollowUpUpdate, db: Session = Depends(get_db)):
+    db_lead = lead_crud.get_lead(db, lead_id)
+    if not db_lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return lead_crud.update_follow_up(db, db_lead, follow_up_in)
 
 
 @router.delete("/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)

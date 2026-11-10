@@ -1,11 +1,12 @@
 import io
 import re
+from datetime import date
 
 import openpyxl
 from sqlalchemy.orm import Session
 
 from app.models.lead import Lead
-from app.schemas.lead import LeadCreate, LeadImportResult
+from app.schemas.lead import LeadCreate, LeadFollowUpUpdate, LeadImportResult
 
 _NAME_HEADERS = {"name", "customer name", "full name", "customer"}
 _MOBILE_HEADERS = {"mobile", "phone", "phone number", "mobile number", "contact", "contact number", "cell"}
@@ -40,6 +41,19 @@ def create_lead(db: Session, lead_in: LeadCreate) -> Lead:
         notes=lead_in.notes,
     )
     db.add(db_lead)
+    db.commit()
+    db.refresh(db_lead)
+    return db_lead
+
+
+def update_follow_up(db: Session, db_lead: Lead, follow_up_in: LeadFollowUpUpdate) -> Lead:
+    """Records where sales stands with this lead after a call; the date moves
+    to today whenever the status changes."""
+    if follow_up_in.status != db_lead.follow_up_status:
+        db_lead.follow_up_status = follow_up_in.status
+        db_lead.follow_up_date = date.today()
+    if follow_up_in.notes is not None:
+        db_lead.notes = follow_up_in.notes.strip() or None
     db.commit()
     db.refresh(db_lead)
     return db_lead

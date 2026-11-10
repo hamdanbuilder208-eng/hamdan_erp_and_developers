@@ -27,6 +27,39 @@ def test_create_lead_normalizes_mobile_number(db: Session):
     assert lead.mobile == "03001234567"
 
 
+def test_new_lead_starts_as_new_with_no_follow_up_date(db: Session):
+    lead = lead_crud.create_lead(db, LeadCreate(name="Ahmed", mobile="03001234567"))
+    assert lead.follow_up_status == "New"
+    assert lead.follow_up_date is None
+
+
+def test_follow_up_status_change_sets_today_and_keeps_notes(db: Session):
+    from datetime import date
+
+    from app.schemas.lead import LeadFollowUpUpdate
+
+    lead = lead_crud.create_lead(db, LeadCreate(name="Ahmed", mobile="03001234567", notes="FB ad"))
+    lead = lead_crud.update_follow_up(db, lead, LeadFollowUpUpdate(status="Interested"))
+
+    assert lead.follow_up_status == "Interested"
+    assert lead.follow_up_date == date.today()
+    assert lead.notes == "FB ad"
+
+    lead = lead_crud.update_follow_up(
+        db, lead, LeadFollowUpUpdate(status="Interested", notes="Wants 2-bed, call Monday")
+    )
+    assert lead.notes == "Wants 2-bed, call Monday"
+
+
+def test_follow_up_rejects_unknown_status():
+    from pydantic import ValidationError
+
+    from app.schemas.lead import LeadFollowUpUpdate
+
+    with pytest.raises(ValidationError):
+        LeadFollowUpUpdate(status="Maybe")
+
+
 def test_delete_lead_removes_it(db: Session):
     lead = lead_crud.create_lead(db, LeadCreate(name="Ahmed", mobile="03001234567"))
 
