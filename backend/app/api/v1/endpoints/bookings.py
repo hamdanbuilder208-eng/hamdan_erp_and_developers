@@ -127,6 +127,17 @@ def add_installment_plan(booking_id: int, plan_in: InstallmentPlanCreate, db: Se
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@router.put("/extra-charges/{charge_id}", response_model=BookingOut)
+def update_extra_charge(charge_id: int, charge_in: ExtraChargeCreate, db: Session = Depends(get_db)):
+    db_charge = booking_crud.get_extra_charge(db, charge_id)
+    if not db_charge:
+        raise HTTPException(status_code=404, detail="Extra charge not found")
+    try:
+        return booking_crud.update_extra_charge(db, db_charge, charge_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.delete("/extra-charges/{charge_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_extra_charge(charge_id: int, db: Session = Depends(get_db)):
     db_charge = booking_crud.get_extra_charge(db, charge_id)

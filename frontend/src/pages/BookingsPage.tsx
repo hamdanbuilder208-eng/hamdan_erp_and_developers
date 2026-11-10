@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, FileText, MessageCircle, Plus, Printer, Trash2 } from "lucide-react";
+import { CalendarClock, FileText, MessageCircle, Pencil, Plus, Printer, Trash2 } from "lucide-react";
 import { api } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -464,26 +464,58 @@ export default function BookingsPage() {
   const [extraChargeModalOpen, setExtraChargeModalOpen] = React.useState(false);
   const [extraChargeForm, setExtraChargeForm] = React.useState(emptyExtraCharge());
   const [extraChargeError, setExtraChargeError] = React.useState<string | null>(null);
+  // The charge's own date — may be back-dated; defaults to today for a new one.
+  const [extraChargeDate, setExtraChargeDate] = React.useState(todayIso());
+  // Set when the modal is editing an existing charge instead of adding one.
+  const [editingChargeId, setEditingChargeId] = React.useState<number | null>(null);
+
+  const openAddExtraCharge = () => {
+    setEditingChargeId(null);
+    setExtraChargeForm(emptyExtraCharge());
+    setExtraChargeDate(todayIso());
+    setExtraChargeError(null);
+    setExtraChargeModalOpen(true);
+  };
+
+  const openEditExtraCharge = (c: Booking["extra_charges"][number]) => {
+    setEditingChargeId(c.id);
+    setExtraChargeForm({
+      reason: c.reason,
+      custom_reason: c.custom_reason ?? "",
+      amount: String(c.amount),
+      narration: c.narration ?? "",
+    });
+    setExtraChargeDate(c.charge_date);
+    setExtraChargeError(null);
+    setExtraChargeModalOpen(true);
+  };
 
   const addExtraChargeToBooking = useMutation({
-    mutationFn: async () =>
-      (
-        await api.post<Booking>(`/bookings/${detailBooking!.id}/extra-charges`, {
-          ...extraChargePayload(extraChargeForm),
-          amount: Number(extraChargeForm.amount) || 0,
-          charge_date: todayIso(),
-          narration: extraChargeForm.narration || null,
-        })
-      ).data,
+    mutationFn: async () => {
+      const body = {
+        ...extraChargePayload(extraChargeForm),
+        amount: Number(extraChargeForm.amount) || 0,
+        charge_date: extraChargeDate,
+        narration: extraChargeForm.narration || null,
+      };
+      return editingChargeId
+        ? (await api.put<Booking>(`/bookings/extra-charges/${editingChargeId}`, body)).data
+        : (await api.post<Booking>(`/bookings/${detailBooking!.id}/extra-charges`, body)).data;
+    },
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["units"] });
       setDetailBooking(updated);
       setExtraChargeModalOpen(false);
       setExtraChargeForm(emptyExtraCharge());
       setExtraChargeError(null);
-      toast.success("Extra charge added.");
+      toast.success(editingChargeId ? "Extra charge updated." : "Extra charge added.");
+      setEditingChargeId(null);
     },
-    onError: (err: unknown) => setExtraChargeError(apiErrorMessage(err, "Failed to add extra charge.")),
+    onError: (err: unknown) =>
+      setExtraChargeError(
+        apiErrorMessage(err, editingChargeId ? "Failed to update extra charge." : "Failed to add extra charge."),
+      ),
   });
 
   const deleteExtraCharge = useMutation({
@@ -1193,7 +1225,7 @@ export default function BookingsPage() {
                   Extra Charges
                 </p>
                 {detailBooking.status !== "Cancelled" && (
-                  <Button size="sm" variant="secondary" onClick={() => setExtraChargeModalOpen(true)}>
+                  <Button size="sm" variant="secondary" onClick={openAddExtraCharge}>
                     <Plus className="h-3.5 w-3.5" />
                     Add Extra Charge
                   </Button>
@@ -1216,20 +1248,32 @@ export default function BookingsPage() {
                         <span className="text-navy-900 dark:text-slate-100">
                           {c.reason_label} · PKR {Number(c.amount).toLocaleString()} · {c.charge_date}
                         </span>
-                        {!paid && (
-                          <button
-                            onClick={async () => {
-                              const ok = await confirm(`Remove "${c.reason_label}" charge?`, {
-                                danger: true,
-                                confirmLabel: "Remove",
-                              });
-                              if (ok) deleteExtraCharge.mutate(c.id);
-                            }}
-                            className="rounded-md p-1 text-slate-400 hover:bg-danger-50 hover:text-danger-500"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {detailBooking.status !== "Cancelled" && (
+                            <button
+                              onClick={() => openEditExtraCharge(c)}
+                              title="Edit charge"
+                              className="rounded-md p-1 text-slate-400 hover:bg-brand-50 hover:text-brand-600"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {!paid && (
+                            <button
+                              onClick={async () => {
+                                const ok = await confirm(`Remove "${c.reason_label}" charge?`, {
+                                  danger: true,
+                                  confirmLabel: "Remove",
+                                });
+                                if (ok) deleteExtraCharge.mutate(c.id);
+                              }}
+                              title="Remove charge"
+                              className="rounded-md p-1 text-slate-400 hover:bg-danger-50 hover:text-danger-500"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -1529,7 +1573,7 @@ export default function BookingsPage() {
           setExtraChargeModalOpen(false);
           setExtraChargeError(null);
         }}
-        title="Add Extra Charge"
+        title={editingChargeId ? "Edit Extra Charge" : "Add Extra Charge"}
         description={detailBooking ? `${detailBooking.booking_ref_no} · ${detailBooking.unit.unit_number}` : undefined}
       >
         <form
@@ -1581,6 +1625,16 @@ export default function BookingsPage() {
                 onChange={(e) => setExtraChargeForm({ ...extraChargeForm, amount: e.target.value })}
               />
             </div>
+            <div>
+              <Label htmlFor="ec_date">Date</Label>
+              <Input
+                id="ec_date"
+                type="date"
+                required
+                value={extraChargeDate}
+                onChange={(e) => setExtraChargeDate(e.target.value)}
+              />
+            </div>
           </div>
           <div>
             <Label htmlFor="ec_narration">Narration (optional)</Label>
@@ -1595,7 +1649,7 @@ export default function BookingsPage() {
               Cancel
             </Button>
             <Button type="submit" disabled={addExtraChargeToBooking.isPending}>
-              Add Charge
+              {editingChargeId ? "Save Changes" : "Add Charge"}
             </Button>
           </div>
         </form>

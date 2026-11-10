@@ -321,6 +321,67 @@ def test_other_extra_charge_uses_typed_name(db: Session, project, unit, allottee
     assert any(l.label == "Extra Charges — Maintenance Deposit" for l in result.schedule_lines)
 
 
+def test_extra_charge_added_later_keeps_its_back_date(db: Session, project, unit, allottee):
+    from datetime import date
+
+    booking = booking_crud.create_booking(db, _booking_in(unit, project, allottee))
+    charge = ExtraChargeCreate(reason=ExtraChargesReason.WATER, amount=75_000, charge_date=date(2024, 9, 18))
+    result = booking_crud.add_extra_charge(db, booking, charge)
+
+    assert result.extra_charges[0].charge_date == date(2024, 9, 18)
+    line = next(l for l in result.schedule_lines if l.label == "Extra Charges — Water")
+    assert line.due_date == date(2024, 9, 18)
+
+
+def test_edit_extra_charge_updates_line_voucher_and_total(
+    db: Session, project, unit, allottee, accounting_accounts
+):
+    from datetime import date
+
+    from app.models.voucher import Voucher, VoucherLine
+
+    booking = booking_crud.create_booking(
+        db, _booking_in(unit, project, allottee, extra_charges=[_extra(50_000, ExtraChargesReason.WATER)])
+    )
+    charge = booking.extra_charges[0]
+    result = booking_crud.update_extra_charge(
+        db,
+        charge,
+        ExtraChargeCreate(reason=ExtraChargesReason.ELECTRICITY, amount=80_000, charge_date=date(2024, 9, 18)),
+    )
+
+    assert float(result.total_price) == float(unit.total_price) + 80_000
+    edited = result.extra_charges[0]
+    assert edited.reason_label == "Electricity"
+    assert edited.charge_date == date(2024, 9, 18)
+    line = next(l for l in result.schedule_lines if l.id == edited.schedule_line_id)
+    assert line.label == "Extra Charges — Electricity"
+    assert line.due_date == date(2024, 9, 18)
+    assert float(line.amount) == 80_000
+    voucher = db.query(Voucher).filter(Voucher.id == charge.voucher_id).one()
+    assert voucher.voucher_date == date(2024, 9, 18)
+    lines = db.query(VoucherLine).filter(VoucherLine.voucher_id == voucher.id).all()
+    assert sum(float(l.debit) for l in lines) == 80_000
+    assert sum(float(l.credit) for l in lines) == 80_000
+
+
+def test_edit_extra_charge_cannot_go_below_amount_received(
+    db: Session, project, unit, allottee, accounting_accounts
+):
+    booking = booking_crud.create_booking(
+        db, _booking_in(unit, project, allottee, extra_charges=[_extra(50_000, ExtraChargesReason.WATER)])
+    )
+    charge = booking.extra_charges[0]
+    line = next(l for l in booking.schedule_lines if l.id == charge.schedule_line_id)
+    line.paid_amount = 30_000
+    db.commit()
+
+    with pytest.raises(ValueError, match="already been received"):
+        booking_crud.update_extra_charge(
+            db, charge, ExtraChargeCreate(reason=ExtraChargesReason.WATER, amount=20_000, charge_date=TODAY)
+        )
+
+
 def test_other_extra_charge_requires_a_name():
     with pytest.raises(ValidationError, match="type what the charge is for"):
         ExtraChargeCreate(reason=ExtraChargesReason.OTHER, custom_reason=" ", amount=1_000, charge_date=TODAY)

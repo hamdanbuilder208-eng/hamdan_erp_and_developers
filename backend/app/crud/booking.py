@@ -155,6 +155,58 @@ def add_extra_charge(db: Session, db_booking: Booking, charge_in: ExtraChargeCre
     return get_booking(db, db_booking.id)
 
 
+def update_extra_charge(db: Session, db_charge: BookingExtraCharge, charge_in: ExtraChargeCreate) -> Booking:
+    """Corrects an extra charge (what it's for, amount, date, note) and keeps
+    everything it posted in step: its schedule line, its revenue voucher and
+    the booking's total price."""
+    booking = db.query(Booking).filter(Booking.id == db_charge.booking_id).first()
+    if booking and booking.status == BookingStatus.CANCELLED:
+        raise ValueError("Cannot edit a charge on a cancelled booking")
+
+    schedule_line = (
+        db.query(PaymentScheduleLine).filter(PaymentScheduleLine.id == db_charge.schedule_line_id).first()
+    )
+    if schedule_line and charge_in.amount < float(schedule_line.paid_amount):
+        raise ValueError(
+            f"PKR {float(schedule_line.paid_amount):,.0f} has already been received against this charge — "
+            "the amount can't be set lower than that."
+        )
+
+    reason_label = charge_reason_label(charge_in.reason, charge_in.custom_reason)
+    amount_change = charge_in.amount - float(db_charge.amount)
+
+    db_charge.reason = charge_in.reason
+    db_charge.custom_reason = charge_in.custom_reason
+    db_charge.amount = charge_in.amount
+    db_charge.charge_date = charge_in.charge_date
+    db_charge.narration = charge_in.narration
+
+    if schedule_line:
+        schedule_line.label = f"Extra Charges — {reason_label}"
+        schedule_line.due_date = charge_in.charge_date
+        schedule_line.amount = charge_in.amount
+
+    if db_charge.voucher_id:
+        voucher = db.query(Voucher).filter(Voucher.id == db_charge.voucher_id).first()
+        if voucher:
+            ref = booking.booking_ref_no if booking else ""
+            voucher.voucher_date = charge_in.charge_date
+            voucher.narration = f"Extra charge ({reason_label}) on booking {ref}"
+            for line in db.query(VoucherLine).filter(VoucherLine.voucher_id == voucher.id):
+                if float(line.debit) > 0:
+                    line.debit = charge_in.amount
+                else:
+                    line.credit = charge_in.amount
+                line.narration = f"Extra charge ({reason_label}) — {ref}"
+
+    if booking:
+        booking.total_price = float(booking.total_price) + amount_change
+        db.flush()
+        sync_unit_sold(db, booking)
+    db.commit()
+    return get_booking(db, db_charge.booking_id)
+
+
 def delete_extra_charge(db: Session, db_charge: BookingExtraCharge) -> None:
     schedule_line = (
         db.query(PaymentScheduleLine).filter(PaymentScheduleLine.id == db_charge.schedule_line_id).first()
