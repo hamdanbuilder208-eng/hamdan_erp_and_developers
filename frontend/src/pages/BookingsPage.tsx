@@ -122,6 +122,8 @@ type ExtraChargeForm = {
   custom_reason: string;
   amount: string;
   narration: string;
+  // Each charge has its own date (New Booking form); empty = the booking date.
+  charge_date?: string;
 };
 
 const emptyExtraCharge = (): ExtraChargeForm => ({
@@ -372,7 +374,7 @@ export default function BookingsPage() {
           extra_charges: form.extraCharges.map((c) => ({
             ...extraChargePayload(c),
             amount: Number(c.amount) || 0,
-            charge_date: form.booking_date,
+            charge_date: c.charge_date || form.booking_date,
             narration: c.narration || null,
           })),
           one_shot: form.one_shot,
@@ -851,6 +853,16 @@ export default function BookingsPage() {
                       placeholder="Amount"
                       value={charge.amount}
                       onChange={(e) => updateExtraCharge(idx, { amount: e.target.value })}
+                    />
+                  </div>
+                  <div className="w-40">
+                    <Input
+                      type="date"
+                      required
+                      aria-label="Charge date"
+                      title="Date of this charge"
+                      value={charge.charge_date || form.booking_date}
+                      onChange={(e) => updateExtraCharge(idx, { charge_date: e.target.value })}
                     />
                   </div>
                   <button
