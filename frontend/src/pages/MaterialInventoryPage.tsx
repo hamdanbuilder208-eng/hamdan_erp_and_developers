@@ -90,6 +90,12 @@ export default function MaterialInventoryPage() {
   const [tab, setTab] = React.useState<InventoryTab>(
     (searchParams.get("tab") as InventoryTab | null) || "vendors"
   );
+  const [vendorSearch, setVendorSearch] = React.useState("");
+  const [materialSearch, setMaterialSearch] = React.useState("");
+  const matches = (q: string, ...fields: (string | null | undefined)[]) => {
+    const needle = q.trim().toLowerCase();
+    return !needle || fields.some((f) => f?.toLowerCase().includes(needle));
+  };
   // A material's QR code deep-links here — jump straight to its stock and
   // pre-filter to just that material instead of landing on a blank tab.
   const [qrMaterial, setQrMaterial] = React.useState<Material | null>(null);
@@ -866,10 +872,18 @@ export default function MaterialInventoryPage() {
         <Card>
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-navy-800 px-5 py-4">
             <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">Vendors</h3>
-            <Button size="sm" onClick={() => setVendorModalOpen(true)}>
-              <Plus className="h-4 w-4" />
-              New Vendor
-            </Button>
+            <div className="flex items-center gap-2">
+              <Input
+                value={vendorSearch}
+                onChange={(e) => setVendorSearch(e.target.value)}
+                placeholder="Search name, phone, CNIC, code…"
+                className="w-64"
+              />
+              <Button size="sm" onClick={() => setVendorModalOpen(true)}>
+                <Plus className="h-4 w-4" />
+                New Vendor
+              </Button>
+            </div>
           </div>
           <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -892,7 +906,18 @@ export default function MaterialInventoryPage() {
                   </td>
                 </tr>
               )}
-              {vendors?.map((v) => (
+              {vendors?.length !== 0 &&
+                vendorSearch.trim() &&
+                !vendors?.some((v) => matches(vendorSearch, v.name, v.vendor_code, v.phone, v.ntn_cnic, v.address)) && (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                      No vendors match "{vendorSearch}".
+                    </td>
+                  </tr>
+                )}
+              {vendors
+                ?.filter((v) => matches(vendorSearch, v.name, v.vendor_code, v.phone, v.ntn_cnic, v.address))
+                .map((v) => (
                 <tr key={v.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                   <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">
                     {v.vendor_code}
@@ -1001,10 +1026,18 @@ export default function MaterialInventoryPage() {
         <Card>
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-navy-800 px-5 py-4">
             <h3 className="text-sm font-semibold text-navy-900 dark:text-slate-100">Materials</h3>
-            <Button size="sm" onClick={() => setMaterialModalOpen(true)}>
-              <Plus className="h-4 w-4" />
-              New Material
-            </Button>
+            <div className="flex items-center gap-2">
+              <Input
+                value={materialSearch}
+                onChange={(e) => setMaterialSearch(e.target.value)}
+                placeholder="Search name, code, category…"
+                className="w-64"
+              />
+              <Button size="sm" onClick={() => setMaterialModalOpen(true)}>
+                <Plus className="h-4 w-4" />
+                New Material
+              </Button>
+            </div>
           </div>
           <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -1025,7 +1058,18 @@ export default function MaterialInventoryPage() {
                   </td>
                 </tr>
               )}
-              {materials?.map((m) => {
+              {materials?.length !== 0 &&
+                materialSearch.trim() &&
+                !materials?.some((m) => matches(materialSearch, m.name, m.material_code, m.category, m.unit_of_measure)) && (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-10 text-center text-slate-400 dark:text-slate-500">
+                      No materials match "{materialSearch}".
+                    </td>
+                  </tr>
+                )}
+              {materials
+                ?.filter((m) => matches(materialSearch, m.name, m.material_code, m.category, m.unit_of_measure))
+                .map((m) => {
                 return (
                   <tr key={m.id} className="transition-colors hover:bg-slate-100 dark:hover:bg-navy-800">
                     <td className="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">
