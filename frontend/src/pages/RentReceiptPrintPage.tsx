@@ -56,11 +56,12 @@ export default function RentReceiptPrintPage() {
     .slice()
     .sort((a, b) => a.receipt_date.localeCompare(b.receipt_date));
 
-  const propertyLabel = agreement.unit
-    ? agreement.unit.unit_number
-    : agreement.land_property
-      ? `${agreement.land_property.property_ref_no} · ${agreement.land_property.area_location}`
-      : "—";
+  const propertyLabel =
+    (agreement.unit
+      ? agreement.unit.unit_number
+      : agreement.land_property
+        ? `${agreement.land_property.property_ref_no} · ${agreement.land_property.area_location}`
+        : "—") + (agreement.portion ? ` · ${agreement.portion}` : "");
 
   return (
     <div className="min-h-screen bg-slate-100 py-8 print:bg-white print:py-0">

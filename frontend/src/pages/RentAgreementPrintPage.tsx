@@ -8,8 +8,9 @@ import type { CompanySettings, RentAgreement } from "../types";
 import hamdanIcon from "../assets/hamdan-icon-transparent.png";
 
 function targetDescription(a: RentAgreement) {
-  if (a.unit) return `Unit ${a.unit.unit_number} (Ref: ${a.unit.unit_ref_no})`;
-  if (a.land_property) return `${a.land_property.area_location} (Ref: ${a.land_property.property_ref_no})`;
+  const portion = a.portion ? ` — ${a.portion}` : "";
+  if (a.unit) return `Unit ${a.unit.unit_number} (Ref: ${a.unit.unit_ref_no})${portion}`;
+  if (a.land_property) return `${a.land_property.area_location} (Ref: ${a.land_property.property_ref_no})${portion}`;
   return "—";
 }
 

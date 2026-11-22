@@ -895,6 +895,7 @@ export interface RentAgreement {
   tenant_id: number;
   unit_id: number | null;
   land_property_id: number | null;
+  portion: string | null;
   monthly_rent: number;
   security_deposit: number;
   start_date: string;

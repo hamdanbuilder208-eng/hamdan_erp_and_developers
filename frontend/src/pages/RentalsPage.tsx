@@ -48,6 +48,7 @@ const emptyAgreementForm = {
   tenant_id: "",
   target_type: "property" as "unit" | "property",
   target_id: "",
+  portion: "",
   monthly_rent: "",
   security_deposit: "",
   start_date: todayIso(),
@@ -88,10 +89,11 @@ function ChequeStatusChip({ r }: { r: { cheque_status: ChequeStatus | null; cheq
 }
 
 function targetLabel(a: RentAgreement, projectName?: (id: number) => string) {
+  const portion = a.portion ? ` · ${a.portion}` : "";
   if (a.unit)
-    return `${projectName ? `${projectName(a.unit.project_id)} · ` : ""}Unit ${a.unit.unit_number} (${a.unit.unit_ref_no})`;
+    return `${projectName ? `${projectName(a.unit.project_id)} · ` : ""}Unit ${a.unit.unit_number} (${a.unit.unit_ref_no})${portion}`;
   if (a.land_property)
-    return `${a.land_property.property_type} ${a.land_property.property_ref_no} — ${a.land_property.area_location}`;
+    return `${a.land_property.property_type} ${a.land_property.property_ref_no} — ${a.land_property.area_location}${portion}`;
   return "—";
 }
 
@@ -137,6 +139,19 @@ export default function RentalsPage() {
     queryKey: ["land-properties", "available"],
     queryFn: async () =>
       (await api.get<LandProperty[]>("/land-properties/", { params: { status_filter: "Available" } })).data,
+    enabled: agreementModalOpen,
+  });
+  // Already-rented ones can still take another tenant for a different portion
+  // (e.g. Ground Floor to one, 1st Floor to another).
+  const { data: rentedUnits } = useQuery({
+    queryKey: ["units", "rented"],
+    queryFn: async () => (await api.get<Unit[]>("/units/", { params: { status_filter: "Rented" } })).data,
+    enabled: agreementModalOpen,
+  });
+  const { data: rentedProperties } = useQuery({
+    queryKey: ["land-properties", "rented"],
+    queryFn: async () =>
+      (await api.get<LandProperty[]>("/land-properties/", { params: { status_filter: "Rented" } })).data,
     enabled: agreementModalOpen,
   });
   const { data: accounts } = useQuery({
@@ -252,6 +267,7 @@ export default function RentalsPage() {
           unit_id: agreementForm.target_type === "unit" ? Number(agreementForm.target_id) : null,
           land_property_id:
             agreementForm.target_type === "property" ? Number(agreementForm.target_id) : null,
+          portion: agreementForm.portion.trim() || null,
           monthly_rent: Number(agreementForm.monthly_rent),
           security_deposit: Number(agreementForm.security_deposit || 0),
           start_date: agreementForm.start_date,
@@ -419,7 +435,30 @@ export default function RentalsPage() {
     onError: (err: unknown) => toast.error(apiErrorMessage(err, "Failed to delete receipt.")),
   });
 
-  const targetOptions = agreementForm.target_type === "unit" ? availableUnits ?? [] : availableProperties ?? [];
+  // Portions already let out per unit/property, from its active agreements.
+  // A rented target with an active agreement for the whole thing (no portion)
+  // can't take another tenant, so it's left out of the list.
+  const activePortions = (kind: "unit" | "property", id: number) =>
+    (agreements ?? []).filter(
+      (a) => a.status === "Active" && (kind === "unit" ? a.unit_id === id : a.land_property_id === id),
+    );
+  const splittable = <T extends { id: number }>(kind: "unit" | "property", list: T[] | undefined) =>
+    (list ?? []).filter((t) => activePortions(kind, t.id).every((a) => !!a.portion));
+  const rentedNote = (kind: "unit" | "property", id: number) => {
+    const taken = activePortions(kind, id)
+      .map((a) => a.portion)
+      .filter(Boolean);
+    return taken.length ? ` — Rented: ${taken.join(", ")}` : " — Rented";
+  };
+  const targetOptions =
+    agreementForm.target_type === "unit"
+      ? [...(availableUnits ?? []), ...splittable("unit", rentedUnits)]
+      : [...(availableProperties ?? []), ...splittable("property", rentedProperties)];
+  const selectedIsRented =
+    !!agreementForm.target_id &&
+    (agreementForm.target_type === "unit" ? rentedUnits : rentedProperties)?.some(
+      (t) => t.id === Number(agreementForm.target_id),
+    );
 
   return (
     <div className="space-y-5">
@@ -735,7 +774,7 @@ export default function RentalsPage() {
           setAgreementError(null);
         }}
         title="New Rent Agreement"
-        description="Pick a tenant and a shop or property that's currently Available — it'll be marked Rented once this is saved."
+        description="Pick a tenant and a shop or property. An already-rented one can be let out again for a different portion (e.g. Ground Floor / 1st Floor)."
       >
         <form
           onSubmit={(e) => {
@@ -806,6 +845,7 @@ export default function RentalsPage() {
                           .map((u) => (
                             <option key={u.id} value={u.id}>
                               Unit {u.unit_number} ({u.unit_ref_no})
+                              {u.status === "Rented" ? rentedNote("unit", u.id) : ""}
                             </option>
                           ))}
                       </optgroup>
@@ -813,6 +853,7 @@ export default function RentalsPage() {
                   : (targetOptions as LandProperty[]).map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.property_type} {p.property_ref_no} — {p.area_location}
+                        {p.status === "Rented" ? rentedNote("property", p.id) : ""}
                       </option>
                     ))}
               </Select>
@@ -822,6 +863,24 @@ export default function RentalsPage() {
                 </p>
               )}
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor="agreement_portion">
+              Portion {selectedIsRented ? "" : "(optional — leave empty for the whole property)"}
+            </Label>
+            <Input
+              id="agreement_portion"
+              placeholder="e.g. Ground Floor, 1st Floor"
+              required={selectedIsRented}
+              value={agreementForm.portion}
+              onChange={(e) => setAgreementForm({ ...agreementForm, portion: e.target.value })}
+            />
+            {selectedIsRented && (
+              <p className="mt-1 text-xs text-slate-400">
+                This one is already rented — enter which part this tenant is taking.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

@@ -50,6 +50,9 @@ class RentAgreement(Base, TimestampMixin):
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     unit_id: Mapped[int | None] = mapped_column(ForeignKey("units.id"))
     land_property_id: Mapped[int | None] = mapped_column(ForeignKey("land_properties.id"))
+    # Which part of the unit/property is rented (e.g. "Ground Floor"), so one
+    # property can be split between tenants. Empty means the whole thing.
+    portion: Mapped[str | None] = mapped_column(String(100))
 
     monthly_rent: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
     security_deposit: Mapped[float] = mapped_column(Numeric(18, 2), default=0)

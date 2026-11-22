@@ -56,6 +56,7 @@ class RentAgreementBase(BaseModel):
     tenant_id: int
     unit_id: int | None = None
     land_property_id: int | None = None
+    portion: str | None = None
     monthly_rent: float
     security_deposit: float = 0
     start_date: date
@@ -64,6 +65,12 @@ class RentAgreementBase(BaseModel):
 
 
 class RentAgreementCreate(RentAgreementBase):
+    @field_validator("portion")
+    @classmethod
+    def _v_portion(cls, v: str | None) -> str | None:
+        v = (v or "").strip()
+        return v or None
+
     @model_validator(mode="after")
     def validate_exactly_one_target(self):
         if bool(self.unit_id) == bool(self.land_property_id):

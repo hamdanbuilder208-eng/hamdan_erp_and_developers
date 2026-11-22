@@ -89,6 +89,53 @@ def _add_schedule_lines(db: Session, db_agreement: RentAgreement) -> None:
         )
 
 
+def _active_agreements_on(
+    db: Session, unit_id: int | None, land_property_id: int | None, exclude_id: int | None = None
+) -> list[RentAgreement]:
+    query = db.query(RentAgreement).filter(RentAgreement.status == RentAgreementStatus.ACTIVE)
+    if unit_id:
+        query = query.filter(RentAgreement.unit_id == unit_id)
+    else:
+        query = query.filter(RentAgreement.land_property_id == land_property_id)
+    if exclude_id is not None:
+        query = query.filter(RentAgreement.id != exclude_id)
+    return query.all()
+
+
+def _check_portion_free(
+    db: Session, unit_id: int | None, land_property_id: int | None, portion: str | None, label: str
+) -> None:
+    """An already-rented unit/property can take another agreement only for a
+    different named portion (e.g. Ground Floor vs 1st Floor), and only if no
+    active agreement already covers the whole of it."""
+    if not portion:
+        raise ValueError(
+            f"{label} is already rented. To rent out another part of it, enter the Portion "
+            "(e.g. Ground Floor, 1st Floor)."
+        )
+    for a in _active_agreements_on(db, unit_id, land_property_id):
+        if not a.portion:
+            raise ValueError(f"{label} is already rented as a whole under {a.agreement_no}.")
+        if a.portion.strip().lower() == portion.lower():
+            raise ValueError(f"Portion \"{portion}\" of this {label.lower()} is already rented under {a.agreement_no}.")
+
+
+def _release_target_if_free(db: Session, db_agreement: RentAgreement) -> None:
+    """Back to Available only once no other active agreement holds a portion of it."""
+    if _active_agreements_on(db, db_agreement.unit_id, db_agreement.land_property_id, exclude_id=db_agreement.id):
+        return
+    if db_agreement.unit_id:
+        unit = db.query(Unit).filter(Unit.id == db_agreement.unit_id).first()
+        if unit and unit.status == UnitStatus.RENTED:
+            unit.status = UnitStatus.AVAILABLE
+    if db_agreement.land_property_id:
+        land_property = (
+            db.query(LandProperty).filter(LandProperty.id == db_agreement.land_property_id).first()
+        )
+        if land_property and land_property.status == LandPropertyStatus.RENTED:
+            land_property.status = LandPropertyStatus.AVAILABLE
+
+
 def create_agreement(db: Session, agreement_in: RentAgreementCreate) -> RentAgreement:
     tenant = db.query(Tenant).filter(Tenant.id == agreement_in.tenant_id).first()
     if not tenant:
@@ -96,12 +143,15 @@ def create_agreement(db: Session, agreement_in: RentAgreementCreate) -> RentAgre
 
     unit: Unit | None = None
     land_property: LandProperty | None = None
+    portion = agreement_in.portion
 
     if agreement_in.unit_id:
         unit = db.query(Unit).filter(Unit.id == agreement_in.unit_id).first()
         if not unit:
             raise ValueError("Unit not found")
-        if unit.status != UnitStatus.AVAILABLE:
+        if unit.status == UnitStatus.RENTED:
+            _check_portion_free(db, unit.id, None, portion, "Unit")
+        elif unit.status != UnitStatus.AVAILABLE:
             raise ValueError(f"Unit is not available (current status: {unit.status.value})")
     else:
         land_property = (
@@ -109,7 +159,9 @@ def create_agreement(db: Session, agreement_in: RentAgreementCreate) -> RentAgre
         )
         if not land_property:
             raise ValueError("Property not found")
-        if land_property.status != LandPropertyStatus.AVAILABLE:
+        if land_property.status == LandPropertyStatus.RENTED:
+            _check_portion_free(db, None, land_property.id, portion, "Property")
+        elif land_property.status != LandPropertyStatus.AVAILABLE:
             raise ValueError(f"Property is not available (current status: {land_property.status.value})")
 
     db_agreement = RentAgreement(
@@ -118,6 +170,7 @@ def create_agreement(db: Session, agreement_in: RentAgreementCreate) -> RentAgre
         tenant_id=agreement_in.tenant_id,
         unit_id=agreement_in.unit_id,
         land_property_id=agreement_in.land_property_id,
+        portion=portion,
         monthly_rent=agreement_in.monthly_rent,
         security_deposit=agreement_in.security_deposit,
         start_date=agreement_in.start_date,
@@ -153,6 +206,7 @@ def renew_agreement(
         tenant_id=db_agreement.tenant_id,
         unit_id=db_agreement.unit_id,
         land_property_id=db_agreement.land_property_id,
+        portion=db_agreement.portion,
         monthly_rent=renew_in.monthly_rent,
         security_deposit=renew_in.security_deposit,
         start_date=renew_in.start_date,
@@ -172,16 +226,7 @@ def terminate_agreement(db: Session, db_agreement: RentAgreement, end_date: date
     if db_agreement.status != RentAgreementStatus.ACTIVE:
         raise ValueError(f"This agreement is already {db_agreement.status.value.lower()}")
 
-    if db_agreement.unit_id:
-        unit = db.query(Unit).filter(Unit.id == db_agreement.unit_id).first()
-        if unit and unit.status == UnitStatus.RENTED:
-            unit.status = UnitStatus.AVAILABLE
-    if db_agreement.land_property_id:
-        land_property = (
-            db.query(LandProperty).filter(LandProperty.id == db_agreement.land_property_id).first()
-        )
-        if land_property and land_property.status == LandPropertyStatus.RENTED:
-            land_property.status = LandPropertyStatus.AVAILABLE
+    _release_target_if_free(db, db_agreement)
 
     db_agreement.status = RentAgreementStatus.TERMINATED
     db.commit()
@@ -200,16 +245,7 @@ def delete_agreement(db: Session, db_agreement: RentAgreement) -> None:
         )
 
     if db_agreement.status == RentAgreementStatus.ACTIVE:
-        if db_agreement.unit_id:
-            unit = db.query(Unit).filter(Unit.id == db_agreement.unit_id).first()
-            if unit and unit.status == UnitStatus.RENTED:
-                unit.status = UnitStatus.AVAILABLE
-        if db_agreement.land_property_id:
-            land_property = (
-                db.query(LandProperty).filter(LandProperty.id == db_agreement.land_property_id).first()
-            )
-            if land_property and land_property.status == LandPropertyStatus.RENTED:
-                land_property.status = LandPropertyStatus.AVAILABLE
+        _release_target_if_free(db, db_agreement)
 
     db.delete(db_agreement)
     db.commit()
