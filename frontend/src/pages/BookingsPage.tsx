@@ -1103,7 +1103,7 @@ export default function BookingsPage() {
             </div>
 
             {(previewDownPayment > 0 || previewPlansTotal > 0) && (
-              <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg bg-brand-50 px-4 py-2.5 text-sm text-brand-800 sm:grid-cols-4">
+              <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg bg-brand-50 px-4 py-2.5 text-sm text-brand-800 sm:grid-cols-5">
                 <div>
                   Total: <span className="font-semibold">PKR {previewTotal.toLocaleString()}</span>
                 </div>
@@ -1111,7 +1111,10 @@ export default function BookingsPage() {
                   Down Payment: <span className="font-semibold">PKR {previewDownPayment.toLocaleString()}</span>
                 </div>
                 <div>
-                  Plans Total: <span className="font-semibold">PKR {previewPlansTotal.toLocaleString()}</span>
+                  Installments: <span className="font-semibold">PKR {previewPlansTotal.toLocaleString()}</span>
+                </div>
+                <div>
+                  Extra Charges: <span className="font-semibold">PKR {previewExtraCharges.toLocaleString()}</span>
                 </div>
                 <div className={previewBalance !== 0 ? "font-semibold text-danger-700" : "font-semibold"}>
                   {previewBalance === 0 ? "Balanced" : `Unmatched: PKR ${previewBalance.toLocaleString()}`}
