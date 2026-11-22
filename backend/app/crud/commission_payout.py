@@ -52,7 +52,7 @@ def list_payouts(db: Session, agent_id: int | None = None, booking_id: int | Non
         query = query.filter(CommissionPayout.agent_id == agent_id)
     if booking_id is not None:
         query = query.filter(CommissionPayout.booking_id == booking_id)
-    return query.order_by(CommissionPayout.id.desc()).all()
+    return query.order_by(CommissionPayout.payout_date.desc(), CommissionPayout.id.desc()).all()
 
 
 def get_payout(db: Session, payout_id: int) -> CommissionPayout | None:

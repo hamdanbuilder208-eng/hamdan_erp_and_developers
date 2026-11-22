@@ -23,6 +23,7 @@ const emptyForm = {
 };
 
 const emptyPayoutForm = {
+  payout_date: "",
   amount: "",
   credit_account_id: "",
   narration: "",
@@ -121,7 +122,7 @@ export default function BrokersPage() {
     mutationFn: async () =>
       (
         await api.post("/commission-payouts/", {
-          payout_date: todayIso(),
+          payout_date: payoutForm.payout_date || todayIso(),
           booking_id: payoutBookingId,
           agent_id: selectedAgentId,
           credit_account_id: Number(payoutForm.credit_account_id),
@@ -306,6 +307,7 @@ export default function BrokersPage() {
                                 setPayoutBookingId(row.booking_id);
                                 setPayoutForm({
                                   ...emptyPayoutForm,
+                                  payout_date: todayIso(),
                                   amount: String(row.commission_balance),
                                 });
                               }}
@@ -480,6 +482,16 @@ export default function BrokersPage() {
               <strong>{payoutRow.project_name}</strong>
             </p>
           )}
+          <div>
+            <Label htmlFor="p_date">Date</Label>
+            <Input
+              id="p_date"
+              type="date"
+              required
+              value={payoutForm.payout_date}
+              onChange={(e) => setPayoutForm({ ...payoutForm, payout_date: e.target.value })}
+            />
+          </div>
           <div>
             <Label htmlFor="p_amount">Amount</Label>
             <Input
