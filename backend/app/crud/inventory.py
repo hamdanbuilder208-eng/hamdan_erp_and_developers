@@ -176,10 +176,28 @@ def get_material(db: Session, material_id: int) -> Material | None:
     return db.query(Material).filter(Material.id == material_id).first()
 
 
+def _normalize_material_name(name: str) -> str:
+    return " ".join((name or "").split())
+
+
+def _ensure_unique_material_name(db: Session, name: str, exclude_id: int | None = None) -> None:
+    """One record per material: the same name (ignoring case and extra spaces)
+    can't be added twice, so stock and purchases don't split across copies."""
+    key = name.lower()
+    for m in db.query(Material.id, Material.name, Material.material_code).all():
+        if m.id != exclude_id and _normalize_material_name(m.name).lower() == key:
+            raise ValueError(f'Material "{m.name}" already exists ({m.material_code}).')
+
+
 def create_material(db: Session, material_in: MaterialCreate) -> Material:
+    data = material_in.model_dump()
+    data["name"] = _normalize_material_name(data["name"])
+    if not data["name"]:
+        raise ValueError("Material name is required")
+    _ensure_unique_material_name(db, data["name"])
     db_material = Material(
         material_code=next_persistent_sequence_number(db, Material.material_code, "MAT-", 5),
-        **material_in.model_dump(),
+        **data,
     )
     db.add(db_material)
     db.commit()
@@ -188,7 +206,13 @@ def create_material(db: Session, material_in: MaterialCreate) -> Material:
 
 
 def update_material(db: Session, db_material: Material, material_in: MaterialUpdate) -> Material:
-    for field, value in material_in.model_dump(exclude_unset=True).items():
+    data = material_in.model_dump(exclude_unset=True)
+    if "name" in data and data["name"] is not None:
+        data["name"] = _normalize_material_name(data["name"])
+        if not data["name"]:
+            raise ValueError("Material name is required")
+        _ensure_unique_material_name(db, data["name"], exclude_id=db_material.id)
+    for field, value in data.items():
         setattr(db_material, field, value)
     db.commit()
     db.refresh(db_material)

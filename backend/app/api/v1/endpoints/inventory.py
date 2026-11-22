@@ -107,7 +107,10 @@ def list_materials(is_active: bool | None = None, db: Session = Depends(get_db))
 
 @router.post("/materials", response_model=MaterialOut, status_code=status.HTTP_201_CREATED)
 def create_material(material_in: MaterialCreate, db: Session = Depends(get_db)):
-    return inventory_crud.create_material(db, material_in)
+    try:
+        return inventory_crud.create_material(db, material_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.put("/materials/{material_id}", response_model=MaterialOut)
@@ -115,7 +118,10 @@ def update_material(material_id: int, material_in: MaterialUpdate, db: Session =
     db_material = inventory_crud.get_material(db, material_id)
     if not db_material:
         raise HTTPException(status_code=404, detail="Material not found")
-    return inventory_crud.update_material(db, db_material, material_in)
+    try:
+        return inventory_crud.update_material(db, db_material, material_in)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.delete("/materials/{material_id}", status_code=status.HTTP_204_NO_CONTENT)

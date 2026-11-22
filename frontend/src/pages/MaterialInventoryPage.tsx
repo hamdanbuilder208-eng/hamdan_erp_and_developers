@@ -202,7 +202,14 @@ export default function MaterialInventoryPage() {
       setMaterialModalOpen(false);
       setMaterialForm({ name: "", unit_of_measure: "", category: "" });
     },
+    onError: (err: unknown) => toast.error(errorMessage(err, "Failed to add material")),
   });
+  // Same name already on record (ignoring case/extra spaces) — warn while typing.
+  const duplicateMaterial = React.useMemo(() => {
+    const key = materialForm.name.split(/\s+/).filter(Boolean).join(" ").toLowerCase();
+    if (!key) return undefined;
+    return materials?.find((m) => m.name.split(/\s+/).filter(Boolean).join(" ").toLowerCase() === key);
+  }, [materialForm.name, materials]);
 
   const deleteMaterial = useMutation({
     mutationFn: async (id: number) => api.delete(`/inventory/materials/${id}`),
@@ -2105,6 +2112,11 @@ export default function MaterialInventoryPage() {
               onChange={(e) => setMaterialForm({ ...materialForm, name: e.target.value })}
               placeholder="e.g. Cement"
             />
+            {duplicateMaterial && (
+              <p className="mt-1 text-xs text-danger-600">
+                "{duplicateMaterial.name}" already exists ({duplicateMaterial.material_code}) — use that one instead.
+              </p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -2130,7 +2142,7 @@ export default function MaterialInventoryPage() {
             <Button type="button" variant="secondary" onClick={() => setMaterialModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={createMaterial.isPending}>
+            <Button type="submit" disabled={createMaterial.isPending || !!duplicateMaterial}>
               Add Material
             </Button>
           </div>
