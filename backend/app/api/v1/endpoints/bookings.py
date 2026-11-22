@@ -12,6 +12,7 @@ from app.schemas.booking import (
     BookingStatusUpdate,
     BookingTransferCreate,
     BookingTransferOut,
+    BookingUpdate,
     ExtraChargeCreate,
     InstallmentPlanCreate,
 )
@@ -45,6 +46,18 @@ def get_booking(booking_id: int, db: Session = Depends(get_db)):
     if not db_booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     return db_booking
+
+
+@router.put("/{booking_id}", response_model=BookingOut)
+def update_booking(booking_id: int, booking_in: BookingUpdate, db: Session = Depends(get_db)):
+    db_booking = booking_crud.get_booking(db, booking_id)
+    if not db_booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    try:
+        return booking_crud.update_booking(db, db_booking, booking_in)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.put("/{booking_id}/status", response_model=BookingOut)

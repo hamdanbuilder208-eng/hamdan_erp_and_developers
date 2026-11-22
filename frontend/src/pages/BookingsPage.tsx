@@ -156,6 +156,9 @@ const emptyForm = {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+const textareaClass =
+  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-navy-950 shadow-sm focus-visible:border-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:border-navy-700 dark:bg-navy-800 dark:text-slate-100";
+
 export default function BookingsPage() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = React.useState(false);
@@ -541,6 +544,72 @@ export default function BookingsPage() {
   }>({ left: 0 });
   const [customLetterOpen, setCustomLetterOpen] = React.useState(false);
   const [customLetterForm, setCustomLetterForm] = React.useState({ subject: "", body: "" });
+
+  // ---- Edit booking (fix a wrong price, amount or installment after saving) ----
+  type EditLine = { key: string; id: number | null; label: string; due_date: string; amount: string; paid: number };
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [editError, setEditError] = React.useState<string | null>(null);
+  const [editForm, setEditForm] = React.useState<{
+    booking_date: string;
+    unit_price: string;
+    discount: string;
+    remarks: string;
+    lines: EditLine[];
+  }>({ booking_date: "", unit_price: "", discount: "", remarks: "", lines: [] });
+
+  const openEditBooking = (b: Booking) => {
+    const extraLineIds = new Set(b.extra_charges.map((c) => c.schedule_line_id));
+    const extrasTotal = b.extra_charges.reduce((s, c) => s + Number(c.amount), 0);
+    setEditForm({
+      booking_date: b.booking_date,
+      unit_price: String(Number(b.total_price) - extrasTotal + Number(b.discount)),
+      discount: String(Number(b.discount) || ""),
+      remarks: b.remarks ?? "",
+      lines: b.schedule_lines
+        .filter((l) => !extraLineIds.has(l.id))
+        .map((l) => ({
+          key: `l${l.id}`,
+          id: l.id,
+          label: l.label,
+          due_date: l.due_date,
+          amount: String(Number(l.amount)),
+          paid: Number(l.paid_amount),
+        })),
+    });
+    setEditError(null);
+    setEditOpen(true);
+  };
+  const setEditLine = (key: string, patch: Partial<EditLine>) =>
+    setEditForm((f) => ({ ...f, lines: f.lines.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
+  const editBasePrice = (Number(editForm.unit_price) || 0) - (Number(editForm.discount) || 0);
+  const editLinesTotal = editForm.lines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+  const editUnscheduled = Math.round((editBasePrice - editLinesTotal) * 100) / 100;
+
+  const updateBooking = useMutation({
+    mutationFn: async () =>
+      (
+        await api.put<Booking>(`/bookings/${detailBooking!.id}`, {
+          booking_date: editForm.booking_date,
+          unit_price: Number(editForm.unit_price) || 0,
+          discount: Number(editForm.discount) || 0,
+          remarks: editForm.remarks || null,
+          schedule_lines: editForm.lines.map((l) => ({
+            id: l.id,
+            label: l.label,
+            due_date: l.due_date,
+            amount: Number(l.amount) || 0,
+          })),
+        })
+      ).data,
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["units"] });
+      setDetailBooking(updated);
+      setEditOpen(false);
+      toast.success("Booking updated.");
+    },
+    onError: (err: unknown) => setEditError(apiErrorMessage(err, "Failed to update booking.")),
+  });
 
   const createTransfer = useMutation({
     mutationFn: async () =>
@@ -1052,11 +1121,14 @@ export default function BookingsPage() {
           </div>
 
           <div>
-            <Label htmlFor="b_remarks">Remarks</Label>
-            <Input
+            <Label htmlFor="b_remarks">Narration (optional)</Label>
+            <textarea
               id="b_remarks"
+              rows={3}
+              placeholder="Any description or note about this booking…"
               value={form.remarks}
               onChange={(e) => setForm({ ...form, remarks: e.target.value })}
+              className={textareaClass}
             />
           </div>
 
@@ -1112,6 +1184,13 @@ export default function BookingsPage() {
                 </div>
               </div>
             </div>
+
+            {detailBooking.remarks && (
+              <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-navy-800/60">
+                <p className="text-xs text-slate-500 dark:text-slate-400">Narration</p>
+                <p className="mt-0.5 whitespace-pre-wrap text-navy-900 dark:text-slate-100">{detailBooking.remarks}</p>
+              </div>
+            )}
 
             {detailBooking.status === "Cancelled" && bookingRefund && (
               <div className="rounded-lg border border-slate-200 px-4 py-3 text-sm dark:border-navy-700">
@@ -1336,6 +1415,12 @@ export default function BookingsPage() {
 
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 dark:border-navy-800 pt-4">
               <div className="flex flex-wrap gap-2">
+                {detailBooking.status !== "Cancelled" && (
+                  <Button size="sm" variant="secondary" onClick={() => openEditBooking(detailBooking)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit Booking
+                  </Button>
+                )}
                 {detailBooking.status !== "Confirmed" && detailBooking.status !== "Cancelled" && (
                   <Button
                     size="sm"
@@ -1505,6 +1590,201 @@ export default function BookingsPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* ---- Edit Booking Modal ---- */}
+      <Modal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title={detailBooking ? `Edit Booking ${detailBooking.booking_ref_no}` : "Edit Booking"}
+        description="Fix the price, discount, narration or any installment. Amounts already received can't be reduced or removed. Extra charges are edited from their own list."
+        className="max-w-3xl"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setEditError(null);
+            updateBooking.mutate();
+          }}
+          className="space-y-4"
+        >
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div>
+              <Label htmlFor="eb_date">Booking Date</Label>
+              <Input
+                id="eb_date"
+                type="date"
+                required
+                value={editForm.booking_date}
+                onChange={(e) => setEditForm({ ...editForm, booking_date: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="eb_price">Price (PKR)</Label>
+              <Input
+                id="eb_price"
+                type="number"
+                min="1"
+                required
+                value={editForm.unit_price}
+                onChange={(e) => setEditForm({ ...editForm, unit_price: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="eb_discount">Discount</Label>
+              <Input
+                id="eb_discount"
+                type="number"
+                min="0"
+                value={editForm.discount}
+                onChange={(e) => setEditForm({ ...editForm, discount: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>After Discount</Label>
+              <p className="flex h-10 items-center text-sm font-semibold text-navy-900 dark:text-slate-100">
+                PKR {editBasePrice.toLocaleString()}
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                Payment Schedule
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  const last = editForm.lines[editForm.lines.length - 1];
+                  setEditForm((f) => ({
+                    ...f,
+                    lines: [
+                      ...f.lines,
+                      {
+                        key: `new${Date.now()}`,
+                        id: null,
+                        label: "Installment",
+                        due_date: last?.due_date ?? f.booking_date,
+                        amount: editUnscheduled > 0 ? String(editUnscheduled) : "",
+                        paid: 0,
+                      },
+                    ],
+                  }));
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Line
+              </Button>
+            </div>
+            <div className="max-h-80 overflow-y-auto rounded-lg border border-slate-100 dark:border-navy-800">
+              <table className="w-full text-left text-sm">
+                <thead className="sticky top-0 z-[1] bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-navy-800 dark:text-slate-400">
+                  <tr>
+                    <th className="px-2 py-2 font-medium">Label</th>
+                    <th className="px-2 py-2 font-medium">Due Date</th>
+                    <th className="px-2 py-2 font-medium">Amount</th>
+                    <th className="px-2 py-2" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-navy-800">
+                  {editForm.lines.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-6 text-center text-xs text-slate-400">
+                        No installments — add a line.
+                      </td>
+                    </tr>
+                  )}
+                  {editForm.lines.map((l) => (
+                    <tr key={l.key}>
+                      <td className="px-2 py-1.5">
+                        <Input
+                          aria-label="Label"
+                          required
+                          maxLength={50}
+                          value={l.label}
+                          onChange={(e) => setEditLine(l.key, { label: e.target.value })}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <Input
+                          aria-label="Due date"
+                          type="date"
+                          required
+                          value={l.due_date}
+                          onChange={(e) => setEditLine(l.key, { due_date: e.target.value })}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <Input
+                          aria-label="Amount"
+                          type="number"
+                          min={l.paid > 0 ? l.paid : 1}
+                          required
+                          value={l.amount}
+                          onChange={(e) => setEditLine(l.key, { amount: e.target.value })}
+                        />
+                        {l.paid > 0 && (
+                          <p className="mt-0.5 text-[11px] text-slate-400">Received: {l.paid.toLocaleString()}</p>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        <button
+                          type="button"
+                          disabled={l.paid > 0}
+                          title={l.paid > 0 ? "Payment received on this line — can't remove" : "Remove line"}
+                          onClick={() => setEditForm((f) => ({ ...f, lines: f.lines.filter((x) => x.key !== l.key) }))}
+                          className="rounded-md p-1.5 text-slate-400 hover:bg-danger-50 hover:text-danger-500 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-3 rounded-lg bg-brand-50 px-4 py-2.5 text-sm text-brand-800">
+              <div>
+                Price: <span className="font-semibold">PKR {editBasePrice.toLocaleString()}</span>
+              </div>
+              <div>
+                Schedule: <span className="font-semibold">PKR {editLinesTotal.toLocaleString()}</span>
+              </div>
+              <div className={editUnscheduled !== 0 ? "font-semibold text-danger-700" : "font-semibold"}>
+                {editUnscheduled === 0
+                  ? "Balanced"
+                  : editUnscheduled > 0
+                    ? `Unscheduled: PKR ${editUnscheduled.toLocaleString()}`
+                    : `Over by PKR ${(-editUnscheduled).toLocaleString()}`}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="eb_remarks">Narration (optional)</Label>
+            <textarea
+              id="eb_remarks"
+              rows={3}
+              value={editForm.remarks}
+              onChange={(e) => setEditForm({ ...editForm, remarks: e.target.value })}
+              className={textareaClass}
+            />
+          </div>
+
+          {editError && <p className="rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{editError}</p>}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={updateBooking.isPending || editUnscheduled < 0}>
+              Save Changes
+            </Button>
+          </div>
+        </form>
       </Modal>
 
       {/* ---- Transfer Owner Modal ---- */}

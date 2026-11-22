@@ -113,6 +113,43 @@ class BookingCreate(BookingBase):
     down_payment_date: date | None = None
 
 
+class BookingScheduleLineEdit(BaseModel):
+    # None = a new line to add.
+    id: int | None = None
+    label: str
+    due_date: date
+    amount: float
+
+    @model_validator(mode="after")
+    def validate_line(self):
+        self.label = (self.label or "").strip() or "Installment"
+        if self.amount <= 0:
+            raise ValueError("Each installment amount must be greater than zero")
+        return self
+
+
+class BookingUpdate(BaseModel):
+    """Corrects a booking after it was made: its date, price, discount,
+    narration, and its payment schedule (extra charges are edited on their own)."""
+
+    booking_date: date
+    unit_price: float
+    discount: float = 0
+    remarks: str | None = None
+    schedule_lines: list[BookingScheduleLineEdit]
+
+    @model_validator(mode="after")
+    def validate_price(self):
+        if self.unit_price <= 0:
+            raise ValueError("Price must be greater than zero")
+        if self.discount < 0:
+            raise ValueError("Discount can't be negative")
+        if self.discount >= self.unit_price:
+            raise ValueError("Discount must be less than the price")
+        self.remarks = (self.remarks or "").strip() or None
+        return self
+
+
 class BookingStatusUpdate(BaseModel):
     status: BookingStatus
     status_date: date

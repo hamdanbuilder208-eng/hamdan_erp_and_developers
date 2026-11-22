@@ -23,6 +23,7 @@ from app.models.voucher import Voucher, VoucherLine, VoucherType
 from app.schemas.booking import (
     BookingCreate,
     BookingTransferCreate,
+    BookingUpdate,
     ExtraChargeCreate,
     InstallmentPlanCreate,
 )
@@ -411,6 +412,125 @@ def create_booking(db: Session, booking_in: BookingCreate) -> Booking:
         _add_extra_charge(db, db_booking, charge_in)
 
     db.commit()
+    return get_booking(db, db_booking.id)
+
+
+def update_booking(db: Session, db_booking: Booking, booking_in: BookingUpdate) -> Booking:
+    """Fixes a booking entered wrong: date, price/discount, narration and the
+    payment schedule (amounts, due dates, labels; add or remove lines).
+    Anything already received stays protected — a line can't drop below what
+    was paid on it, and a line with receipts against it can't be removed.
+    The sale voucher follows the new price and date; extra charges (each with
+    their own line and voucher) are left as they are."""
+    from app.models.receipt import ReceiptAllocation
+
+    if db_booking.status == BookingStatus.CANCELLED:
+        raise ValueError("A cancelled booking can't be edited")
+
+    extra_line_ids = {c.schedule_line_id for c in db_booking.extra_charges}
+    extras_total = sum(float(c.amount) for c in db_booking.extra_charges)
+    existing = {l.id: l for l in db_booking.schedule_lines if l.id not in extra_line_ids}
+
+    base_price = round(booking_in.unit_price - booking_in.discount, 2)
+    lines_total = round(sum(l.amount for l in booking_in.schedule_lines), 2)
+    if lines_total > base_price + 0.01:
+        raise ValueError(
+            f"The schedule adds up to PKR {lines_total:,.0f}, more than the price after discount "
+            f"(PKR {base_price:,.0f})."
+        )
+
+    kept_ids = set()
+    for line_in in booking_in.schedule_lines:
+        if line_in.id is None:
+            continue
+        if line_in.id not in existing:
+            raise ValueError("One of the schedule lines doesn't belong to this booking")
+        kept_ids.add(line_in.id)
+
+    # Lines removed from the schedule.
+    for line_id, line in existing.items():
+        if line_id in kept_ids:
+            continue
+        has_receipts = (
+            float(line.paid_amount) > 0
+            or db.query(ReceiptAllocation).filter(ReceiptAllocation.schedule_line_id == line_id).first()
+        )
+        if has_receipts:
+            raise ValueError(
+                f'"{line.label}" ({line.due_date}) has payments received against it and can\'t be removed.'
+            )
+        db.delete(line)
+
+    next_no = max((l.installment_no for l in db_booking.schedule_lines), default=0)
+    for line_in in booking_in.schedule_lines:
+        if line_in.id is None:
+            next_no += 1
+            db.add(
+                PaymentScheduleLine(
+                    booking_id=db_booking.id,
+                    installment_no=next_no,
+                    label=line_in.label[:50],
+                    due_date=line_in.due_date,
+                    amount=line_in.amount,
+                )
+            )
+            continue
+        line = existing[line_in.id]
+        paid = float(line.paid_amount)
+        if line_in.amount < paid - 0.01:
+            raise ValueError(
+                f'PKR {paid:,.0f} has already been received on "{line.label}" — '
+                "its amount can't be set lower than that."
+            )
+        line.label = line_in.label[:50]
+        line.due_date = line_in.due_date
+        line.amount = line_in.amount
+    db.flush()
+
+    # Keep each installment plan's summary in step with its remaining lines.
+    for plan in list(db_booking.installment_plans):
+        plan_lines = (
+            db.query(PaymentScheduleLine).filter(PaymentScheduleLine.installment_plan_id == plan.id).all()
+        )
+        if not plan_lines:
+            db.delete(plan)
+            continue
+        plan.no_of_installments = len(plan_lines)
+        plan.total_amount = round(sum(float(l.amount) for l in plan_lines), 2)
+        plan.start_date = min(l.due_date for l in plan_lines)
+
+    down_payment = (
+        db.query(PaymentScheduleLine)
+        .filter(
+            PaymentScheduleLine.booking_id == db_booking.id,
+            PaymentScheduleLine.installment_plan_id.is_(None),
+            PaymentScheduleLine.installment_no == 0,
+        )
+        .all()
+    )
+    db_booking.down_payment_amount = round(
+        sum(float(l.amount) for l in down_payment if l.id not in extra_line_ids), 2
+    )
+
+    db_booking.booking_date = booking_in.booking_date
+    db_booking.discount = booking_in.discount
+    db_booking.remarks = booking_in.remarks
+    db_booking.total_price = round(base_price + extras_total, 2)
+
+    if db_booking.revenue_voucher_id:
+        voucher = db.query(Voucher).filter(Voucher.id == db_booking.revenue_voucher_id).first()
+        if voucher:
+            voucher.voucher_date = booking_in.booking_date
+            for vl in db.query(VoucherLine).filter(VoucherLine.voucher_id == voucher.id):
+                if float(vl.debit) > 0:
+                    vl.debit = base_price
+                else:
+                    vl.credit = base_price
+
+    db.flush()
+    sync_unit_sold(db, db_booking)
+    db.commit()
+    db.expire_all()
     return get_booking(db, db_booking.id)
 
 
