@@ -198,6 +198,7 @@ export interface OfficeExpense extends PaymentModeRecord {
   land_property_id: number | null;
   paid_from_id: number;
   amount: number;
+  paid_to: string | null;
   narration: string | null;
   voucher_id: number | null;
   expense_head: Account;

@@ -73,6 +73,8 @@ export default function ExpensesPage() {
   // ---- Office Expenses ----
   const [officeModalOpen, setOfficeModalOpen] = React.useState(false);
   const emptyOfficeForm = () => ({
+    expense_date: todayIso(),
+    paid_to: "",
     expense_head_id: "",
     charge_to: "",
     paid_from_id: "",
@@ -98,7 +100,8 @@ export default function ExpensesPage() {
     mutationFn: async () =>
       (
         await api.post<OfficeExpense>("/expenses/office", {
-          expense_date: todayIso(),
+          expense_date: officeForm.expense_date || todayIso(),
+          paid_to: officeForm.paid_to.trim() || null,
           expense_head_id: Number(officeForm.expense_head_id),
           // charge_to is "p:<id>" (a project) or "l:<id>" (a standalone land/plot, kept off project books).
           project_id: officeForm.charge_to.startsWith("p:") ? Number(officeForm.charge_to.slice(2)) : null,
@@ -328,6 +331,7 @@ export default function ExpensesPage() {
           : e.land_property
             ? ` · Land/Plot ${e.land_property.property_ref_no} (${e.land_property.area_location})`
             : "") +
+        (e.paid_to ? ` · to ${e.paid_to}` : "") +
         pettyHolder(e.paid_from.name),
       amount: Number(e.amount),
     })),
@@ -576,6 +580,28 @@ export default function ExpensesPage() {
                   </option>
                 ))}
               </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="oe_paid_to">Paid To</Label>
+              <Input
+                id="oe_paid_to"
+                maxLength={150}
+                placeholder="e.g. Generator mechanic — Aslam"
+                value={officeForm.paid_to}
+                onChange={(e) => setOfficeForm({ ...officeForm, paid_to: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="oe_date">Date</Label>
+              <Input
+                id="oe_date"
+                type="date"
+                required
+                value={officeForm.expense_date}
+                onChange={(e) => setOfficeForm({ ...officeForm, expense_date: e.target.value })}
+              />
             </div>
           </div>
           <div>

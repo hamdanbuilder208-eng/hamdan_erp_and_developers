@@ -24,6 +24,8 @@ class OfficeExpense(Base, PaymentModeMixin, TimestampMixin):
     voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
 
     amount: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
+    # Who the money went to, e.g. the generator mechanic.
+    paid_to: Mapped[str | None] = mapped_column(String(150))
     narration: Mapped[str | None] = mapped_column(Text)
 
     expense_head: Mapped["Account"] = relationship(foreign_keys=[expense_head_id])

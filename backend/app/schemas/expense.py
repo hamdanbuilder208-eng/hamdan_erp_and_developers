@@ -18,6 +18,7 @@ class OfficeExpenseBase(PaymentModeFields):
     land_property_id: int | None = None
     paid_from_id: int
     amount: float
+    paid_to: str | None = None
     narration: str | None = None
 
 
@@ -26,6 +27,7 @@ class OfficeExpenseCreate(OfficeExpenseBase):
     def _one_target(self):
         if self.project_id and self.land_property_id:
             raise ValueError("An expense belongs to either a project or a land/plot, not both")
+        self.paid_to = (self.paid_to or "").strip()[:150] or None
         return self
 
 

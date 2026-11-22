@@ -86,6 +86,7 @@ function OfficeExpensePrint({ id }: { id: string }) {
     <PrintShell title="Office Expense Voucher" refNo={data.expense_no} date={data.expense_date}>
       <Row label="Expense Head" value={data.expense_head.name} />
       <Row label="Project" value={data.project?.project_name ?? "General (Company-wide)"} />
+      <Row label="Paid To" value={data.paid_to || "—"} />
       <Row label="Paid From" value={data.paid_from.name} />
       <Row label="Mode of Payment" value={paymentModeLabel(data) || "Cash"} />
       <Row label="Narration" value={data.narration || "—"} />

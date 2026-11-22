@@ -81,21 +81,23 @@ def create_office_expense(db: Session, expense_in: OfficeExpenseCreate) -> Offic
         voucher_date=expense_in.expense_date,
         project_id=expense_in.project_id,
         land_property_id=expense_in.land_property_id,
-        narration=f"Office expense {db_expense.expense_no}",
+        narration=f"Office expense {db_expense.expense_no}"
+        + (f" — paid to {expense_in.paid_to}" if expense_in.paid_to else ""),
     )
     db.add(voucher)
     db.flush()
 
+    paid_to = f" — {expense_in.paid_to}" if expense_in.paid_to else ""
     db.add(
         VoucherLine(
             voucher_id=voucher.id, account_id=expense_in.expense_head_id,
-            debit=expense_in.amount, credit=0, narration="Office expense",
+            debit=expense_in.amount, credit=0, narration=f"Office expense{paid_to}",
         )
     )
     db.add(
         VoucherLine(
             voucher_id=voucher.id, account_id=expense_in.paid_from_id,
-            debit=0, credit=expense_in.amount, narration="Office expense paid",
+            debit=0, credit=expense_in.amount, narration=f"Office expense paid{paid_to}",
         )
     )
 
